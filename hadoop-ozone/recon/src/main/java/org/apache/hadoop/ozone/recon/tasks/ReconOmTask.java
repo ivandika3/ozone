@@ -20,6 +20,9 @@ package org.apache.hadoop.ozone.recon.tasks;
 
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
+import org.hadoop.ozone.recon.schema.tables.pojos.ReconTaskStatus;
+
+import java.util.Objects;
 
 /**
  * Interface used to denote a Recon task that needs to act on OM DB events.
@@ -45,5 +48,24 @@ public interface ReconOmTask {
    * @return Pair of task name -> task success.
    */
   Pair<String, Boolean> reprocess(OMMetadataManager omMetadataManager);
+
+  /**
+   * Get the Recon task status for the task.
+   * @return Recon task status
+   */
+  ReconTaskStatus getReconTaskStatus();
+
+  /**
+   * Get last updated sequence number for the task.
+   * @return Last updated sequence number.
+   */
+  default long getLastUpdatedSequenceNumber() {
+    long lastUpdatedSequenceNumber = -1;
+    ReconTaskStatus reconTaskStatus = getReconTaskStatus();
+    if (Objects.nonNull(reconTaskStatus)) {
+      lastUpdatedSequenceNumber = reconTaskStatus.getLastUpdatedSeqNumber();
+    }
+    return lastUpdatedSequenceNumber;
+  }
 
 }

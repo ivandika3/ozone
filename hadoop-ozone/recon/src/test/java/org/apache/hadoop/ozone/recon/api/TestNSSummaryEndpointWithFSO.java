@@ -57,6 +57,7 @@ import org.apache.hadoop.ozone.recon.spi.StorageContainerServiceProvider;
 import org.apache.hadoop.ozone.recon.spi.impl.OzoneManagerServiceProviderImpl;
 import org.apache.hadoop.ozone.recon.spi.impl.StorageContainerServiceProviderImpl;
 import org.apache.hadoop.ozone.recon.tasks.NSSummaryTaskWithFSO;
+import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
@@ -380,7 +381,8 @@ public class TestNSSummaryEndpointWithFSO {
     populateOMDB();
     NSSummaryTaskWithFSO nSSummaryTaskWithFso =
         new NSSummaryTaskWithFSO(reconNamespaceSummaryManager,
-            reconOMMetadataManager, ozoneConfiguration);
+            reconOMMetadataManager, ozoneConfiguration,
+            new ReconTaskStatusDao());
     nSSummaryTaskWithFso.reprocessWithFSO(reconOMMetadataManager);
     commonUtils = new CommonUtils();
   }

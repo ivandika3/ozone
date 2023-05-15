@@ -65,6 +65,7 @@ import org.apache.hadoop.ozone.recon.spi.impl.OzoneManagerServiceProviderImpl;
 import org.apache.hadoop.ozone.recon.spi.impl.StorageContainerServiceProviderImpl;
 import org.apache.hadoop.ozone.recon.tasks.ContainerKeyMapperTask;
 import org.hadoop.ozone.recon.schema.ContainerSchemaDefinition.UnHealthyContainerStates;
+import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.hadoop.ozone.recon.schema.tables.pojos.UnhealthyContainers;
 import org.junit.Assert;
 import org.junit.Before;
@@ -288,7 +289,8 @@ public class TestContainerEndpoint {
 
   private void reprocessContainerKeyMapper() {
     ContainerKeyMapperTask containerKeyMapperTask =
-        new ContainerKeyMapperTask(reconContainerMetadataManager);
+        new ContainerKeyMapperTask(reconContainerMetadataManager,
+            new ReconTaskStatusDao());
     containerKeyMapperTask.reprocess(reconOMMetadataManager);
   }
 

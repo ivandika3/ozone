@@ -26,7 +26,9 @@ import org.apache.hadoop.hdds.utils.db.TableIterator;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.hadoop.ozone.recon.schema.tables.daos.GlobalStatsDao;
+import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.hadoop.ozone.recon.schema.tables.pojos.GlobalStats;
+import org.hadoop.ozone.recon.schema.tables.pojos.ReconTaskStatus;
 import org.jooq.Configuration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,14 +58,17 @@ public class TableCountTask implements ReconOmTask {
   private GlobalStatsDao globalStatsDao;
   private Configuration sqlConfiguration;
   private ReconOMMetadataManager reconOMMetadataManager;
+  private ReconTaskStatusDao reconTaskStatusDao;
 
   @Inject
   public TableCountTask(GlobalStatsDao globalStatsDao,
                         Configuration sqlConfiguration,
-                        ReconOMMetadataManager reconOMMetadataManager) {
+                        ReconOMMetadataManager reconOMMetadataManager,
+                        ReconTaskStatusDao reconTaskStatusDao) {
     this.globalStatsDao = globalStatsDao;
     this.sqlConfiguration = sqlConfiguration;
     this.reconOMMetadataManager = reconOMMetadataManager;
+    this.reconTaskStatusDao = reconTaskStatusDao;
   }
 
   /**
@@ -109,6 +114,11 @@ public class TableCountTask implements ReconOmTask {
     return new ArrayList<>(reconOMMetadataManager.listTableNames());
   }
 
+  @Override
+  public ReconTaskStatus getReconTaskStatus() {
+    return reconTaskStatusDao.fetchOneByTaskName(getTaskName());
+  }
+
   /**
    * Read the update events and update the count of respective object
    * (volume, bucket, key etc.) based on the action (put or delete).
@@ -122,12 +132,19 @@ public class TableCountTask implements ReconOmTask {
     HashMap<String, Long> objectCountMap = initializeCountMap();
     final Collection<String> taskTables = getTaskTables();
 
+    long lastUpdatedSequenceNumber = getLastUpdatedSequenceNumber();
     while (eventIterator.hasNext()) {
       OMDBUpdateEvent<String, Object> omdbUpdateEvent = eventIterator.next();
       // Filter event inside process method to avoid duping
       if (!taskTables.contains(omdbUpdateEvent.getTable())) {
         continue;
       }
+
+      // Skip event if its sequence number has been seen before
+      if (omdbUpdateEvent.getSequenceNumber() <= lastUpdatedSequenceNumber) {
+        continue;
+      }
+
       String rowKey = getRowKeyFromTable(omdbUpdateEvent.getTable());
       try {
         switch (omdbUpdateEvent.getAction()) {

@@ -47,6 +47,8 @@ import org.apache.hadoop.ozone.recon.api.types.KeyPrefixContainer;
 import org.apache.hadoop.ozone.recon.spi.ReconContainerMetadataManager;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.TableIterator;
+import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
+import org.hadoop.ozone.recon.schema.tables.pojos.ReconTaskStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,11 +64,14 @@ public class ContainerKeyMapperTask implements ReconOmTask {
       LoggerFactory.getLogger(ContainerKeyMapperTask.class);
 
   private ReconContainerMetadataManager reconContainerMetadataManager;
+  private ReconTaskStatusDao reconTaskStatusDao;
 
   @Inject
   public ContainerKeyMapperTask(ReconContainerMetadataManager
-                                        reconContainerMetadataManager) {
+                                    reconContainerMetadataManager,
+                                ReconTaskStatusDao reconTaskStatusDao) {
     this.reconContainerMetadataManager = reconContainerMetadataManager;
+    this.reconTaskStatusDao = reconTaskStatusDao;
   }
 
   /**
@@ -141,6 +146,11 @@ public class ContainerKeyMapperTask implements ReconOmTask {
   }
 
   @Override
+  public ReconTaskStatus getReconTaskStatus() {
+    return reconTaskStatusDao.fetchOneByTaskName(getTaskName());
+  }
+
+  @Override
   public Pair<String, Boolean> process(OMUpdateEventBatch events) {
     Iterator<OMDBUpdateEvent> eventIterator = events.getIterator();
     int eventCount = 0;
@@ -148,13 +158,19 @@ public class ContainerKeyMapperTask implements ReconOmTask {
     Map<ContainerKeyPrefix, Integer> containerKeyMap = new HashMap<>();
     Map<Long, Long> containerKeyCountMap = new HashMap<>();
     List<ContainerKeyPrefix> deletedKeyCountList = new ArrayList<>();
-
+    long lastUpdatedSequenceNumber = getLastUpdatedSequenceNumber();
     while (eventIterator.hasNext()) {
       OMDBUpdateEvent<String, OmKeyInfo> omdbUpdateEvent = eventIterator.next();
       // Filter event inside process method to avoid duping
       if (!taskTables.contains(omdbUpdateEvent.getTable())) {
         continue;
       }
+
+      // Skip event if its sequence number has been seen before
+      if (omdbUpdateEvent.getSequenceNumber() <= lastUpdatedSequenceNumber) {
+        continue;
+      }
+
       String updatedKey = omdbUpdateEvent.getKey();
       OmKeyInfo updatedKeyValue = omdbUpdateEvent.getValue();
       try {

@@ -104,7 +104,7 @@ public final class OMDBUpdateEvent<KEY, VALUE> {
     private KEY updatedKey;
     private VALUE oldValue;
     private VALUE updatedValue;
-    private long lastSequenceNumber;
+    private long currentSequenceNumber;
 
     OMUpdateEventBuilder setAction(OMDBUpdateAction omdbUpdateAction) {
       this.action = omdbUpdateAction;
@@ -132,7 +132,7 @@ public final class OMDBUpdateEvent<KEY, VALUE> {
     }
 
     OMUpdateEventBuilder setSequenceNumber(long sequenceNumber) {
-      this.lastSequenceNumber = sequenceNumber;
+      this.currentSequenceNumber = sequenceNumber;
       return this;
     }
 
@@ -147,7 +147,7 @@ public final class OMDBUpdateEvent<KEY, VALUE> {
           updatedKey,
           updatedValue,
           oldValue,
-          lastSequenceNumber);
+          currentSequenceNumber);
     }
   }
 

@@ -33,6 +33,7 @@ import static org.apache.hadoop.ozone.om.OmMetadataManagerImpl.KEY_TABLE;
 import static org.apache.hadoop.ozone.om.OmMetadataManagerImpl.OPEN_KEY_TABLE;
 import static org.apache.hadoop.ozone.om.OmMetadataManagerImpl.VOLUME_TABLE;
 import org.hadoop.ozone.recon.schema.tables.daos.GlobalStatsDao;
+import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -67,7 +68,7 @@ public class TestTableCountTask extends AbstractReconSqlDBTest {
         temporaryFolder.newFolder());
     globalStatsDao = getDao(GlobalStatsDao.class);
     tableCountTask = new TableCountTask(globalStatsDao, getConfiguration(),
-            omMetadataManager);
+            omMetadataManager, getDao(ReconTaskStatusDao.class));
     dslContext = getDslContext();
   }
 

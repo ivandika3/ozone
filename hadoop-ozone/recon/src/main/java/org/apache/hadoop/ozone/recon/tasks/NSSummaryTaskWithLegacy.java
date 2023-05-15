@@ -30,6 +30,7 @@ import org.apache.hadoop.ozone.om.helpers.WithParentObjectId;
 import org.apache.hadoop.ozone.recon.api.types.NSSummary;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconNamespaceSummaryManager;
+import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,9 +60,12 @@ public class NSSummaryTaskWithLegacy extends NSSummaryTaskDbEventHandler {
                                  ReconOMMetadataManager
                                  reconOMMetadataManager,
                                  OzoneConfiguration
-                                 ozoneConfiguration) {
+                                 ozoneConfiguration,
+                                 ReconTaskStatusDao
+                                 reconTaskStatusDao) {
     super(reconNamespaceSummaryManager,
-        reconOMMetadataManager, ozoneConfiguration);
+        reconOMMetadataManager, ozoneConfiguration,
+        reconTaskStatusDao);
     // true if FileSystemPaths enabled
     enableFileSystemPaths = ozoneConfiguration
         .getBoolean(OMConfigKeys.OZONE_OM_ENABLE_FILESYSTEM_PATHS,
@@ -72,6 +76,7 @@ public class NSSummaryTaskWithLegacy extends NSSummaryTaskDbEventHandler {
     Iterator<OMDBUpdateEvent> eventIterator = events.getIterator();
     Map<Long, NSSummary> nsSummaryMap = new HashMap<>();
 
+    long lastUpdatedSequenceNumber = getLastUpdatedSequenceNumber();
     while (eventIterator.hasNext()) {
       OMDBUpdateEvent<String, ? extends
           WithParentObjectId> omdbUpdateEvent = eventIterator.next();
@@ -81,6 +86,11 @@ public class NSSummaryTaskWithLegacy extends NSSummaryTaskDbEventHandler {
       String table = omdbUpdateEvent.getTable();
       boolean updateOnKeyTable = table.equals(KEY_TABLE);
       if (!updateOnKeyTable) {
+        continue;
+      }
+
+      // Skip event if its sequence number has been seen before
+      if (omdbUpdateEvent.getSequenceNumber() <= lastUpdatedSequenceNumber) {
         continue;
       }
 

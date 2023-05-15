@@ -107,6 +107,21 @@ public final class  ReconServerConfigKeys {
       "ozone.recon.task.thread.count";
   public static final int OZONE_RECON_TASK_THREAD_COUNT_DEFAULT = 5;
 
+  public static final String OZONE_RECON_OM_TASK_APPLY_INTERVAL_DELAY =
+      "ozone.recon.om.task.apply.interval.delay";
+  public static final String
+      OZONE_RECON_OM_TASK_APPLY_INTERVAL_DELAY_DEFAULT = "1m";
+
+  public static final String OZONE_RECON_OM_TASK_APPLY_INITIAL_DELAY =
+      "ozone.recon.om.task.apply.initial.delay";
+  public static final String
+      OZONE_RECON_OM_TASK_APPLY_INITIAL_DELAY_DEFAULT = "15m";
+
+  public static final String OZONE_RECON_OM_TASK_APPLY_LIMIT =
+      "ozone.recon.om.task.apply.limit";
+  public static final long OZONE_RECON_OM_TASK_APPLY_LIMIT_DEFAULT =
+      50000;
+
   public static final String OZONE_RECON_HTTP_AUTH_CONFIG_PREFIX =
       "ozone.recon.http.auth.";
 

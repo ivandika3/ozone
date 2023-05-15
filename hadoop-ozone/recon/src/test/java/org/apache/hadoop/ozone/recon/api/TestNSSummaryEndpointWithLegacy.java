@@ -58,6 +58,7 @@ import org.apache.hadoop.ozone.recon.spi.StorageContainerServiceProvider;
 import org.apache.hadoop.ozone.recon.spi.impl.OzoneManagerServiceProviderImpl;
 import org.apache.hadoop.ozone.recon.spi.impl.StorageContainerServiceProviderImpl;
 import org.apache.hadoop.ozone.recon.tasks.NSSummaryTaskWithLegacy;
+import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
@@ -381,7 +382,8 @@ public class TestNSSummaryEndpointWithLegacy {
     populateOMDB();
     NSSummaryTaskWithLegacy nsSummaryTaskWithLegacy = 
         new NSSummaryTaskWithLegacy(reconNamespaceSummaryManager, 
-                                    reconOMMetadataManager, conf);
+                                    reconOMMetadataManager, conf,
+                                    new ReconTaskStatusDao());
     nsSummaryTaskWithLegacy.reprocessWithLegacy(reconOMMetadataManager);
     commonUtils = new CommonUtils();
   }

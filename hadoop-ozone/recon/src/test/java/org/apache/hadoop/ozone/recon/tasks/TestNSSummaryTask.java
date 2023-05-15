@@ -36,9 +36,10 @@ import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconNamespaceSummaryManager;
 import org.apache.hadoop.ozone.recon.spi.impl.OzoneManagerServiceProviderImpl;
 import org.junit.BeforeClass;
+import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
+import org.junit.Assert;
 import org.junit.Test;
 import org.junit.ClassRule;
-import org.junit.Assert;
 import org.junit.experimental.runners.Enclosed;
 import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
@@ -132,7 +133,7 @@ public final class TestNSSummaryTask {
     populateOMDB();
 
     nSSummaryTask = new NSSummaryTask(reconNamespaceSummaryManager,
-        reconOMMetadataManager, omConfiguration);
+        reconOMMetadataManager, omConfiguration, new ReconTaskStatusDao());
   }
 
   /**
