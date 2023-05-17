@@ -59,7 +59,7 @@ public interface ReconOmTask {
    * Get last updated sequence number for the task.
    * @return Last updated sequence number.
    */
-  default long getLastUpdatedSequenceNumber() {
+  default long getTaskLastUpdatedSequenceNumber() {
     long lastUpdatedSequenceNumber = -1;
     ReconTaskStatus reconTaskStatus = getReconTaskStatus();
     if (Objects.nonNull(reconTaskStatus)) {

@@ -594,7 +594,8 @@ public class OzoneManagerServiceProviderImpl
     return true;
   }
 
-  private boolean applyTasksFromDB() {
+  @VisibleForTesting
+  public boolean applyTasksFromDB() {
     if (!isTasksApplyRunning.compareAndSet(false, true)) {
       LOG.info("Recon OM tasks apply is already running");
       return false;

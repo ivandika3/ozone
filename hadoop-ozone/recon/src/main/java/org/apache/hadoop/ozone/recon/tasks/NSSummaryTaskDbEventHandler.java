@@ -66,6 +66,7 @@ public class NSSummaryTaskDbEventHandler {
     nsSummaryFlushToDBMaxThreshold = ozoneConfiguration.getLong(
         OZONE_RECON_NSSUMMARY_FLUSH_TO_DB_MAX_THRESHOLD,
         OZONE_RECON_NSSUMMARY_FLUSH_TO_DB_MAX_THRESHOLD_DEFAULT);
+    this.reconTaskStatusDao = reconTaskStatusDao;
   }
 
   public ReconNamespaceSummaryManager getReconNamespaceSummaryManager() {
@@ -80,7 +81,7 @@ public class NSSummaryTaskDbEventHandler {
     return reconTaskStatusDao.fetchOneByTaskName("NSSummaryTask");
   }
 
-  protected long getLastUpdatedSequenceNumber() {
+  protected long getTaskLastUpdatedSequenceNumber() {
     long lastUpdatedSequenceNumber = -1;
     ReconTaskStatus reconTaskStatus = getReconTaskStatus();
     if (Objects.nonNull(reconTaskStatus)) {

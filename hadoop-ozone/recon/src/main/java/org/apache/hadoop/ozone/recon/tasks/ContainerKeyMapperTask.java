@@ -158,7 +158,7 @@ public class ContainerKeyMapperTask implements ReconOmTask {
     Map<ContainerKeyPrefix, Integer> containerKeyMap = new HashMap<>();
     Map<Long, Long> containerKeyCountMap = new HashMap<>();
     List<ContainerKeyPrefix> deletedKeyCountList = new ArrayList<>();
-    long lastUpdatedSequenceNumber = getLastUpdatedSequenceNumber();
+    long lastUpdatedSequenceNumber = getTaskLastUpdatedSequenceNumber();
     while (eventIterator.hasNext()) {
       OMDBUpdateEvent<String, OmKeyInfo> omdbUpdateEvent = eventIterator.next();
       // Filter event inside process method to avoid duping

@@ -132,7 +132,7 @@ public class TableCountTask implements ReconOmTask {
     HashMap<String, Long> objectCountMap = initializeCountMap();
     final Collection<String> taskTables = getTaskTables();
 
-    long lastUpdatedSequenceNumber = getLastUpdatedSequenceNumber();
+    long lastUpdatedSequenceNumber = getTaskLastUpdatedSequenceNumber();
     while (eventIterator.hasNext()) {
       OMDBUpdateEvent<String, Object> omdbUpdateEvent = eventIterator.next();
       // Filter event inside process method to avoid duping

@@ -72,7 +72,7 @@ public class NSSummaryTaskWithFSO extends NSSummaryTaskDbEventHandler {
     final Collection<String> taskTables = getTaskTables();
     Map<Long, NSSummary> nsSummaryMap = new HashMap<>();
 
-    long lastUpdatedSequenceNumber = getLastUpdatedSequenceNumber();
+    long lastUpdatedSequenceNumber = getTaskLastUpdatedSequenceNumber();
     while (eventIterator.hasNext()) {
       OMDBUpdateEvent<String, ? extends
               WithParentObjectId> omdbUpdateEvent = eventIterator.next();

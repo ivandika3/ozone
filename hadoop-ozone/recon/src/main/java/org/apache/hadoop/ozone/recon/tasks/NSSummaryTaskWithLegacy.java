@@ -76,7 +76,7 @@ public class NSSummaryTaskWithLegacy extends NSSummaryTaskDbEventHandler {
     Iterator<OMDBUpdateEvent> eventIterator = events.getIterator();
     Map<Long, NSSummary> nsSummaryMap = new HashMap<>();
 
-    long lastUpdatedSequenceNumber = getLastUpdatedSequenceNumber();
+    long lastUpdatedSequenceNumber = getTaskLastUpdatedSequenceNumber();
     while (eventIterator.hasNext()) {
       OMDBUpdateEvent<String, ? extends
           WithParentObjectId> omdbUpdateEvent = eventIterator.next();

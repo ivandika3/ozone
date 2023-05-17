@@ -158,7 +158,7 @@ public class FileSizeCountTask implements ReconOmTask {
     Iterator<OMDBUpdateEvent> eventIterator = events.getIterator();
     Map<FileSizeCountKey, Long> fileSizeCountMap = new HashMap<>();
     final Collection<String> taskTables = getTaskTables();
-    long lastUpdatedSequenceNumber = getLastUpdatedSequenceNumber();
+    long lastUpdatedSequenceNumber = getTaskLastUpdatedSequenceNumber();
     while (eventIterator.hasNext()) {
       OMDBUpdateEvent<String, Object> omdbUpdateEvent = eventIterator.next();
       // Filter event inside process method to avoid duping

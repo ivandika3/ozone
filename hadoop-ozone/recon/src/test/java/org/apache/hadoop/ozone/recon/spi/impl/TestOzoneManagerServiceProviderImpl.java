@@ -69,7 +69,6 @@ import org.apache.hadoop.ozone.recon.ReconUtils;
 import org.apache.hadoop.ozone.recon.metrics.OzoneManagerSyncMetrics;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.apache.hadoop.ozone.recon.tasks.OMDBUpdatesHandler;
-import org.apache.hadoop.ozone.recon.tasks.OMUpdateEventBatch;
 import org.apache.hadoop.ozone.recon.tasks.ReconTaskController;
 
 import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
@@ -375,6 +374,7 @@ public class TestOzoneManagerServiceProviderImpl {
 
     // Should trigger full snapshot request.
     ozoneManagerServiceProvider.syncDataFromOM();
+    ozoneManagerServiceProvider.applyTasksFromDB();
 
     ArgumentCaptor<ReconTaskStatus> captor =
         ArgumentCaptor.forClass(ReconTaskStatus.class);
@@ -402,8 +402,7 @@ public class TestOzoneManagerServiceProviderImpl {
     when(reconTaskControllerMock.getReconTaskStatusDao())
         .thenReturn(reconTaskStatusDaoMock);
     doNothing().when(reconTaskControllerMock)
-        .consumeOMEvents(any(OMUpdateEventBatch.class),
-            any(OMMetadataManager.class));
+        .consumeOMEventsFromDB(any(ReconOMMetadataManager.class));
 
     OzoneManagerServiceProviderImpl ozoneManagerServiceProvider =
         new OzoneManagerServiceProviderImpl(configuration, omMetadataManager,
@@ -413,6 +412,7 @@ public class TestOzoneManagerServiceProviderImpl {
 
     // Should trigger delta updates.
     ozoneManagerServiceProvider.syncDataFromOM();
+    ozoneManagerServiceProvider.applyTasksFromDB();
 
     ArgumentCaptor<ReconTaskStatus> captor =
         ArgumentCaptor.forClass(ReconTaskStatus.class);
@@ -421,8 +421,7 @@ public class TestOzoneManagerServiceProviderImpl {
     assertEquals(OmDeltaRequest.name(), captor.getValue().getTaskName());
 
     verify(reconTaskControllerMock, times(1))
-        .consumeOMEvents(any(OMUpdateEventBatch.class),
-            any(OMMetadataManager.class));
+        .consumeOMEventsFromDB(any(ReconOMMetadataManager.class));
     assertEquals(0, metrics.getNumSnapshotRequests().value());
   }
 
@@ -453,6 +452,7 @@ public class TestOzoneManagerServiceProviderImpl {
 
     // Should trigger full snapshot request.
     ozoneManagerServiceProvider.syncDataFromOM();
+    ozoneManagerServiceProvider.applyTasksFromDB();
 
     ArgumentCaptor<ReconTaskStatus> captor =
         ArgumentCaptor.forClass(ReconTaskStatus.class);

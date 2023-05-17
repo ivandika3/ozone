@@ -137,8 +137,9 @@ public class TestReconWithOzoneManagerHA {
     key.write(keyPrefix.getBytes(UTF_8));
     key.flush();
     key.close();
-    // Sync data to Recon
+    // Sync data to Recon and apply tasks from Recon OM DB
     impl.syncDataFromOM();
+    impl.applyTasksFromDB();
 
     ReconContainerMetadataManager reconContainerMetadataManager =
         cluster.getReconServer().getReconContainerMetadataManager();
