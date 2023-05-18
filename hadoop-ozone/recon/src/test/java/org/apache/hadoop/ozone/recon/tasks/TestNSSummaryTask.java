@@ -133,7 +133,8 @@ public final class TestNSSummaryTask {
     populateOMDB();
 
     nSSummaryTask = new NSSummaryTask(reconNamespaceSummaryManager,
-        reconOMMetadataManager, omConfiguration, new ReconTaskStatusDao());
+        reconOMMetadataManager, omConfiguration,
+        reconTestInjector.getInstance(ReconTaskStatusDao.class));
   }
 
   /**

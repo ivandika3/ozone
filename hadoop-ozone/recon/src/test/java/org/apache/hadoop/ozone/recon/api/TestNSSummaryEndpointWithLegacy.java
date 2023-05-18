@@ -383,7 +383,8 @@ public class TestNSSummaryEndpointWithLegacy {
     NSSummaryTaskWithLegacy nsSummaryTaskWithLegacy = 
         new NSSummaryTaskWithLegacy(reconNamespaceSummaryManager, 
                                     reconOMMetadataManager, conf,
-                                    new ReconTaskStatusDao());
+                                    reconTestInjector.getInstance(
+                                        ReconTaskStatusDao.class));
     nsSummaryTaskWithLegacy.reprocessWithLegacy(reconOMMetadataManager);
     commonUtils = new CommonUtils();
   }

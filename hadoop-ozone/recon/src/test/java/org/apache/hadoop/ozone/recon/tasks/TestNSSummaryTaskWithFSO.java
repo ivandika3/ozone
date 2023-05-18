@@ -150,7 +150,8 @@ public final class TestNSSummaryTaskWithFSO {
 
     nSSummaryTaskWithFso = new NSSummaryTaskWithFSO(
         reconNamespaceSummaryManager, reconOMMetadataManager,
-        ozoneConfiguration, new ReconTaskStatusDao());
+        ozoneConfiguration,
+        reconTestInjector.getInstance(ReconTaskStatusDao.class));
   }
 
   /**

@@ -152,7 +152,7 @@ public final class TestNSSummaryTaskWithLegacy {
     nSSummaryTaskWithLegacy = new NSSummaryTaskWithLegacy(
         reconNamespaceSummaryManager,
         reconOMMetadataManager, omConfiguration,
-        new ReconTaskStatusDao());
+        reconTestInjector.getInstance(ReconTaskStatusDao.class));
   }
 
   /**

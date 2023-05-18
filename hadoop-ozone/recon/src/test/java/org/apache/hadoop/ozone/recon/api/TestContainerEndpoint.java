@@ -127,6 +127,7 @@ public class TestContainerEndpoint {
   private boolean isSetupDone = false;
   private ContainerHealthSchemaManager containerHealthSchemaManager;
   private ReconOMMetadataManager reconOMMetadataManager;
+  private ReconTaskStatusDao reconTaskStatusDao;
   private ContainerID containerID = ContainerID.valueOf(1L);
   private Pipeline pipeline;
   private PipelineID pipelineID;
@@ -193,6 +194,8 @@ public class TestContainerEndpoint {
     containerEndpoint = reconTestInjector.getInstance(ContainerEndpoint.class);
     containerHealthSchemaManager =
         reconTestInjector.getInstance(ContainerHealthSchemaManager.class);
+    reconTaskStatusDao =
+        reconTestInjector.getInstance(ReconTaskStatusDao.class);
 
     pipeline = getRandomPipeline();
     pipelineID = pipeline.getId();
@@ -290,7 +293,7 @@ public class TestContainerEndpoint {
   private void reprocessContainerKeyMapper() {
     ContainerKeyMapperTask containerKeyMapperTask =
         new ContainerKeyMapperTask(reconContainerMetadataManager,
-            new ReconTaskStatusDao());
+            reconTaskStatusDao);
     containerKeyMapperTask.reprocess(reconOMMetadataManager);
   }
 

@@ -67,6 +67,7 @@ public class TestContainerKeyMapperTask {
   private OMMetadataManager omMetadataManager;
   private ReconOMMetadataManager reconOMMetadataManager;
   private OzoneManagerServiceProviderImpl ozoneManagerServiceProvider;
+  private ReconTaskStatusDao reconTaskStatusDao;
 
   private static final String FSO_KEY_NAME = "dir1/file7";
   private static final String BUCKET_NAME = "bucket1";
@@ -96,6 +97,8 @@ public class TestContainerKeyMapperTask {
             .build();
     reconContainerMetadataManager =
         reconTestInjector.getInstance(ReconContainerMetadataManager.class);
+    reconTaskStatusDao =
+        reconTestInjector.getInstance(ReconTaskStatusDao.class);
   }
 
   @Test
@@ -134,7 +137,7 @@ public class TestContainerKeyMapperTask {
 
     ContainerKeyMapperTask containerKeyMapperTask =
         new ContainerKeyMapperTask(reconContainerMetadataManager,
-            new ReconTaskStatusDao());
+            reconTaskStatusDao);
     containerKeyMapperTask.reprocess(reconOMMetadataManager);
 
     keyPrefixesForContainer =
@@ -207,7 +210,7 @@ public class TestContainerKeyMapperTask {
     // Reprocess container key mappings
     ContainerKeyMapperTask containerKeyMapperTask =
         new ContainerKeyMapperTask(reconContainerMetadataManager,
-            new ReconTaskStatusDao());
+            reconTaskStatusDao);
     containerKeyMapperTask.reprocess(reconOMMetadataManager);
 
     // Check the key prefixes for container 1
@@ -315,7 +318,7 @@ public class TestContainerKeyMapperTask {
 
     ContainerKeyMapperTask containerKeyMapperTask =
         new ContainerKeyMapperTask(reconContainerMetadataManager,
-            new ReconTaskStatusDao());
+            reconTaskStatusDao);
     containerKeyMapperTask.reprocess(reconOMMetadataManager);
 
     keyPrefixesForContainer = reconContainerMetadataManager
@@ -385,7 +388,7 @@ public class TestContainerKeyMapperTask {
     // Reprocess container key mappings
     ContainerKeyMapperTask containerKeyMapperTask =
         new ContainerKeyMapperTask(reconContainerMetadataManager,
-            new ReconTaskStatusDao());
+            reconTaskStatusDao);
 
     String bucket = BUCKET_NAME;
     String volume = VOLUME_NAME;

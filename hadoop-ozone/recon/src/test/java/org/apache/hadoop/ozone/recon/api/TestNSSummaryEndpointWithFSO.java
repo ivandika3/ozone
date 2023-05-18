@@ -382,7 +382,7 @@ public class TestNSSummaryEndpointWithFSO {
     NSSummaryTaskWithFSO nSSummaryTaskWithFso =
         new NSSummaryTaskWithFSO(reconNamespaceSummaryManager,
             reconOMMetadataManager, ozoneConfiguration,
-            new ReconTaskStatusDao());
+            reconTestInjector.getInstance(ReconTaskStatusDao.class));
     nSSummaryTaskWithFso.reprocessWithFSO(reconOMMetadataManager);
     commonUtils = new CommonUtils();
   }
