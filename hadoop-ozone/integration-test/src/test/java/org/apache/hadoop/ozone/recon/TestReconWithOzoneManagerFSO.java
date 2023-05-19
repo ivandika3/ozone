@@ -118,7 +118,7 @@ public class TestReconWithOzoneManagerFSO {
     addKeys(0, 10, "dir");
     OzoneManagerServiceProviderImpl impl = (OzoneManagerServiceProviderImpl)
             cluster.getReconServer().getOzoneManagerServiceProvider();
-    // Sync data to Recon and apply tasks from Recon OM DB
+    // Take full snapshot from OM and reinitialize all tasks in recon
     impl.syncDataFromOM();
     impl.applyTasksFromDB();
     ReconNamespaceSummaryManager namespaceSummaryManager =
@@ -144,7 +144,8 @@ public class TestReconWithOzoneManagerFSO {
               .getVolumeTable().get("/vol" + i));
     }
     addKeys(10, 12, "dir");
-    // Sync data to Recon and apply tasks from Recon OM DB
+    // Get delta updates from OM and process the outstanding events from
+    // Recon OM DB
     impl.syncDataFromOM();
     impl.applyTasksFromDB();
 

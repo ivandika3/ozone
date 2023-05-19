@@ -38,7 +38,7 @@ public interface ReconTaskController {
   void registerTask(ReconOmTask task);
 
   /**
-   * Consume outstanding Recon's OM DB updated events to the registered events.
+   * Consume outstanding Recon's OM DB updated events to the registered tasks.
    * @param omMetadataManager OM Metadata Manager instance
    * @throws IOException
    * @throws RocksDBException

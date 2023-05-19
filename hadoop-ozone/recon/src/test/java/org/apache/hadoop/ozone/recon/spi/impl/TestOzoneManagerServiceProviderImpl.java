@@ -247,8 +247,7 @@ public class TestOzoneManagerServiceProviderImpl {
 
     OMDBUpdatesHandler updatesHandler =
         new OMDBUpdatesHandler(omMetadataManager, 0L);
-    ozoneManagerServiceProvider.getAndApplyDeltaUpdatesFromOM(
-        0L, updatesHandler);
+    ozoneManagerServiceProvider.getAndApplyDeltaUpdatesFromOM(0L);
 
     OzoneManagerSyncMetrics metrics = ozoneManagerServiceProvider.getMetrics();
     assertEquals(4.0,
@@ -319,10 +318,7 @@ public class TestOzoneManagerServiceProviderImpl {
     assertEquals(true, dbUpdatesWrapper[2].isDBUpdateSuccess());
     assertEquals(true, dbUpdatesWrapper[3].isDBUpdateSuccess());
 
-    OMDBUpdatesHandler updatesHandler =
-        new OMDBUpdatesHandler(omMetadataManager, 0L);
-    ozoneManagerServiceProvider.getAndApplyDeltaUpdatesFromOM(
-        0L, updatesHandler);
+    ozoneManagerServiceProvider.getAndApplyDeltaUpdatesFromOM(0L);
 
     OzoneManagerSyncMetrics metrics = ozoneManagerServiceProvider.getMetrics();
     assertEquals(1.0,
@@ -330,10 +326,6 @@ public class TestOzoneManagerServiceProviderImpl {
     assertEquals(3, metrics.getNumNonZeroDeltaRequests().value());
 
     // In this method, we have to assert the "GET" path and the "APPLY" path.
-
-    // Assert GET path --> verify if the OMDBUpdatesHandler picked up the first
-    // 3 of 4 events ( 1 Vol PUT + 1 Bucket PUT + 2 Key PUTs).
-    assertEquals(3, updatesHandler.getEvents().size());
 
     // Assert APPLY path --> Verify if the OM service provider's RocksDB got
     // the first 3 changes, last change not applied.

@@ -53,7 +53,6 @@ import org.apache.hadoop.ozone.recon.ReconUtils;
 import org.apache.hadoop.ozone.recon.metrics.OzoneManagerSyncMetrics;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.OzoneManagerServiceProvider;
-import org.apache.hadoop.ozone.recon.tasks.OMDBUpdatesHandler;
 import org.apache.hadoop.ozone.recon.tasks.ReconTaskController;
 import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.util.Time;
@@ -441,13 +440,11 @@ public class OzoneManagerServiceProviderImpl
    * Get Delta updates from OM through RPC call and apply to local OM DB as
    * well as accumulate in a buffer.
    * @param fromSequenceNumber from sequence number to request from.
-   * @param omdbUpdatesHandler OM DB updates handler to buffer updates.
    * @throws IOException when OM RPC request fails.
    * @throws RocksDBException when writing to RocksDB fails.
    */
   @VisibleForTesting
-  void getAndApplyDeltaUpdatesFromOM(
-      long fromSequenceNumber, OMDBUpdatesHandler omdbUpdatesHandler)
+  void getAndApplyDeltaUpdatesFromOM(long fromSequenceNumber)
       throws IOException, RocksDBException {
     int loopCount = 0;
     LOG.info("OriginalFromSequenceNumber : {} ", fromSequenceNumber);
@@ -456,8 +453,7 @@ public class OzoneManagerServiceProviderImpl
     long inLoopLatestSequenceNumber;
     while (loopCount < deltaUpdateLoopLimit &&
         deltaUpdateCnt >= deltaUpdateLimit) {
-      if (!innerGetAndApplyDeltaUpdatesFromOM(
-          inLoopStartSequenceNumber, omdbUpdatesHandler)) {
+      if (!innerGetAndApplyDeltaUpdatesFromOM(inLoopStartSequenceNumber)) {
         LOG.error(
             "Retrieve OM DB delta update failed for sequence number : {}, " +
                 "so falling back to full snapshot.", inLoopStartSequenceNumber);
@@ -479,14 +475,11 @@ public class OzoneManagerServiceProviderImpl
    * Get Delta updates from OM through RPC call and apply to local OM DB as
    * well as accumulate in a buffer.
    * @param fromSequenceNumber from sequence number to request from.
-   * @param omdbUpdatesHandler OM DB updates handler to buffer updates.
    * @throws IOException when OM RPC request fails.
-   * @throws RocksDBException when writing to RocksDB fails.
    */
   @VisibleForTesting
-  boolean innerGetAndApplyDeltaUpdatesFromOM(long fromSequenceNumber,
-      OMDBUpdatesHandler omdbUpdatesHandler)
-      throws IOException, RocksDBException {
+  boolean innerGetAndApplyDeltaUpdatesFromOM(long fromSequenceNumber)
+      throws IOException {
     DBUpdatesRequest dbUpdatesRequest = DBUpdatesRequest.newBuilder()
         .setSequenceNumber(fromSequenceNumber)
         .setLimitCount(deltaUpdateLimit)
@@ -503,14 +496,11 @@ public class OzoneManagerServiceProviderImpl
         metrics.incrNumUpdatesInDeltaTotal(numUpdates);
       }
       for (byte[] data : dbUpdates.getData()) {
-        try (ManagedWriteBatch writeBatch = new ManagedWriteBatch(data)) {
-          writeBatch.iterate(omdbUpdatesHandler);
-          try (RDBBatchOperation rdbBatchOperation =
-                   new RDBBatchOperation(writeBatch)) {
-            try (ManagedWriteOptions wOpts = new ManagedWriteOptions()) {
-              rdbBatchOperation.commit(rocksDB, wOpts);
-            }
-          }
+        try (ManagedWriteBatch writeBatch = new ManagedWriteBatch(data);
+             RDBBatchOperation rdbBatchOperation =
+                 new RDBBatchOperation(writeBatch);
+             ManagedWriteOptions wOpts = new ManagedWriteOptions()) {
+          rdbBatchOperation.commit(rocksDB, wOpts);
         }
       }
     }
@@ -543,13 +533,10 @@ public class OzoneManagerServiceProviderImpl
       if (lastOMDBSequenceNumber <= 0) {
         fullSnapshot = true;
       } else {
-        try (OMDBUpdatesHandler omdbUpdatesHandler =
-            new OMDBUpdatesHandler(omMetadataManager,
-                lastOMDBSequenceNumber)) {
+        try {
           LOG.info("Obtaining delta updates from Ozone Manager");
           // Get updates from OM and apply to local Recon OM DB.
-          getAndApplyDeltaUpdatesFromOM(lastOMDBSequenceNumber,
-              omdbUpdatesHandler);
+          getAndApplyDeltaUpdatesFromOM(lastOMDBSequenceNumber);
           // Update timestamp of successful delta updates query.
           ReconTaskStatus reconTaskStatusRecord = new ReconTaskStatus(
               OmSnapshotTaskName.OmDeltaRequest.name(),
