@@ -89,14 +89,12 @@ public class NSSummaryTaskWithLegacy extends NSSummaryTaskDbEventHandler {
       try {
         OMDBUpdateEvent<String, ?> keyTableUpdateEvent = omdbUpdateEvent;
         Object value = keyTableUpdateEvent.getValue();
-        Object oldValue = keyTableUpdateEvent.getOldValue();
         if (!(value instanceof OmKeyInfo)) {
           LOG.warn("Unexpected value type {} for key {}. Skipping processing.",
               value.getClass().getName(), updatedKey);
           continue;
         }
         OmKeyInfo updatedKeyInfo = (OmKeyInfo) value;
-        OmKeyInfo oldKeyInfo = (OmKeyInfo) oldValue;
 
         // KeyTable entries belong to both Legacy and OBS buckets.
         // Check bucket layout and if it's OBS
@@ -120,23 +118,19 @@ public class NSSummaryTaskWithLegacy extends NSSummaryTaskDbEventHandler {
         if (!updatedKeyInfo.getKeyName().endsWith(OM_KEY_PREFIX)) {
           switch (action) {
           case PUT:
+            OmKeyInfo oldKeyInfo = getReconOMMetadataManager()
+                .getKeyTable(BucketLayout.LEGACY).getSkipCache(
+                    keyTableUpdateEvent.getKey());
+            if (oldKeyInfo != null) {
+              // delete first, then put
+              setKeyParentID(oldKeyInfo);
+              handleDeleteKeyEvent(oldKeyInfo, nsSummaryMap);
+            }
             handlePutKeyEvent(updatedKeyInfo, nsSummaryMap);
             break;
 
           case DELETE:
             handleDeleteKeyEvent(updatedKeyInfo, nsSummaryMap);
-            break;
-
-          case UPDATE:
-            if (oldKeyInfo != null) {
-              // delete first, then put
-              setKeyParentID(oldKeyInfo);
-              handleDeleteKeyEvent(oldKeyInfo, nsSummaryMap);
-            } else {
-              LOG.warn("Update event does not have the old keyInfo for {}.",
-                  updatedKey);
-            }
-            handlePutKeyEvent(updatedKeyInfo, nsSummaryMap);
             break;
 
           default:
@@ -151,35 +145,26 @@ public class NSSummaryTaskWithLegacy extends NSSummaryTaskDbEventHandler {
                   .setParentObjectID(updatedKeyInfo.getParentObjectID())
                   .build();
 
-          OmDirectoryInfo oldDirectoryInfo = null;
-
-          if (oldKeyInfo != null) {
-            oldDirectoryInfo =
-                new OmDirectoryInfo.Builder()
-                    .setName(oldKeyInfo.getKeyName())
-                    .setObjectID(oldKeyInfo.getObjectID())
-                    .setParentObjectID(oldKeyInfo.getParentObjectID())
-                    .build();
-          }
-
           switch (action) {
           case PUT:
+            OmKeyInfo oldKeyInfo = getReconOMMetadataManager()
+                .getKeyTable(BucketLayout.LEGACY).getSkipCache(
+                    keyTableUpdateEvent.getKey());
+            if (oldKeyInfo != null) {
+              OmDirectoryInfo oldDirectoryInfo =
+                  new OmDirectoryInfo.Builder()
+                      .setName(oldKeyInfo.getKeyName())
+                      .setObjectID(oldKeyInfo.getObjectID())
+                      .setParentObjectID(oldKeyInfo.getParentObjectID())
+                      .build();
+              // delete first, then put
+              handleDeleteDirEvent(oldDirectoryInfo, nsSummaryMap);
+            }
             handlePutDirEvent(updatedDirectoryInfo, nsSummaryMap);
             break;
 
           case DELETE:
             handleDeleteDirEvent(updatedDirectoryInfo, nsSummaryMap);
-            break;
-
-          case UPDATE:
-            if (oldDirectoryInfo != null) {
-              // delete first, then put
-              handleDeleteDirEvent(oldDirectoryInfo, nsSummaryMap);
-            } else {
-              LOG.warn("Update event does not have the old dirInfo for {}.",
-                  updatedKey);
-            }
-            handlePutDirEvent(updatedDirectoryInfo, nsSummaryMap);
             break;
 
           default:

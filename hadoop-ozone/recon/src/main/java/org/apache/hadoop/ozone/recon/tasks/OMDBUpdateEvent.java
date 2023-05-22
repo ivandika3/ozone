@@ -32,20 +32,17 @@ public final class OMDBUpdateEvent<KEY, VALUE> {
   private final String table;
   private final KEY updatedKey;
   private final VALUE updatedValue;
-  private final VALUE oldValue;
   private final long sequenceNumber;
 
   private OMDBUpdateEvent(OMDBUpdateAction action,
                           String table,
                           KEY updatedKey,
                           VALUE updatedValue,
-                          VALUE oldValue,
                           long sequenceNumber) {
     this.action = action;
     this.table = table;
     this.updatedKey = updatedKey;
     this.updatedValue = updatedValue;
-    this.oldValue = oldValue;
     this.sequenceNumber = sequenceNumber;
   }
 
@@ -63,10 +60,6 @@ public final class OMDBUpdateEvent<KEY, VALUE> {
 
   public VALUE getValue() {
     return updatedValue;
-  }
-
-  public VALUE getOldValue() {
-    return oldValue;
   }
 
   public long getSequenceNumber() {
@@ -126,11 +119,6 @@ public final class OMDBUpdateEvent<KEY, VALUE> {
       return this;
     }
 
-    OMUpdateEventBuilder setOldValue(VALUE value) {
-      this.oldValue = value;
-      return this;
-    }
-
     OMUpdateEventBuilder setSequenceNumber(long sequenceNumber) {
       this.lastSequenceNumber = sequenceNumber;
       return this;
@@ -146,7 +134,6 @@ public final class OMDBUpdateEvent<KEY, VALUE> {
           table,
           updatedKey,
           updatedValue,
-          oldValue,
           lastSequenceNumber);
     }
   }
@@ -155,6 +142,6 @@ public final class OMDBUpdateEvent<KEY, VALUE> {
    * Supported Actions - PUT, DELETE.
    */
   public enum OMDBUpdateAction {
-    PUT, DELETE, UPDATE
+    PUT, DELETE
   }
 }

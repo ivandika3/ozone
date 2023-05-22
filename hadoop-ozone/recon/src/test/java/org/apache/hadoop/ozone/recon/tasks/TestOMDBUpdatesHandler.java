@@ -19,7 +19,6 @@
 package org.apache.hadoop.ozone.recon.tasks;
 
 import static org.apache.hadoop.ozone.recon.tasks.OMDBUpdateEvent.OMDBUpdateAction.PUT;
-import static org.apache.hadoop.ozone.recon.tasks.OMDBUpdateEvent.OMDBUpdateAction.UPDATE;
 import static org.apache.hadoop.ozone.recon.tasks.OMDBUpdateEvent.OMDBUpdateAction.DELETE;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -137,14 +136,10 @@ public class TestOMDBUpdatesHandler {
     OMDBUpdateEvent keyEvent = events.get(1);
     assertEquals(PUT, keyEvent.getAction());
     assertEquals("/sampleVol/bucketOne/key_one", keyEvent.getKey());
-    assertNull(keyEvent.getOldValue());
 
     OMDBUpdateEvent updateEvent = events.get(2);
-    assertEquals(UPDATE, updateEvent.getAction());
+    assertEquals(PUT, updateEvent.getAction());
     assertEquals("/sampleVol/bucketOne/key_two", updateEvent.getKey());
-    assertNotNull(updateEvent.getOldValue());
-    assertEquals(secondKey.getKeyName(),
-        ((OmKeyInfo)updateEvent.getOldValue()).getKeyName());
   }
 
   @Test
@@ -258,25 +253,18 @@ public class TestOMDBUpdatesHandler {
     assertEquals("/sampleVol/bucketOne/key", keyPutEvent.getKey());
     assertEquals("key",
         ((OmKeyInfo)keyPutEvent.getValue()).getKeyName());
-    assertNull(keyPutEvent.getOldValue());
 
     OMDBUpdateEvent keyUpdateEvent = events.get(2);
-    assertEquals(UPDATE, keyUpdateEvent.getAction());
+    assertEquals(PUT, keyUpdateEvent.getAction());
     assertEquals("/sampleVol/bucketOne/key", keyUpdateEvent.getKey());
     assertEquals("key_new",
         ((OmKeyInfo)keyUpdateEvent.getValue()).getKeyName());
-    assertNotNull(keyUpdateEvent.getOldValue());
-    assertEquals("key",
-        ((OmKeyInfo)keyUpdateEvent.getOldValue()).getKeyName());
 
     OMDBUpdateEvent keyUpdateEvent2 = events.get(3);
-    assertEquals(UPDATE, keyUpdateEvent2.getAction());
+    assertEquals(PUT, keyUpdateEvent2.getAction());
     assertEquals("/sampleVol/bucketOne/key", keyUpdateEvent2.getKey());
     assertEquals("key_new2",
         ((OmKeyInfo)keyUpdateEvent2.getValue()).getKeyName());
-    assertNotNull(keyUpdateEvent2.getOldValue());
-    assertEquals("key_new",
-        ((OmKeyInfo)keyUpdateEvent2.getOldValue()).getKeyName());
 
     OMDBUpdateEvent keyDeleteEvent = events.get(4);
     assertEquals(DELETE, keyDeleteEvent.getAction());
@@ -295,9 +283,6 @@ public class TestOMDBUpdatesHandler {
     assertEquals("/sampleVol/bucketOne/key", keyPut2.getKey());
     assertEquals("key_new2",
         ((OmKeyInfo)keyPut2.getValue()).getKeyName());
-    assertNotNull(keyPut2.getOldValue());
-    assertEquals("key_new2",
-        ((OmKeyInfo)keyPut2.getOldValue()).getKeyName());
   }
 
   @Test

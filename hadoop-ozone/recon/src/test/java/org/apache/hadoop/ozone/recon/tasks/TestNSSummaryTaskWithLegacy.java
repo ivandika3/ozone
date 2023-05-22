@@ -355,10 +355,9 @@ public final class TestNSSummaryTaskWithLegacy {
           OMUpdateEventBuilder<String, OmKeyInfo>()
           .setKey(omUpdateKey)
           .setValue(omUpdateInfo)
-          .setOldValue(omOldInfo)
           .setTable(omMetadataManager.getKeyTable(getBucketLayout())
               .getName())
-          .setAction(OMDBUpdateEvent.OMDBUpdateAction.UPDATE)
+          .setAction(OMDBUpdateEvent.OMDBUpdateAction.PUT)
           .build();
 
       // add dir 4 under bucket 1
@@ -425,8 +424,7 @@ public final class TestNSSummaryTaskWithLegacy {
           OMUpdateEventBuilder<String, OmKeyInfo>()
           .setKey(omDirUpdateKey)
           .setValue(omDirUpdateValue)
-          .setOldValue(omDirOldValue)
-          .setAction(OMDBUpdateEvent.OMDBUpdateAction.UPDATE)
+          .setAction(OMDBUpdateEvent.OMDBUpdateAction.PUT)
           .setTable(omMetadataManager.getKeyTable(getBucketLayout()).getName())
           .build();
 

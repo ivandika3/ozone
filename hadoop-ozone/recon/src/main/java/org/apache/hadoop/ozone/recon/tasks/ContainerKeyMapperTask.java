@@ -160,25 +160,16 @@ public class ContainerKeyMapperTask implements ReconOmTask {
       try {
         switch (omdbUpdateEvent.getAction()) {
         case PUT:
+          // If the key doesn't exist, it will not delete anything
+          handleDeleteOMKeyEvent(updatedKey, containerKeyMap,
+              containerKeyCountMap, deletedKeyCountList);
+
           handlePutOMKeyEvent(updatedKey, updatedKeyValue, containerKeyMap,
               containerKeyCountMap, deletedKeyCountList);
           break;
 
         case DELETE:
           handleDeleteOMKeyEvent(updatedKey, containerKeyMap,
-              containerKeyCountMap, deletedKeyCountList);
-          break;
-
-        case UPDATE:
-          if (omdbUpdateEvent.getOldValue() != null) {
-            handleDeleteOMKeyEvent(
-                omdbUpdateEvent.getOldValue().getKeyName(), containerKeyMap,
-                containerKeyCountMap, deletedKeyCountList);
-          } else {
-            LOG.warn("Update event does not have the old Key Info for {}.",
-                updatedKey);
-          }
-          handlePutOMKeyEvent(updatedKey, updatedKeyValue, containerKeyMap,
               containerKeyCountMap, deletedKeyCountList);
           break;
 

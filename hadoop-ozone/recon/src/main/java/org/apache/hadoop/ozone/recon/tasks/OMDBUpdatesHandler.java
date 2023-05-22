@@ -18,9 +18,7 @@
 
 package org.apache.hadoop.ozone.recon.tasks;
 
-import static org.apache.hadoop.ozone.recon.tasks.OMDBUpdateEvent.OMDBUpdateAction.DELETE;
 import static org.apache.hadoop.ozone.recon.tasks.OMDBUpdateEvent.OMDBUpdateAction.PUT;
-import static org.apache.hadoop.ozone.recon.tasks.OMDBUpdateEvent.OMDBUpdateAction.UPDATE;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -29,7 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.managed.ManagedWriteBatch;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.codec.OMDBDefinition;
@@ -112,37 +109,9 @@ public class OMDBUpdatesHandler extends ManagedWriteBatch.Handler {
       Object key = codecRegistry.asObject(keyBytes, keyType.get());
       builder.setKey(key);
 
-      // Put new
-      // Put existing --> Update
-      // Delete existing
-      // Delete non-existing
-      Table table = omMetadataManager.getTable(tableName);
-
-      OMDBUpdateEvent latestEvent = omdbLatestUpdateEvents.get(key);
-      Object oldValue;
-      if (latestEvent != null) {
-        oldValue = latestEvent.getValue();
-      } else {
-        // Recon does not add entries to cache, and it is safer to always use
-        // getSkipCache in Recon.
-        oldValue = table.getSkipCache(key);
-      }
-
       if (action == PUT) {
         Object value = codecRegistry.asObject(valueBytes, valueType.get());
         builder.setValue(value);
-        // If a PUT operation happens on an existing Key, it is tagged
-        // as an "UPDATE" event.
-        if (oldValue != null) {
-          builder.setOldValue(oldValue);
-          if (latestEvent == null || latestEvent.getAction() != DELETE) {
-            builder.setAction(UPDATE);
-          }
-        }
-      } else if (action.equals(DELETE)) {
-        // When you delete a Key, we add the old value to the event so that
-        // a downstream task can use it.
-        builder.setValue(oldValue);
       }
 
       OMDBUpdateEvent event = builder.build();

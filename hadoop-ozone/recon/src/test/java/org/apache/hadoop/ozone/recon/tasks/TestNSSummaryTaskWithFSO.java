@@ -333,10 +333,9 @@ public final class TestNSSummaryTaskWithFSO {
           OMUpdateEventBuilder<String, OmKeyInfo>()
           .setKey(omUpdateKey)
           .setValue(omUpdateInfo)
-          .setOldValue(omOldInfo)
           .setTable(omMetadataManager.getKeyTable(getBucketLayout())
               .getName())
-          .setAction(OMDBUpdateEvent.OMDBUpdateAction.UPDATE)
+          .setAction(OMDBUpdateEvent.OMDBUpdateAction.PUT)
           .build();
 
       // Events for DirectoryTable change:
@@ -386,8 +385,7 @@ public final class TestNSSummaryTaskWithFSO {
           OMUpdateEventBuilder<String, OmDirectoryInfo>()
           .setKey(omDirUpdateKey)
           .setValue(omDirUpdateValue)
-          .setOldValue(omDirOldValue)
-          .setAction(OMDBUpdateEvent.OMDBUpdateAction.UPDATE)
+          .setAction(OMDBUpdateEvent.OMDBUpdateAction.PUT)
           .setTable(omMetadataManager.getDirectoryTable().getName())
           .build();
 

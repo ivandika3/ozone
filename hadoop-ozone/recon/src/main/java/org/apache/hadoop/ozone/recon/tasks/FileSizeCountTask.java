@@ -27,6 +27,7 @@ import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.TableIterator;
 import org.apache.hadoop.ozone.recon.ReconUtils;
+import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.hadoop.ozone.recon.schema.UtilizationSchemaDefinition;
 import org.hadoop.ozone.recon.schema.tables.daos.FileCountBySizeDao;
 import org.hadoop.ozone.recon.schema.tables.pojos.FileCountBySize;
@@ -58,13 +59,16 @@ public class FileSizeCountTask implements ReconOmTask {
 
   private FileCountBySizeDao fileCountBySizeDao;
   private DSLContext dslContext;
+  private ReconOMMetadataManager reconOMMetadataManager;
 
   @Inject
   public FileSizeCountTask(FileCountBySizeDao fileCountBySizeDao,
                            UtilizationSchemaDefinition
-                               utilizationSchemaDefinition) {
+                               utilizationSchemaDefinition,
+                           ReconOMMetadataManager reconOMMetadataManager) {
     this.fileCountBySizeDao = fileCountBySizeDao;
     this.dslContext = utilizationSchemaDefinition.getDSLContext();
+    this.reconOMMetadataManager = reconOMMetadataManager;
   }
 
   /**
@@ -157,30 +161,32 @@ public class FileSizeCountTask implements ReconOmTask {
       }
       String updatedKey = omdbUpdateEvent.getKey();
       Object value = omdbUpdateEvent.getValue();
-      Object oldValue = omdbUpdateEvent.getOldValue();
 
       if (value instanceof OmKeyInfo) {
         OmKeyInfo omKeyInfo = (OmKeyInfo) value;
-        OmKeyInfo omKeyInfoOld = (OmKeyInfo) oldValue;
+
 
         try {
           switch (omdbUpdateEvent.getAction()) {
           case PUT:
+            OmKeyInfo omKeyInfoOld = null;
+            if (omdbUpdateEvent.getTable().equals(FILE_TABLE)) {
+              omKeyInfoOld = reconOMMetadataManager
+                  .getKeyTable(BucketLayout.FILE_SYSTEM_OPTIMIZED)
+                  .getSkipCache(updatedKey);
+            } else {
+              omKeyInfoOld = reconOMMetadataManager.getKeyTable(
+                  BucketLayout.LEGACY)
+                  .getSkipCache(updatedKey);
+            }
+            if (omKeyInfoOld != null) {
+              handleDeleteKeyEvent(updatedKey, omKeyInfoOld, fileSizeCountMap);
+            }
             handlePutKeyEvent(omKeyInfo, fileSizeCountMap);
             break;
 
           case DELETE:
             handleDeleteKeyEvent(updatedKey, omKeyInfo, fileSizeCountMap);
-            break;
-
-          case UPDATE:
-            if (omKeyInfoOld != null) {
-              handleDeleteKeyEvent(updatedKey, omKeyInfoOld, fileSizeCountMap);
-              handlePutKeyEvent(omKeyInfo, fileSizeCountMap);
-            } else {
-              LOG.warn("Update event does not have the old keyInfo for {}.",
-                  updatedKey);
-            }
             break;
 
           default:

@@ -88,26 +88,20 @@ public class NSSummaryTaskWithFSO extends NSSummaryTaskDbEventHandler {
           OMDBUpdateEvent<String, OmKeyInfo> keyTableUpdateEvent =
                   (OMDBUpdateEvent<String, OmKeyInfo>) omdbUpdateEvent;
           OmKeyInfo updatedKeyInfo = keyTableUpdateEvent.getValue();
-          OmKeyInfo oldKeyInfo = keyTableUpdateEvent.getOldValue();
+
 
           switch (action) {
           case PUT:
+            OmKeyInfo oldKeyInfo = getReconOMMetadataManager()
+                .getFileTable().getSkipCache(updatedKey);
+            if (oldKeyInfo != null) {
+              handleDeleteKeyEvent(oldKeyInfo, nsSummaryMap);
+            }
             handlePutKeyEvent(updatedKeyInfo, nsSummaryMap);
             break;
 
           case DELETE:
             handleDeleteKeyEvent(updatedKeyInfo, nsSummaryMap);
-            break;
-
-          case UPDATE:
-            if (oldKeyInfo != null) {
-              // delete first, then put
-              handleDeleteKeyEvent(oldKeyInfo, nsSummaryMap);
-            } else {
-              LOG.warn("Update event does not have the old keyInfo for {}.",
-                      updatedKey);
-            }
-            handlePutKeyEvent(updatedKeyInfo, nsSummaryMap);
             break;
 
           default:
@@ -120,26 +114,19 @@ public class NSSummaryTaskWithFSO extends NSSummaryTaskDbEventHandler {
           OMDBUpdateEvent<String, OmDirectoryInfo> dirTableUpdateEvent =
                   (OMDBUpdateEvent<String, OmDirectoryInfo>) omdbUpdateEvent;
           OmDirectoryInfo updatedDirectoryInfo = dirTableUpdateEvent.getValue();
-          OmDirectoryInfo oldDirectoryInfo = dirTableUpdateEvent.getOldValue();
 
           switch (action) {
           case PUT:
+            OmDirectoryInfo oldDirectoryInfo = getReconOMMetadataManager()
+                .getDirectoryTable().get(updatedKey);
+            if (oldDirectoryInfo != null) {
+              handleDeleteDirEvent(oldDirectoryInfo, nsSummaryMap);
+            }
             handlePutDirEvent(updatedDirectoryInfo, nsSummaryMap);
             break;
 
           case DELETE:
             handleDeleteDirEvent(updatedDirectoryInfo, nsSummaryMap);
-            break;
-
-          case UPDATE:
-            if (oldDirectoryInfo != null) {
-              // delete first, then put
-              handleDeleteDirEvent(oldDirectoryInfo, nsSummaryMap);
-            } else {
-              LOG.warn("Update event does not have the old dirInfo for {}.",
-                      updatedKey);
-            }
-            handlePutDirEvent(updatedDirectoryInfo, nsSummaryMap);
             break;
 
           default:

@@ -25,6 +25,7 @@ import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.hdds.utils.db.TypedTable;
 import org.apache.hadoop.ozone.recon.persistence.AbstractReconSqlDBTest;
+import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.apache.hadoop.ozone.recon.tasks.OMDBUpdateEvent.OMUpdateEventBuilder;
 import org.hadoop.ozone.recon.schema.UtilizationSchemaDefinition;
 import org.hadoop.ozone.recon.schema.tables.daos.FileCountBySizeDao;
@@ -42,7 +43,6 @@ import java.util.List;
 
 import static org.apache.hadoop.ozone.recon.tasks.OMDBUpdateEvent.OMDBUpdateAction.DELETE;
 import static org.apache.hadoop.ozone.recon.tasks.OMDBUpdateEvent.OMDBUpdateAction.PUT;
-import static org.apache.hadoop.ozone.recon.tasks.OMDBUpdateEvent.OMDBUpdateAction.UPDATE;
 import static org.hadoop.ozone.recon.schema.tables.FileCountBySizeTable.FILE_COUNT_BY_SIZE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -61,12 +61,13 @@ public class TestFileSizeCountTask extends AbstractReconSqlDBTest {
   private DSLContext dslContext;
 
   @BeforeEach
-  public void setUp() {
+  public void setUp() throws IOException {
     fileCountBySizeDao = getDao(FileCountBySizeDao.class);
     UtilizationSchemaDefinition utilizationSchemaDefinition =
         getSchemaDefinition(UtilizationSchemaDefinition.class);
     fileSizeCountTask =
-        new FileSizeCountTask(fileCountBySizeDao, utilizationSchemaDefinition);
+        new FileSizeCountTask(fileCountBySizeDao, utilizationSchemaDefinition,
+            mock(ReconOMMetadataManager.class));
     dslContext = utilizationSchemaDefinition.getDSLContext();
     // Truncate table before running each test
     dslContext.truncate(FILE_COUNT_BY_SIZE);
@@ -230,10 +231,9 @@ public class TestFileSizeCountTask extends AbstractReconSqlDBTest {
     given(updatedKey.getKeyName()).willReturn("updatedKey");
     given(updatedKey.getDataSize()).willReturn(50000L); // Bin 6
     OMDBUpdateEvent updateEvent = new OMUpdateEventBuilder()
-        .setAction(UPDATE)
+        .setAction(PUT)
         .setKey("updatedKey")
         .setValue(updatedKey)
-        .setOldValue(toBeUpdatedKey)
         .setTable(OmMetadataManagerImpl.KEY_TABLE)
         .build();
 
@@ -438,21 +438,17 @@ public class TestFileSizeCountTask extends AbstractReconSqlDBTest {
             given(omKeyInfo.getDataSize()).willReturn(1023L);
             if (keyIndex % 2 == 0) {
               omDbEventList.add(new OMUpdateEventBuilder()
-                  .setAction(UPDATE)
+                  .setAction(PUT)
                   .setKey("key" + keyIndex)
                   .setValue(omKeyInfo)
                   .setTable(OmMetadataManagerImpl.KEY_TABLE)
-                  .setOldValue(
-                      omKeyInfoList.get((volIndex * bktIndex) + keyIndex))
                   .build());
             } else {
               omDbEventList.add(new OMUpdateEventBuilder()
-                  .setAction(UPDATE)
+                  .setAction(PUT)
                   .setKey("key" + keyIndex)
                   .setValue(omKeyInfo)
                   .setTable(OmMetadataManagerImpl.FILE_TABLE)
-                  .setOldValue(
-                      omKeyInfoList.get((volIndex * bktIndex) + keyIndex))
                   .build());
             }
           }

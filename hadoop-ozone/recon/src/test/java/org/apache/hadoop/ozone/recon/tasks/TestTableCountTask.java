@@ -44,7 +44,6 @@ import static org.apache.hadoop.ozone.recon.OMMetadataManagerTestUtils.getTestRe
 import static org.apache.hadoop.ozone.recon.OMMetadataManagerTestUtils.initializeNewOmMetadataManager;
 import static org.apache.hadoop.ozone.recon.tasks.OMDBUpdateEvent.OMDBUpdateAction.DELETE;
 import static org.apache.hadoop.ozone.recon.tasks.OMDBUpdateEvent.OMDBUpdateAction.PUT;
-import static org.apache.hadoop.ozone.recon.tasks.OMDBUpdateEvent.OMDBUpdateAction.UPDATE;
 import static org.hadoop.ozone.recon.schema.tables.GlobalStatsTable.GLOBAL_STATS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -124,7 +123,7 @@ public class TestTableCountTask extends AbstractReconSqlDBTest {
       // exist in the database and there is no need to delete.
       events.add(getOMUpdateEvent("item0", mock(OmKeyInfo.class), tableName,
           DELETE));
-      events.add(getOMUpdateEvent("item1", null, tableName, UPDATE));
+      events.add(getOMUpdateEvent("item1", null, tableName, PUT));
     }
     OMUpdateEventBatch omUpdateEventBatch = new OMUpdateEventBatch(events);
     tableCountTask.process(omUpdateEventBatch);
