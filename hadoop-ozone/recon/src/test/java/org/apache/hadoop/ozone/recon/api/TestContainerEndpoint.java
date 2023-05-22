@@ -65,7 +65,6 @@ import org.apache.hadoop.ozone.recon.spi.impl.OzoneManagerServiceProviderImpl;
 import org.apache.hadoop.ozone.recon.spi.impl.StorageContainerServiceProviderImpl;
 import org.apache.hadoop.ozone.recon.tasks.ContainerKeyMapperTask;
 import org.hadoop.ozone.recon.schema.ContainerSchemaDefinition.UnHealthyContainerStates;
-import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.hadoop.ozone.recon.schema.tables.pojos.UnhealthyContainers;
 import org.junit.Assert;
 import org.junit.Before;
@@ -127,7 +126,6 @@ public class TestContainerEndpoint {
   private boolean isSetupDone = false;
   private ContainerHealthSchemaManager containerHealthSchemaManager;
   private ReconOMMetadataManager reconOMMetadataManager;
-  private ReconTaskStatusDao reconTaskStatusDao;
   private ContainerID containerID = ContainerID.valueOf(1L);
   private Pipeline pipeline;
   private PipelineID pipelineID;
@@ -194,8 +192,6 @@ public class TestContainerEndpoint {
     containerEndpoint = reconTestInjector.getInstance(ContainerEndpoint.class);
     containerHealthSchemaManager =
         reconTestInjector.getInstance(ContainerHealthSchemaManager.class);
-    reconTaskStatusDao =
-        reconTestInjector.getInstance(ReconTaskStatusDao.class);
 
     pipeline = getRandomPipeline();
     pipelineID = pipeline.getId();
@@ -292,8 +288,7 @@ public class TestContainerEndpoint {
 
   private void reprocessContainerKeyMapper() {
     ContainerKeyMapperTask containerKeyMapperTask =
-        new ContainerKeyMapperTask(reconContainerMetadataManager,
-            reconTaskStatusDao);
+        new ContainerKeyMapperTask(reconContainerMetadataManager);
     containerKeyMapperTask.reprocess(reconOMMetadataManager);
   }
 

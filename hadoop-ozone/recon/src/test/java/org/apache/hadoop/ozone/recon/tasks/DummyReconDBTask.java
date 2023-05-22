@@ -24,7 +24,6 @@ import java.util.Collections;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
-import org.hadoop.ozone.recon.schema.tables.pojos.ReconTaskStatus;
 
 /**
  * Dummy Recon task that has 3 modes of operations.
@@ -70,11 +69,6 @@ public class DummyReconDBTask implements ReconOmTask {
     } else {
       return new ImmutablePair<>(getTaskName(), true);
     }
-  }
-
-  @Override
-  public ReconTaskStatus getReconTaskStatus() {
-    return null;
   }
 
   /**

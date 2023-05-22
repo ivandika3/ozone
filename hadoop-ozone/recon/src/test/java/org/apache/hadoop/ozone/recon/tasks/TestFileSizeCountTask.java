@@ -28,7 +28,6 @@ import org.apache.hadoop.ozone.recon.persistence.AbstractReconSqlDBTest;
 import org.apache.hadoop.ozone.recon.tasks.OMDBUpdateEvent.OMUpdateEventBuilder;
 import org.hadoop.ozone.recon.schema.UtilizationSchemaDefinition;
 import org.hadoop.ozone.recon.schema.tables.daos.FileCountBySizeDao;
-import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.hadoop.ozone.recon.schema.tables.pojos.FileCountBySize;
 import org.jooq.DSLContext;
 import org.jooq.Record3;
@@ -64,12 +63,10 @@ public class TestFileSizeCountTask extends AbstractReconSqlDBTest {
   @BeforeEach
   public void setUp() {
     fileCountBySizeDao = getDao(FileCountBySizeDao.class);
-    ReconTaskStatusDao reconTaskStatusDao = getDao(ReconTaskStatusDao.class);
     UtilizationSchemaDefinition utilizationSchemaDefinition =
         getSchemaDefinition(UtilizationSchemaDefinition.class);
     fileSizeCountTask =
-        new FileSizeCountTask(fileCountBySizeDao, utilizationSchemaDefinition,
-            reconTaskStatusDao);
+        new FileSizeCountTask(fileCountBySizeDao, utilizationSchemaDefinition);
     dslContext = utilizationSchemaDefinition.getDSLContext();
     // Truncate table before running each test
     dslContext.truncate(FILE_COUNT_BY_SIZE);

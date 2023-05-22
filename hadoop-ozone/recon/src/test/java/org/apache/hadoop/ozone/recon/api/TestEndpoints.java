@@ -84,7 +84,6 @@ import org.hadoop.ozone.recon.schema.tables.daos.ContainerCountBySizeDao;
 import org.hadoop.ozone.recon.schema.tables.daos.FileCountBySizeDao;
 import org.hadoop.ozone.recon.schema.tables.daos.GlobalStatsDao;
 import org.hadoop.ozone.recon.schema.tables.pojos.ContainerCountBySize;
-import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.hadoop.ozone.recon.schema.tables.pojos.FileCountBySize;
 import org.jooq.Configuration;
 import org.jooq.DSLContext;
@@ -245,7 +244,6 @@ public class TestEndpoints extends AbstractReconSqlDBTest {
     fileCountBySizeDao = getDao(FileCountBySizeDao.class);
     containerCountBySizeDao = reconScm.getContainerCountBySizeDao();
     GlobalStatsDao globalStatsDao = getDao(GlobalStatsDao.class);
-    ReconTaskStatusDao reconTaskStatusDao = getDao(ReconTaskStatusDao.class);
     UtilizationSchemaDefinition utilizationSchemaDefinition =
         getSchemaDefinition(UtilizationSchemaDefinition.class);
     Configuration sqlConfiguration =
@@ -255,11 +253,9 @@ public class TestEndpoints extends AbstractReconSqlDBTest {
         containerCountBySizeDao,
         utilizationSchemaDefinition);
     fileSizeCountTask =
-        new FileSizeCountTask(fileCountBySizeDao, utilizationSchemaDefinition,
-            reconTaskStatusDao);
+        new FileSizeCountTask(fileCountBySizeDao, utilizationSchemaDefinition);
     tableCountTask = new TableCountTask(
-        globalStatsDao, sqlConfiguration, reconOMMetadataManager,
-        reconTaskStatusDao);
+        globalStatsDao, sqlConfiguration, reconOMMetadataManager);
     containerHealthSchemaManager =
         reconTestInjector.getInstance(ContainerHealthSchemaManager.class);
     clusterStateEndpoint =

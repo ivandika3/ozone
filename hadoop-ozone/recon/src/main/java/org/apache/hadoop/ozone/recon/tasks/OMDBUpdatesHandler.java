@@ -53,18 +53,12 @@ public class OMDBUpdatesHandler extends ManagedWriteBatch.Handler {
   private Map<Object, OMDBUpdateEvent> omdbLatestUpdateEvents
       = new HashMap<>();
   private OMDBDefinition omdbDefinition;
-  // To keep track of sequence number of OMDBUpdateEvent
-  // should be initialized as the same sequence number passed to
-  // DBStore#getUpdatesSince
-  private long currentEventSequenceNumber;
 
-  public OMDBUpdatesHandler(OMMetadataManager metadataManager,
-                            long sequenceNumber) {
+  public OMDBUpdatesHandler(OMMetadataManager metadataManager) {
     omMetadataManager = metadataManager;
     tablesNames = metadataManager.getStore().getTableNames();
     codecRegistry = metadataManager.getStore().getCodecRegistry();
     omdbDefinition = new OMDBDefinition();
-    currentEventSequenceNumber = sequenceNumber;
   }
 
   @Override
@@ -110,9 +104,6 @@ public class OMDBUpdatesHandler extends ManagedWriteBatch.Handler {
     // as key.
     Optional<Class> keyType = omdbDefinition.getKeyType(tableName);
     Optional<Class> valueType = omdbDefinition.getValueType(tableName);
-
-    // Sequence number needs to be incremented every time there is an update
-    currentEventSequenceNumber++;
     if (keyType.isPresent() && valueType.isPresent()) {
       OMDBUpdateEvent.OMUpdateEventBuilder builder =
           new OMDBUpdateEvent.OMUpdateEventBuilder<>();
@@ -120,7 +111,6 @@ public class OMDBUpdatesHandler extends ManagedWriteBatch.Handler {
       builder.setAction(action);
       Object key = codecRegistry.asObject(keyBytes, keyType.get());
       builder.setKey(key);
-      builder.setSequenceNumber(currentEventSequenceNumber);
 
       // Put new
       // Put existing --> Update

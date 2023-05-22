@@ -2922,26 +2922,26 @@
     <value>1m</value>
     <tag>OZONE, RECON</tag>
     <description>
-      The interval where Recon will check its DB for new
-      delta updates to be processed by registered Recon OM Tasks
+      The interval where Recon will check for new delta updates
+      to be processed by registered Recon OM Tasks
     </description>
   </property>
   <property>
     <name>ozone.recon.om.task.apply.initial.delay</name>
-    <value>15m</value>
+    <value>2m</value>
     <tag>OZONE, RECON</tag>
     <description>
-      Initial delay in MINUTES by Recon to apply Recon OM Tasks from Recon OM DB
+      Initial delay in MINUTES by Recon tasks to process OM update events / reinitialize tasks
     </description>
   </property>
   <property>
-    <name>ozone.recon.om.task.apply.limit</name>
-    <value>50000</value>
+    <name>ozone.recon.om.task.apply.queue.limit</name>
+    <value>1000</value>
     <tag>OZONE, RECON</tag>
     <description>
-      The limit of delta updates from the Recon OM DB to be processed by Recon OM Tasks.
-      The throughput of apply should be larger than the throughput of the number of delta updates received from OM.
-      Otherwise, Recon OM will not be able to catch up to the main OM.
+      The maximum number of pending delta updates persisted in the queue.
+      This size should be such that:
+      (queue limit * apply interval delay) > (time to reinitialize all Recon OM tasks)
     </description>
   </property>
   <property>

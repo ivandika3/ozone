@@ -29,9 +29,7 @@ import org.apache.hadoop.hdds.utils.db.TableIterator;
 import org.apache.hadoop.ozone.recon.ReconUtils;
 import org.hadoop.ozone.recon.schema.UtilizationSchemaDefinition;
 import org.hadoop.ozone.recon.schema.tables.daos.FileCountBySizeDao;
-import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.hadoop.ozone.recon.schema.tables.pojos.FileCountBySize;
-import org.hadoop.ozone.recon.schema.tables.pojos.ReconTaskStatus;
 import org.jooq.DSLContext;
 import org.jooq.Record3;
 import org.slf4j.Logger;
@@ -60,16 +58,13 @@ public class FileSizeCountTask implements ReconOmTask {
 
   private FileCountBySizeDao fileCountBySizeDao;
   private DSLContext dslContext;
-  private ReconTaskStatusDao reconTaskStatusDao;
 
   @Inject
   public FileSizeCountTask(FileCountBySizeDao fileCountBySizeDao,
                            UtilizationSchemaDefinition
-                               utilizationSchemaDefinition,
-                           ReconTaskStatusDao reconTaskStatusDao) {
+                               utilizationSchemaDefinition) {
     this.fileCountBySizeDao = fileCountBySizeDao;
     this.dslContext = utilizationSchemaDefinition.getDSLContext();
-    this.reconTaskStatusDao = reconTaskStatusDao;
   }
 
   /**
@@ -141,11 +136,6 @@ public class FileSizeCountTask implements ReconOmTask {
     return taskTables;
   }
 
-  @Override
-  public ReconTaskStatus getReconTaskStatus() {
-    return reconTaskStatusDao.fetchOneByTaskName(getTaskName());
-  }
-
   /**
    * Read the Keys from update events and update the count of files
    * pertaining to a certain upper bound.
@@ -158,19 +148,13 @@ public class FileSizeCountTask implements ReconOmTask {
     Iterator<OMDBUpdateEvent> eventIterator = events.getIterator();
     Map<FileSizeCountKey, Long> fileSizeCountMap = new HashMap<>();
     final Collection<String> taskTables = getTaskTables();
-    long lastUpdatedSequenceNumber = getTaskLastUpdatedSequenceNumber();
+
     while (eventIterator.hasNext()) {
       OMDBUpdateEvent<String, Object> omdbUpdateEvent = eventIterator.next();
       // Filter event inside process method to avoid duping
       if (!taskTables.contains(omdbUpdateEvent.getTable())) {
         continue;
       }
-
-      // Skip event if its sequence number has been seen before
-      if (omdbUpdateEvent.getSequenceNumber() <= lastUpdatedSequenceNumber) {
-        continue;
-      }
-
       String updatedKey = omdbUpdateEvent.getKey();
       Object value = omdbUpdateEvent.getValue();
       Object oldValue = omdbUpdateEvent.getOldValue();

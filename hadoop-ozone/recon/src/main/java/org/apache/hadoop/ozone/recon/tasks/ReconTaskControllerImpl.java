@@ -18,12 +18,9 @@
 
 package org.apache.hadoop.ozone.recon.tasks;
 
-import static org.apache.hadoop.ozone.recon.ReconServerConfigKeys.OZONE_RECON_OM_TASK_APPLY_LIMIT;
-import static org.apache.hadoop.ozone.recon.ReconServerConfigKeys.OZONE_RECON_OM_TASK_APPLY_LIMIT_DEFAULT;
 import static org.apache.hadoop.ozone.recon.ReconServerConfigKeys.OZONE_RECON_TASK_THREAD_COUNT_DEFAULT;
 import static org.apache.hadoop.ozone.recon.ReconServerConfigKeys.OZONE_RECON_TASK_THREAD_COUNT_KEY;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -39,13 +36,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
-import org.apache.hadoop.hdds.utils.db.DBUpdatesWrapper;
-import org.apache.hadoop.hdds.utils.db.managed.ManagedWriteBatch;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.hadoop.ozone.recon.schema.tables.pojos.ReconTaskStatus;
-import org.rocksdb.RocksDBException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -65,7 +59,6 @@ public class ReconTaskControllerImpl implements ReconTaskController {
   private Map<String, AtomicInteger> taskFailureCounter = new HashMap<>();
   private static final int TASK_FAILURE_THRESHOLD = 2;
   private ReconTaskStatusDao reconTaskStatusDao;
-  private final long applyLimitCount;
 
   @Inject
   public ReconTaskControllerImpl(OzoneConfiguration configuration,
@@ -74,8 +67,6 @@ public class ReconTaskControllerImpl implements ReconTaskController {
     reconOmTasks = new HashMap<>();
     threadCount = configuration.getInt(OZONE_RECON_TASK_THREAD_COUNT_KEY,
         OZONE_RECON_TASK_THREAD_COUNT_DEFAULT);
-    applyLimitCount = configuration.getLong(OZONE_RECON_OM_TASK_APPLY_LIMIT,
-        OZONE_RECON_OM_TASK_APPLY_LIMIT_DEFAULT);
     this.reconTaskStatusDao = reconTaskStatusDao;
     for (ReconOmTask task : tasks) {
       registerTask(task);
@@ -97,63 +88,6 @@ public class ReconTaskControllerImpl implements ReconTaskController {
     if (!reconTaskStatusDao.existsById(taskName)) {
       reconTaskStatusDao.insert(reconTaskStatusRecord);
     }
-  }
-
-  @Override
-  public synchronized void consumeOMEventsFromDB(
-      ReconOMMetadataManager omMetadataManager)
-      throws IOException, RocksDBException, InterruptedException {
-    // If there are some tasks processing failure in the previous run
-    // the fromSequence number might be lower than the last sequence number
-    // causing duplicate processing of the successful tasks.
-    // Therefore, all Recon OM Tasks should be resilient against duplicate
-    // entries.
-    long fromSequenceNumber = getReconOmTasksMinLastSeqNum();
-    long lastSeqNum = omMetadataManager.getLastSequenceNumberFromDB();
-    if (fromSequenceNumber < lastSeqNum) {
-      try (OMDBUpdatesHandler omdbUpdatesHandler =
-               new OMDBUpdatesHandler(omMetadataManager, fromSequenceNumber)) {
-        LOG.debug("From sequence number: {}, Last sequence number: {} " +
-            "Limit: {}", fromSequenceNumber, lastSeqNum, applyLimitCount);
-        DBUpdatesWrapper dbUpdatesSince = omMetadataManager.getStore()
-            .getUpdatesSince(fromSequenceNumber, applyLimitCount);
-
-        // Collecting OMDBUpdateEvent since the fromSequenceNumber
-        for (byte[] data: dbUpdatesSince.getData()) {
-          try (ManagedWriteBatch writeBatch = new ManagedWriteBatch(data)) {
-            writeBatch.iterate(omdbUpdatesHandler);
-          }
-        }
-
-        consumeOMEvents(new OMUpdateEventBatch(
-            omdbUpdatesHandler.getEvents()), omMetadataManager);
-      }
-    } else if (fromSequenceNumber > lastSeqNum) {
-      // TODO: Should we throw exception here?
-      LOG.warn("Sequence number {} is more than last sequence number {}",
-          fromSequenceNumber, lastSeqNum);
-    } else {
-      LOG.debug("Nothing to apply, " +
-              "sequence number is already at last sequence number {}",
-          lastSeqNum);
-    }
-  }
-
-  /**
-   * Get the minimum last sequence number across all the registered tasks.
-   * @return min last seq num across all the registered tasks
-   */
-  private long getReconOmTasksMinLastSeqNum() {
-    long minSeqNum = Long.MAX_VALUE;
-    for (Map.Entry<String, ReconOmTask> entry: reconOmTasks.entrySet()) {
-      ReconTaskStatus reconTaskStatus = reconTaskStatusDao
-          .fetchOneByTaskName(entry.getKey());
-      if (reconTaskStatus != null) {
-        minSeqNum = Math.min(
-            reconTaskStatus.getLastUpdatedSeqNumber(), minSeqNum);
-      }
-    }
-    return minSeqNum;
   }
 
   /**

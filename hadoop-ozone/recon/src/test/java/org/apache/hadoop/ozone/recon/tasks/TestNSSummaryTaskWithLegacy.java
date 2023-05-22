@@ -35,7 +35,6 @@ import org.apache.hadoop.ozone.recon.api.types.NSSummary;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconNamespaceSummaryManager;
 import org.apache.hadoop.ozone.recon.spi.impl.OzoneManagerServiceProviderImpl;
-import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.ClassRule;
@@ -151,8 +150,7 @@ public final class TestNSSummaryTaskWithLegacy {
 
     nSSummaryTaskWithLegacy = new NSSummaryTaskWithLegacy(
         reconNamespaceSummaryManager,
-        reconOMMetadataManager, omConfiguration,
-        reconTestInjector.getInstance(ReconTaskStatusDao.class));
+        reconOMMetadataManager, omConfiguration);
   }
 
   /**

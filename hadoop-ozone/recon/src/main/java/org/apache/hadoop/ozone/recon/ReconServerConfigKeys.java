@@ -115,12 +115,11 @@ public final class  ReconServerConfigKeys {
   public static final String OZONE_RECON_OM_TASK_APPLY_INITIAL_DELAY =
       "ozone.recon.om.task.apply.initial.delay";
   public static final String
-      OZONE_RECON_OM_TASK_APPLY_INITIAL_DELAY_DEFAULT = "15m";
+      OZONE_RECON_OM_TASK_APPLY_INITIAL_DELAY_DEFAULT = "2m";
 
-  public static final String OZONE_RECON_OM_TASK_APPLY_LIMIT =
-      "ozone.recon.om.task.apply.limit";
-  public static final long OZONE_RECON_OM_TASK_APPLY_LIMIT_DEFAULT =
-      50000;
+  public static final String OZONE_RECON_OM_TASK_APPLY_QUEUE_LIMIT =
+      "ozone.recon.om.task.apply.queue.limit";
+  public static final int OZONE_RECON_OM_TASK_APPLY_QUEUE_LIMIT_DEFAULT = 1000;
 
   public static final String OZONE_RECON_HTTP_AUTH_CONFIG_PREFIX =
       "ozone.recon.http.auth.";

@@ -123,7 +123,7 @@ public class TestOMDBUpdatesHandler {
     omMetadataManager.getDelegationTokenTable().put(identifier, 12345L);
 
     List<byte[]> writeBatches = getBytesFromOmMetaManager(0);
-    OMDBUpdatesHandler omdbUpdatesHandler = captureEvents(writeBatches, 0L);
+    OMDBUpdatesHandler omdbUpdatesHandler = captureEvents(writeBatches);
 
     List<OMDBUpdateEvent> events = omdbUpdatesHandler.getEvents();
     assertEquals(4, events.size());
@@ -133,13 +133,11 @@ public class TestOMDBUpdatesHandler {
     assertEquals(volumeKey, volEvent.getKey());
     assertEquals(args.getVolume(), ((OmVolumeArgs)volEvent.getValue())
         .getVolume());
-    assertEquals(1L, volEvent.getSequenceNumber());
 
     OMDBUpdateEvent keyEvent = events.get(1);
     assertEquals(PUT, keyEvent.getAction());
     assertEquals("/sampleVol/bucketOne/key_one", keyEvent.getKey());
     assertNull(keyEvent.getOldValue());
-    assertEquals(2L, keyEvent.getSequenceNumber());
 
     OMDBUpdateEvent updateEvent = events.get(2);
     assertEquals(UPDATE, updateEvent.getAction());
@@ -147,7 +145,6 @@ public class TestOMDBUpdatesHandler {
     assertNotNull(updateEvent.getOldValue());
     assertEquals(secondKey.getKeyName(),
         ((OmKeyInfo)updateEvent.getOldValue()).getKeyName());
-    assertEquals(3L, updateEvent.getSequenceNumber());
   }
 
   @Test
@@ -182,7 +179,7 @@ public class TestOMDBUpdatesHandler {
         .delete(omMetadataManager.getVolumeKey("nonExistingVolume"));
 
     List<byte[]> writeBatches = getBytesFromOmMetaManager(3);
-    OMDBUpdatesHandler omdbUpdatesHandler = captureEvents(writeBatches, 3L);
+    OMDBUpdatesHandler omdbUpdatesHandler = captureEvents(writeBatches);
 
     List<OMDBUpdateEvent> events = omdbUpdatesHandler.getEvents();
     assertEquals(4, events.size());
@@ -191,7 +188,6 @@ public class TestOMDBUpdatesHandler {
     assertEquals(OMDBUpdateEvent.OMDBUpdateAction.DELETE, keyEvent.getAction());
     assertEquals("/sampleVol/bucketOne/key_one", keyEvent.getKey());
     assertEquals(omKeyInfo, keyEvent.getValue());
-    assertEquals(4L, keyEvent.getSequenceNumber());
 
     OMDBUpdateEvent volEvent = events.get(1);
     assertEquals(OMDBUpdateEvent.OMDBUpdateAction.DELETE, volEvent.getAction());
@@ -199,7 +195,6 @@ public class TestOMDBUpdatesHandler {
     assertNotNull(volEvent.getValue());
     OmVolumeArgs volumeInfo = (OmVolumeArgs) volEvent.getValue();
     assertEquals("sampleVol", volumeInfo.getVolume());
-    assertEquals(5L, volEvent.getSequenceNumber());
 
     // Assert the values of non existent keys are set to null.
     OMDBUpdateEvent nonExistKey = events.get(2);
@@ -207,14 +202,12 @@ public class TestOMDBUpdatesHandler {
         nonExistKey.getAction());
     assertEquals("/sampleVol/bucketOne/key_two", nonExistKey.getKey());
     assertNull(nonExistKey.getValue());
-    assertEquals(6L, nonExistKey.getSequenceNumber());
 
     OMDBUpdateEvent nonExistVolume = events.get(3);
     assertEquals(OMDBUpdateEvent.OMDBUpdateAction.DELETE,
         nonExistVolume.getAction());
     assertEquals(nonExistVolumeKey, nonExistVolume.getKey());
     assertNull(nonExistVolume.getValue());
-    assertEquals(7L, nonExistVolume.getSequenceNumber());
   }
 
   @Test
@@ -249,7 +242,7 @@ public class TestOMDBUpdatesHandler {
         .put("/sampleVol/bucketOne/key", keyNewValue2);
 
     List<byte[]> writeBatches = getBytesFromOmMetaManager(0);
-    OMDBUpdatesHandler omdbUpdatesHandler = captureEvents(writeBatches, 0L);
+    OMDBUpdatesHandler omdbUpdatesHandler = captureEvents(writeBatches);
 
     List<OMDBUpdateEvent> events = omdbUpdatesHandler.getEvents();
     assertEquals(7, events.size());
@@ -347,11 +340,10 @@ public class TestOMDBUpdatesHandler {
   }
 
   @NotNull
-  private OMDBUpdatesHandler captureEvents(List<byte[]> writeBatches,
-                                           long sequenceNumber)
+  private OMDBUpdatesHandler captureEvents(List<byte[]> writeBatches)
       throws RocksDBException {
     OMDBUpdatesHandler omdbUpdatesHandler =
-        new OMDBUpdatesHandler(reconOmMetadataManager, sequenceNumber);
+        new OMDBUpdatesHandler(reconOmMetadataManager);
     for (byte[] data : writeBatches) {
       WriteBatch writeBatch = new WriteBatch(data);
       // Capture the events from source DB.

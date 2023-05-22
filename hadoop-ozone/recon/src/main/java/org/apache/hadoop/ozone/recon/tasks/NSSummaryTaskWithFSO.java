@@ -27,7 +27,6 @@ import org.apache.hadoop.ozone.om.helpers.WithParentObjectId;
 import org.apache.hadoop.ozone.recon.api.types.NSSummary;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconNamespaceSummaryManager;
-import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,12 +53,9 @@ public class NSSummaryTaskWithFSO extends NSSummaryTaskDbEventHandler {
                               ReconOMMetadataManager
                               reconOMMetadataManager,
                               OzoneConfiguration
-                              ozoneConfiguration,
-                              ReconTaskStatusDao
-                              reconTaskStatusDao) {
+                              ozoneConfiguration) {
     super(reconNamespaceSummaryManager,
-        reconOMMetadataManager, ozoneConfiguration,
-        reconTaskStatusDao);
+        reconOMMetadataManager, ozoneConfiguration);
   }
 
   // We only listen to updates from FSO-enabled KeyTable(FileTable) and DirTable
@@ -72,7 +68,6 @@ public class NSSummaryTaskWithFSO extends NSSummaryTaskDbEventHandler {
     final Collection<String> taskTables = getTaskTables();
     Map<Long, NSSummary> nsSummaryMap = new HashMap<>();
 
-    long lastUpdatedSequenceNumber = getTaskLastUpdatedSequenceNumber();
     while (eventIterator.hasNext()) {
       OMDBUpdateEvent<String, ? extends
               WithParentObjectId> omdbUpdateEvent = eventIterator.next();
@@ -82,11 +77,6 @@ public class NSSummaryTaskWithFSO extends NSSummaryTaskDbEventHandler {
       String table = omdbUpdateEvent.getTable();
       boolean updateOnFileTable = table.equals(FILE_TABLE);
       if (!taskTables.contains(table)) {
-        continue;
-      }
-
-      // Skip event if its sequence number has been seen before
-      if (omdbUpdateEvent.getSequenceNumber() <= lastUpdatedSequenceNumber) {
         continue;
       }
 

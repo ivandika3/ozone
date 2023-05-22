@@ -66,7 +66,7 @@ Check if Recon picks up OM data
     #   Recon's du does not yet support OBS buckets.
     Execute    ozone sh bucket create recon/api --layout=LEGACY
     Freon OCKG    n=10    args=-s 1025 -v recon -b api
-    Wait Until Keyword Succeeds     90sec      10sec        Check if Recon picks up container from OM
+    Wait Until Keyword Succeeds     180sec      10sec        Check if Recon picks up container from OM
 
 Check if Recon picks up DN heartbeats
     ${result} =         Execute                             curl --negotiate -u : -LSs ${API_ENDPOINT_URL}/datanodes

@@ -26,14 +26,11 @@ import org.apache.hadoop.ozone.recon.ReconUtils;
 import org.apache.hadoop.ozone.recon.api.types.NSSummary;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconNamespaceSummaryManager;
-import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
-import org.hadoop.ozone.recon.schema.tables.pojos.ReconTaskStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Map;
-import java.util.Objects;
 
 import static org.apache.hadoop.ozone.recon.ReconServerConfigKeys.OZONE_RECON_NSSUMMARY_FLUSH_TO_DB_MAX_THRESHOLD;
 import static org.apache.hadoop.ozone.recon.ReconServerConfigKeys.OZONE_RECON_NSSUMMARY_FLUSH_TO_DB_MAX_THRESHOLD_DEFAULT;
@@ -49,7 +46,6 @@ public class NSSummaryTaskDbEventHandler {
       LoggerFactory.getLogger(NSSummaryTaskDbEventHandler.class);
   private ReconNamespaceSummaryManager reconNamespaceSummaryManager;
   private ReconOMMetadataManager reconOMMetadataManager;
-  private ReconTaskStatusDao reconTaskStatusDao;
 
   private final long nsSummaryFlushToDBMaxThreshold;
 
@@ -58,15 +54,12 @@ public class NSSummaryTaskDbEventHandler {
                                      ReconOMMetadataManager
                                      reconOMMetadataManager,
                                      OzoneConfiguration
-                                     ozoneConfiguration,
-                                     ReconTaskStatusDao
-                                     reconTaskStatusDao) {
+                                     ozoneConfiguration) {
     this.reconNamespaceSummaryManager = reconNamespaceSummaryManager;
     this.reconOMMetadataManager = reconOMMetadataManager;
     nsSummaryFlushToDBMaxThreshold = ozoneConfiguration.getLong(
         OZONE_RECON_NSSUMMARY_FLUSH_TO_DB_MAX_THRESHOLD,
         OZONE_RECON_NSSUMMARY_FLUSH_TO_DB_MAX_THRESHOLD_DEFAULT);
-    this.reconTaskStatusDao = reconTaskStatusDao;
   }
 
   public ReconNamespaceSummaryManager getReconNamespaceSummaryManager() {
@@ -75,19 +68,6 @@ public class NSSummaryTaskDbEventHandler {
 
   public ReconOMMetadataManager getReconOMMetadataManager() {
     return reconOMMetadataManager;
-  }
-
-  public ReconTaskStatus getReconTaskStatus() {
-    return reconTaskStatusDao.fetchOneByTaskName("NSSummaryTask");
-  }
-
-  protected long getTaskLastUpdatedSequenceNumber() {
-    long lastUpdatedSequenceNumber = -1;
-    ReconTaskStatus reconTaskStatus = getReconTaskStatus();
-    if (Objects.nonNull(reconTaskStatus)) {
-      lastUpdatedSequenceNumber = reconTaskStatus.getLastUpdatedSeqNumber();
-    }
-    return lastUpdatedSequenceNumber;
   }
 
   protected void writeNSSummariesToDB(Map<Long, NSSummary> nsSummaryMap)

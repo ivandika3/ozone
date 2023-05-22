@@ -18,13 +18,11 @@
 
 package org.apache.hadoop.ozone.recon.tasks;
 
-import java.io.IOException;
 import java.util.Map;
 
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
-import org.rocksdb.RocksDBException;
 
 /**
  * Controller used by Recon to manage Tasks that are waiting on Recon events.
@@ -36,17 +34,6 @@ public interface ReconTaskController {
    * @param task task instance
    */
   void registerTask(ReconOmTask task);
-
-  /**
-   * Consume outstanding Recon's OM DB updated events to the registered tasks.
-   * @param omMetadataManager OM Metadata Manager instance
-   * @throws IOException
-   * @throws RocksDBException
-   * @throws InterruptedException
-   */
-  void consumeOMEventsFromDB(
-      ReconOMMetadataManager omMetadataManager)
-      throws IOException, RocksDBException, InterruptedException;
 
   /**
    * Pass on a set of OM DB update events to the registered tasks.

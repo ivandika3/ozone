@@ -69,6 +69,7 @@ import org.apache.hadoop.ozone.recon.ReconUtils;
 import org.apache.hadoop.ozone.recon.metrics.OzoneManagerSyncMetrics;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.apache.hadoop.ozone.recon.tasks.OMDBUpdatesHandler;
+import org.apache.hadoop.ozone.recon.tasks.OMUpdateEventBatch;
 import org.apache.hadoop.ozone.recon.tasks.ReconTaskController;
 
 import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
@@ -246,8 +247,9 @@ public class TestOzoneManagerServiceProviderImpl {
             getMockOzoneManagerClient(dbUpdatesWrapper));
 
     OMDBUpdatesHandler updatesHandler =
-        new OMDBUpdatesHandler(omMetadataManager, 0L);
-    ozoneManagerServiceProvider.getAndApplyDeltaUpdatesFromOM(0L);
+        new OMDBUpdatesHandler(omMetadataManager);
+    ozoneManagerServiceProvider.getAndApplyDeltaUpdatesFromOM(
+        0L, updatesHandler);
 
     OzoneManagerSyncMetrics metrics = ozoneManagerServiceProvider.getMetrics();
     assertEquals(4.0,
@@ -318,7 +320,10 @@ public class TestOzoneManagerServiceProviderImpl {
     assertEquals(true, dbUpdatesWrapper[2].isDBUpdateSuccess());
     assertEquals(true, dbUpdatesWrapper[3].isDBUpdateSuccess());
 
-    ozoneManagerServiceProvider.getAndApplyDeltaUpdatesFromOM(0L);
+    OMDBUpdatesHandler updatesHandler =
+        new OMDBUpdatesHandler(omMetadataManager);
+    ozoneManagerServiceProvider.getAndApplyDeltaUpdatesFromOM(
+        0L, updatesHandler);
 
     OzoneManagerSyncMetrics metrics = ozoneManagerServiceProvider.getMetrics();
     assertEquals(1.0,
@@ -326,6 +331,10 @@ public class TestOzoneManagerServiceProviderImpl {
     assertEquals(3, metrics.getNumNonZeroDeltaRequests().value());
 
     // In this method, we have to assert the "GET" path and the "APPLY" path.
+
+    // Assert GET path --> verify if the OMDBUpdatesHandler picked up the first
+    // 3 of 4 events ( 1 Vol PUT + 1 Bucket PUT + 2 Key PUTs).
+    assertEquals(3, updatesHandler.getEvents().size());
 
     // Assert APPLY path --> Verify if the OM service provider's RocksDB got
     // the first 3 changes, last change not applied.
@@ -366,7 +375,7 @@ public class TestOzoneManagerServiceProviderImpl {
 
     // Should trigger full snapshot request.
     ozoneManagerServiceProvider.syncDataFromOM();
-    ozoneManagerServiceProvider.applyTasksFromDB();
+    ozoneManagerServiceProvider.applyOMTasks();
 
     ArgumentCaptor<ReconTaskStatus> captor =
         ArgumentCaptor.forClass(ReconTaskStatus.class);
@@ -394,7 +403,8 @@ public class TestOzoneManagerServiceProviderImpl {
     when(reconTaskControllerMock.getReconTaskStatusDao())
         .thenReturn(reconTaskStatusDaoMock);
     doNothing().when(reconTaskControllerMock)
-        .consumeOMEventsFromDB(any(ReconOMMetadataManager.class));
+        .consumeOMEvents(any(OMUpdateEventBatch.class),
+            any(OMMetadataManager.class));
 
     OzoneManagerServiceProviderImpl ozoneManagerServiceProvider =
         new OzoneManagerServiceProviderImpl(configuration, omMetadataManager,
@@ -404,7 +414,7 @@ public class TestOzoneManagerServiceProviderImpl {
 
     // Should trigger delta updates.
     ozoneManagerServiceProvider.syncDataFromOM();
-    ozoneManagerServiceProvider.applyTasksFromDB();
+    ozoneManagerServiceProvider.applyOMTasks();
 
     ArgumentCaptor<ReconTaskStatus> captor =
         ArgumentCaptor.forClass(ReconTaskStatus.class);
@@ -413,7 +423,8 @@ public class TestOzoneManagerServiceProviderImpl {
     assertEquals(OmDeltaRequest.name(), captor.getValue().getTaskName());
 
     verify(reconTaskControllerMock, times(1))
-        .consumeOMEventsFromDB(any(ReconOMMetadataManager.class));
+        .consumeOMEvents(any(OMUpdateEventBatch.class),
+            any(OMMetadataManager.class));
     assertEquals(0, metrics.getNumSnapshotRequests().value());
   }
 
@@ -444,7 +455,7 @@ public class TestOzoneManagerServiceProviderImpl {
 
     // Should trigger full snapshot request.
     ozoneManagerServiceProvider.syncDataFromOM();
-    ozoneManagerServiceProvider.applyTasksFromDB();
+    ozoneManagerServiceProvider.applyOMTasks();
 
     ArgumentCaptor<ReconTaskStatus> captor =
         ArgumentCaptor.forClass(ReconTaskStatus.class);

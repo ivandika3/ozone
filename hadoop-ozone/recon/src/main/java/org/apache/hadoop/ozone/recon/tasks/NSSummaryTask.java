@@ -23,8 +23,6 @@ import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconNamespaceSummaryManager;
-import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
-import org.hadoop.ozone.recon.schema.tables.pojos.ReconTaskStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -69,7 +67,6 @@ public class NSSummaryTask implements ReconOmTask {
   private final NSSummaryTaskWithFSO nsSummaryTaskWithFSO;
   private final NSSummaryTaskWithLegacy nsSummaryTaskWithLegacy;
   private final OzoneConfiguration ozoneConfiguration;
-  private final ReconTaskStatusDao reconTaskStatusDao;
 
   @Inject
   public NSSummaryTask(ReconNamespaceSummaryManager
@@ -77,32 +74,21 @@ public class NSSummaryTask implements ReconOmTask {
                        ReconOMMetadataManager
                        reconOMMetadataManager,
                        OzoneConfiguration
-                       ozoneConfiguration,
-                       ReconTaskStatusDao
-                       reconTaskStatusDao) {
+                       ozoneConfiguration) {
     this.reconNamespaceSummaryManager = reconNamespaceSummaryManager;
     this.reconOMMetadataManager = reconOMMetadataManager;
     this.ozoneConfiguration = ozoneConfiguration;
     this.nsSummaryTaskWithFSO = new NSSummaryTaskWithFSO(
         reconNamespaceSummaryManager,
-        reconOMMetadataManager, ozoneConfiguration,
-        reconTaskStatusDao);
+        reconOMMetadataManager, ozoneConfiguration);
     this.nsSummaryTaskWithLegacy = new NSSummaryTaskWithLegacy(
         reconNamespaceSummaryManager,
-        reconOMMetadataManager, ozoneConfiguration,
-        reconTaskStatusDao);
-    this.reconTaskStatusDao = reconTaskStatusDao;
+        reconOMMetadataManager, ozoneConfiguration);
   }
 
   @Override
   public String getTaskName() {
     return "NSSummaryTask";
-  }
-
-
-  @Override
-  public ReconTaskStatus getReconTaskStatus() {
-    return reconTaskStatusDao.fetchOneByTaskName(getTaskName());
   }
 
   @Override

@@ -22,16 +22,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.apache.hadoop.ozone.recon.OMMetadataManagerTestUtils.getTestReconOmMetadataManager;
-import static org.apache.hadoop.ozone.recon.OMMetadataManagerTestUtils.initializeNewOmMetadataManager;
-import static org.apache.hadoop.ozone.recon.OMMetadataManagerTestUtils.writeDataToOm;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.nio.file.Path;
 import java.util.HashSet;
 
 import org.apache.commons.lang3.tuple.ImmutablePair;
@@ -43,7 +39,6 @@ import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.hadoop.ozone.recon.schema.tables.pojos.ReconTaskStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Class used to test ReconTaskControllerImpl.
@@ -99,49 +94,6 @@ public class TestReconTaskControllerImpl extends AbstractReconSqlDBTest {
 
     assertTrue(startTime <= taskTimeStamp && taskTimeStamp <= endTime);
     assertEquals(seqNumber, omUpdateEventBatchMock.getLastSequenceNumber());
-  }
-
-  @Test
-  public void testConsumeOMEventsFromDB(@TempDir Path tempDir)
-      throws Exception {
-    OMMetadataManager omMetadataManager =
-        initializeNewOmMetadataManager(tempDir.toFile());
-    ReconOMMetadataManager reconOMMetadataManager =
-        getTestReconOmMetadataManager(omMetadataManager,
-            tempDir.toFile());
-    writeDataToOm(reconOMMetadataManager, "key_one");
-    writeDataToOm(reconOMMetadataManager, "key_two");
-
-    ReconOmTask reconOmTaskMock =
-        getMockTask("MockTask3");
-    when(reconOmTaskMock.process(any(OMUpdateEventBatch.class)))
-        .thenReturn(new ImmutablePair<>("MockTask3", true));
-    reconTaskController.registerTask(reconOmTaskMock);
-
-    // Recon OM Task will get the sequence number to process from
-    // ReconTaskStatus
-    // Starting from sequence number 2 since initial OM DB already finished 2
-    // OM DB ops (volume creation and bucket creation).
-    ReconTaskStatus initialReconTaskStatus = new ReconTaskStatus(
-        "MockTask3",
-        System.currentTimeMillis(),
-        2L
-    );
-    reconTaskStatusDao.update(initialReconTaskStatus);
-
-    long startTime = System.currentTimeMillis();
-    reconTaskController.consumeOMEventsFromDB(reconOMMetadataManager);
-    long endTime = System.currentTimeMillis();
-
-    reconTaskStatusDao = getDao(ReconTaskStatusDao.class);
-    ReconTaskStatus reconTaskStatus = reconTaskStatusDao.findById("MockTask3");
-    long taskTimeStamp = reconTaskStatus.getLastUpdatedTimestamp();
-    long seqNumber = reconTaskStatus.getLastUpdatedSeqNumber();
-
-    assertTrue(startTime <= taskTimeStamp
-        && taskTimeStamp <= endTime);
-    // Verify that ReconTaskStatus has been updated to the last sequence number
-    assertEquals(4L, seqNumber);
   }
 
   @Test
