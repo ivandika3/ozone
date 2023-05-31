@@ -90,16 +90,16 @@ import static org.apache.hadoop.ozone.recon.ReconServerConfigKeys.OZONE_RECON_OM
 import static org.apache.hadoop.ozone.recon.ReconServerConfigKeys.OZONE_RECON_SCM_DB_DIR;
 
 /**
- * MiniMultiOMOzoneHACluster creates a complete in-process Ozone cluster
+ * MultiOMMiniOzoneHACluster creates a complete in-process Ozone cluster
  * with Multiple OM HAs and SCM HA suitable for running tests.
  * The cluster consists of a set of
  * multiple OzoneManagers HAs pointing to
  * a single StorageContainerManagers HA that manages multiple DataNodes.
  */
-public class MiniMultiOMOzoneHACluster {
+public class MultiOMMiniOzoneHACluster {
 
   public static final Logger LOG =
-      LoggerFactory.getLogger(MiniMultiOMOzoneHACluster.class);
+      LoggerFactory.getLogger(MultiOMMiniOzoneHACluster.class);
 
   private List<OzoneConfiguration> configurations;
   private List<OMHAService> omhaServiceList;
@@ -119,7 +119,7 @@ public class MiniMultiOMOzoneHACluster {
   private static final int NODE_FAILURE_TIMEOUT = 2000; // 2 seconds
 
   @SuppressWarnings("checkstyle:ParameterNumber")
-  public MiniMultiOMOzoneHACluster(
+  public MultiOMMiniOzoneHACluster(
       List<OMHAClusterSetup> omhaClusterSetups,
       HDDSClusterSetup hddsClusterSetup,
       ReconServer reconServer) {
@@ -163,7 +163,6 @@ public class MiniMultiOMOzoneHACluster {
   public String getSCMServiceId() {
     return scmhaService.getServiceId();
   }
-
 
   
   public OzoneClient getRpcClient(int clusterIndex) throws IOException {
@@ -218,7 +217,7 @@ public class MiniMultiOMOzoneHACluster {
     if (waitForLeaderElection) {
       final OzoneManager[] om = new OzoneManager[1];
       GenericTestUtils.waitFor(new Supplier<Boolean>() {
-        
+        @Override
         public Boolean get() {
           om[0] = getOMLeader(clusterIndex);
           return om[0] != null;
@@ -422,7 +421,7 @@ public class MiniMultiOMOzoneHACluster {
     if (!hddsDatanodes.isEmpty()) {
       LOG.info("Stopping the HddsDatanodes");
       hddsDatanodes.parallelStream()
-          .forEach(MiniMultiOMOzoneHACluster::stopDatanode);
+          .forEach(MultiOMMiniOzoneHACluster::stopDatanode);
     }
   }
 
@@ -470,6 +469,7 @@ public class MiniMultiOMOzoneHACluster {
   }
 
   public void stopOzoneManager(int clusterIndex, String omNodeId) {
+    LOG.info("Stopping Ozone Manager with OM Node ID: {}", omNodeId);
     OzoneManager om = omhaServiceList.get(clusterIndex)
         .getServiceById(omNodeId);
     om.stop();
@@ -557,7 +557,7 @@ public class MiniMultiOMOzoneHACluster {
   }
 
   /**
-   * Builder for configuring the MiniMultiOMOzoneHACluster to run.
+   * Builder for configuring the MultiOMMiniOzoneHACluster to run.
    */
   public static class Builder {
 
@@ -647,7 +647,7 @@ public class MiniMultiOMOzoneHACluster {
 
     /**
      * Initializes the configuration required for starting
-     * MiniMultiOMOzoneHACluster.
+     * MultiOMMiniOzoneHACluster.
      *
      * @throws IOException
      */
@@ -692,7 +692,7 @@ public class MiniMultiOMOzoneHACluster {
 
       conf.setStorageSize(OzoneConfigKeys.OZONE_SCM_BLOCK_SIZE, blockSize.get(),
           streamBufferSizeUnit.get());
-      // MiniMultiOMOzoneHACluster should have global pipeline upper limit.
+      // MultiOMMiniOzoneHACluster should have global pipeline upper limit.
       conf.setInt(ScmConfigKeys.OZONE_SCM_RATIS_PIPELINE_LIMIT,
           pipelineNumLimit >= DEFAULT_PIPELIME_LIMIT ?
               pipelineNumLimit : DEFAULT_PIPELIME_LIMIT);
@@ -719,7 +719,7 @@ public class MiniMultiOMOzoneHACluster {
     }
 
     
-    public MiniMultiOMOzoneHACluster build() throws IOException {
+    public MultiOMMiniOzoneHACluster build() throws IOException {
       if (numOfOMClusters <= 0) {
         throw new IllegalArgumentException(
             "Number of OM clusters must be more than zero.");
@@ -784,7 +784,7 @@ public class MiniMultiOMOzoneHACluster {
           inactiveSCMs,
           hddsDatanodes
       );
-      MiniMultiOMOzoneHACluster cluster = new MiniMultiOMOzoneHACluster(
+      MultiOMMiniOzoneHACluster cluster = new MultiOMMiniOzoneHACluster(
           omhaClusterSetups,
           hddsClusterSetup,
           reconServer
@@ -971,7 +971,7 @@ public class MiniMultiOMOzoneHACluster {
       while (true) {
         try {
           initCommonOMHAConfig();
-          for (int i = 1; i <= numOfOMClusters; i++) {
+          for (int i = 0; i < numOfOMClusters; i++) {
             activeOMs.add(new ArrayList<>());
             inactiveOMs.add(new ArrayList<>());
 
@@ -1006,11 +1006,11 @@ public class MiniMultiOMOzoneHACluster {
 
               if (j <= numOfOMsPerCluster) {
                 om.start();
-                activeOMs.get(i-1).add(om);
+                activeOMs.get(i).add(om);
                 LOG.info("Started OzoneManager {} RPC server at {}", nodeId,
                     om.getOmRpcServerAddr());
               } else {
-                inactiveOMs.get(i-1).add(om);
+                inactiveOMs.get(i).add(om);
                 LOG.info("Intialized OzoneManager at {}. This OM is currently "
                     + "inactive (not running).", om.getOmRpcServerAddr());
               }
@@ -1171,35 +1171,34 @@ public class MiniMultiOMOzoneHACluster {
      */
     private void initOMHAConfig(int basePort, int omClusterIndex)
         throws IOException {
-      for (String omServiceId: omServiceIds) {
-        conf.set(OMConfigKeys.OZONE_OM_INTERNAL_SERVICE_ID, omServiceId);
-        String omNodesKey = ConfUtils.addKeySuffixes(
-            OMConfigKeys.OZONE_OM_NODES_KEY, omServiceId);
-        List<String> omNodeIds = new ArrayList<>();
+      String omServiceId = omServiceIds.get(omClusterIndex);
+      conf.set(OMConfigKeys.OZONE_OM_INTERNAL_SERVICE_ID, omServiceId);
+      String omNodesKey = ConfUtils.addKeySuffixes(
+          OMConfigKeys.OZONE_OM_NODES_KEY, omServiceId);
+      List<String> omNodeIds = new ArrayList<>();
 
-        int port = basePort;
+      int port = basePort;
 
-        for (int i = 1; i <= numOfOMsPerCluster; i++, port+=6) {
-          String omNodeId = getOmNodeId(omClusterIndex, i);
-          omNodeIds.add(omNodeId);
+      for (int i = 1; i <= numOfOMsPerCluster; i++, port+=6) {
+        String omNodeId = getOmNodeId(omClusterIndex, i);
+        omNodeIds.add(omNodeId);
 
-          String omAddrKey = ConfUtils.addKeySuffixes(
-              OMConfigKeys.OZONE_OM_ADDRESS_KEY, omServiceId, omNodeId);
-          String omHttpAddrKey = ConfUtils.addKeySuffixes(
-              OMConfigKeys.OZONE_OM_HTTP_ADDRESS_KEY, omServiceId, omNodeId);
-          String omHttpsAddrKey = ConfUtils.addKeySuffixes(
-              OMConfigKeys.OZONE_OM_HTTPS_ADDRESS_KEY, omServiceId, omNodeId);
-          String omRatisPortKey = ConfUtils.addKeySuffixes(
-              OMConfigKeys.OZONE_OM_RATIS_PORT_KEY, omServiceId, omNodeId);
+        String omAddrKey = ConfUtils.addKeySuffixes(
+            OMConfigKeys.OZONE_OM_ADDRESS_KEY, omServiceId, omNodeId);
+        String omHttpAddrKey = ConfUtils.addKeySuffixes(
+            OMConfigKeys.OZONE_OM_HTTP_ADDRESS_KEY, omServiceId, omNodeId);
+        String omHttpsAddrKey = ConfUtils.addKeySuffixes(
+            OMConfigKeys.OZONE_OM_HTTPS_ADDRESS_KEY, omServiceId, omNodeId);
+        String omRatisPortKey = ConfUtils.addKeySuffixes(
+            OMConfigKeys.OZONE_OM_RATIS_PORT_KEY, omServiceId, omNodeId);
 
-          conf.set(omAddrKey, "127.0.0.1:" + port);
-          conf.set(omHttpAddrKey, "127.0.0.1:" + (port + 2));
-          conf.set(omHttpsAddrKey, "127.0.0.1:" + (port + 3));
-          conf.setInt(omRatisPortKey, port + 4);
-        }
-
-        conf.set(omNodesKey, String.join(",", omNodeIds));
+        conf.set(omAddrKey, "127.0.0.1:" + port);
+        conf.set(omHttpAddrKey, "127.0.0.1:" + (port + 2));
+        conf.set(omHttpsAddrKey, "127.0.0.1:" + (port + 3));
+        conf.setInt(omRatisPortKey, port + 4);
       }
+
+      conf.set(omNodesKey, String.join(",", omNodeIds));
     }
 
     private void initCommonOMHAConfig() {
@@ -1845,10 +1844,10 @@ public class MiniMultiOMOzoneHACluster {
 
   private static final class ExitManagerForOM extends ExitManager {
 
-    private MiniMultiOMOzoneHACluster cluster;
+    private MultiOMMiniOzoneHACluster cluster;
     private String omNodeId;
 
-    private ExitManagerForOM(MiniMultiOMOzoneHACluster cluster, String nodeId) {
+    private ExitManagerForOM(MultiOMMiniOzoneHACluster cluster, String nodeId) {
       this.cluster = cluster;
       this.omNodeId = nodeId;
     }

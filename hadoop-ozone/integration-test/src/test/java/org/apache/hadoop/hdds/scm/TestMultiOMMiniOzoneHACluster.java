@@ -20,7 +20,7 @@
 package org.apache.hadoop.hdds.scm;
 
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
-import org.apache.hadoop.ozone.MiniMultiOMOzoneHACluster;
+import org.apache.hadoop.ozone.MultiOMMiniOzoneHACluster;
 import org.apache.hadoop.ozone.OzoneConfigKeys;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.ozone.test.GenericTestUtils;
@@ -47,12 +47,12 @@ import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_ADMINISTRATORS_WILDC
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_OPEN_KEY_EXPIRE_THRESHOLD_SECONDS;
 
 /**
- * This class tests MiniMultiOMOzoneHACluster.
+ * This class tests MultiOMMiniOzoneHACluster.
  */
-public class TestMiniMultiOMOzoneHACluster {
+public class TestMultiOMMiniOzoneHACluster {
 
   // Multiple Ozone clusters with the same SCM instance
-  private static MiniMultiOMOzoneHACluster cluster;
+  private static MultiOMMiniOzoneHACluster cluster;
   private static OzoneConfiguration conf;
   private String clusterId;
   private List<String> omServiceIds;
@@ -62,7 +62,7 @@ public class TestMiniMultiOMOzoneHACluster {
   private int numOfOmsPerCluster = 3;
   private int numOfOmClusters = 2;
   private static final Logger LOG =
-      LoggerFactory.getLogger(TestMiniMultiOMOzoneHACluster.class);
+      LoggerFactory.getLogger(TestMultiOMMiniOzoneHACluster.class);
 
 
   @Before
@@ -79,7 +79,7 @@ public class TestMiniMultiOMOzoneHACluster {
     conf.set(OzoneConfigKeys.OZONE_ADMINISTRATORS,
         OZONE_ADMINISTRATORS_WILDCARD);
     conf.setInt(OZONE_OPEN_KEY_EXPIRE_THRESHOLD_SECONDS, 2);
-    cluster = new MiniMultiOMOzoneHACluster.Builder(conf)
+    cluster = new MultiOMMiniOzoneHACluster.Builder(conf)
         .setClusterId(clusterId)
         .setScmId(scmId)
         .setOMServiceIds(omServiceIds)
