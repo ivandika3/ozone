@@ -118,6 +118,7 @@ public class TestMultiOzoneManagerHAWithData extends TestMultiOzoneManagerHA {
       testFileOperationsWithNonRecursive(i);
       testKeysDelete(i);
     }
+    testKeysDeleteInterleaved();
   }
 
   private void testFileOperationsWithRecursive(int index) throws Exception {
@@ -196,6 +197,66 @@ public class TestMultiOzoneManagerHAWithData extends TestMultiOzoneManagerHA {
       // return error codee PARTIAL_DElETE.
       Assert.assertEquals(PARTIAL_DELETE, ex.getResult());
     }
+  }
+
+  private void testKeysDeleteInterleaved() throws Exception {
+    assert getNumOfOmClusters() >= 2;
+    // Setup buckets with the same name
+    OzoneBucket cluster1Bucket = setupBucket(0);
+    OzoneBucket cluster2Bucket = setupBucket(1);
+
+    String data = "random data";
+    String keyName1 = "dir/file1";
+    String keyName2 = "dir/file2";
+    String keyName3 = "dir/file3";
+    String keyName4 = "dir/file4";
+
+    List<String> keyList1 = new ArrayList<>();
+    keyList1.add(keyName2);
+    keyList1.add(keyName3);
+
+    // Interleaving creation of keys
+    testCreateFile(cluster1Bucket, keyName1, data, true, false);
+    testCreateFile(cluster2Bucket, keyName1, data, true, false);
+    testCreateFile(cluster1Bucket, keyName2, data, true, false);
+    testCreateFile(cluster2Bucket, keyName2, data, true, false);
+    testCreateFile(cluster1Bucket, keyName3, data, true, false);
+    testCreateFile(cluster2Bucket, keyName3, data, true, false);
+    testCreateFile(cluster1Bucket, keyName4, data, true, false);
+    testCreateFile(cluster2Bucket, keyName4, data, true, false);
+
+    // Delete keyName1 use deleteKey api.
+    cluster1Bucket.deleteKey(keyName1);
+    cluster2Bucket.deleteKey(keyName1);
+
+    // Delete keyName2 and keyName3 in keyList1 using the deleteKeys api.
+    cluster2Bucket.deleteKeys(keyList1);
+    cluster1Bucket.deleteKeys(keyList1);
+
+    // In keyList2 keyName3 was previously deleted and KeyName4 exists .
+    List<String> keyList2 = new ArrayList<>();
+    keyList2.add(keyName3);
+    keyList2.add(keyName4);
+
+    // Because keyName3 has been deleted, there should be a KEY_NOT_FOUND
+    // exception. In this case, we test for deletion failure.
+    try {
+      cluster1Bucket.deleteKeys(keyList2);
+      fail("cluster1 testFilesDelete");
+    } catch (OMException ex) {
+      // The expected exception PARTIAL_DELETE, as if not able to delete, we
+      // return error codee PARTIAL_DElETE.
+      Assert.assertEquals(PARTIAL_DELETE, ex.getResult());
+    }
+
+    // Verify for cluster2's bucket
+    try {
+      cluster2Bucket.deleteKeys(keyList2);
+      fail("cluster2 testFilesDelete");
+    } catch (OMException ex) {
+      Assert.assertEquals(PARTIAL_DELETE, ex.getResult());
+    }
+
   }
 
 
