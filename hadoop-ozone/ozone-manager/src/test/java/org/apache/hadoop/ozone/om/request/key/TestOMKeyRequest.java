@@ -161,6 +161,8 @@ public class TestOMKeyRequest {
     when(ozoneManager.getScmBlockSize()).thenReturn(scmBlockSize);
     when(ozoneManager.getPreallocateBlocksMax()).thenReturn(2);
     when(ozoneManager.isGrpcBlockTokenEnabled()).thenReturn(false);
+    when(ozoneManager.getOMServiceId()).thenReturn(
+        UUID.randomUUID().toString());
     when(ozoneManager.getOMNodeId()).thenReturn(UUID.randomUUID().toString());
     when(scmClient.getBlockClient()).thenReturn(scmBlockLocationProtocol);
     when(ozoneManager.getKeyManager()).thenReturn(keyManager);
