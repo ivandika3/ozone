@@ -114,6 +114,9 @@ public class MultiOMMiniOzoneHACluster {
   private int waitForClusterToBeReadyTimeout = 120000; // 2 min
   private CertificateClient caClient;
 
+  // Timeout for transfer leadership to finish
+  private int waitForTransferLeadershipTimeout = 30000; // 30 seconds
+
   private static final Random RANDOM = new Random();
   private static final int RATIS_RPC_TIMEOUT = 1000; // 1 second
   private static final int NODE_FAILURE_TIMEOUT = 2000; // 2 seconds
@@ -147,16 +150,16 @@ public class MultiOMMiniOzoneHACluster {
   }
 
 
-  public OzoneConfiguration getConf(int clusterIndex) {
-    return configurations.get(clusterIndex);
+  public OzoneConfiguration getConf(int haServiceIndex) {
+    return configurations.get(haServiceIndex);
   }
 
-  public void setConf(int clusterIndex, OzoneConfiguration newConf) {
-    this.configurations.set(clusterIndex, newConf);
+  public void setConf(int haServiceIndex, OzoneConfiguration newConf) {
+    this.configurations.set(haServiceIndex, newConf);
   }
   
-  public String getOMServiceId(int clusterIndex) {
-    return omhaServiceList.get(clusterIndex).getServiceId();
+  public String getOMServiceId(int haServiceIndex) {
+    return omhaServiceList.get(haServiceIndex).getServiceId();
   }
 
   
@@ -165,20 +168,20 @@ public class MultiOMMiniOzoneHACluster {
   }
 
   
-  public OzoneClient getRpcClient(int clusterIndex) throws IOException {
-    String omServiceId = omhaServiceList.get(clusterIndex).getServiceId();
+  public OzoneClient getRpcClient(int haServiceIndex) throws IOException {
+    String omServiceId = omhaServiceList.get(haServiceIndex).getServiceId();
     if (omServiceId == null) {
       // Non-HA cluster.
-      return OzoneClientFactory.getRpcClient(getConf(clusterIndex));
+      return OzoneClientFactory.getRpcClient(getConf(haServiceIndex));
     } else {
       // HA cluster
       return OzoneClientFactory.getRpcClient(omServiceId,
-          getConf(clusterIndex));
+          getConf(haServiceIndex));
     }
   }
 
-  public boolean isOMActive(int clusterIndex, String omNodeId) {
-    return omhaServiceList.get(clusterIndex).isServiceActive(omNodeId);
+  public boolean isOMActive(int haServiceIndex, String omNodeId) {
+    return omhaServiceList.get(haServiceIndex).isServiceActive(omNodeId);
   }
 
   public boolean isSCMActive(String scmNodeId) {
@@ -189,18 +192,18 @@ public class MultiOMMiniOzoneHACluster {
     return this.scmhaService.getServiceById(scmNodeId);
   }
 
-  public OzoneManager getOzoneManager(int clusterIndex, int serviceIndex) {
-    return this.omhaServiceList.get(clusterIndex)
+  public OzoneManager getOzoneManager(int haServiceIndex, int serviceIndex) {
+    return this.omhaServiceList.get(haServiceIndex)
         .getServiceByIndex(serviceIndex);
   }
 
-  public OzoneManager getOzoneManager(int clusterIndex, String omNodeId) {
-    return this.omhaServiceList.get(clusterIndex)
+  public OzoneManager getOzoneManager(int haServiceIndex, String omNodeId) {
+    return this.omhaServiceList.get(haServiceIndex)
         .getServiceById(omNodeId);
   }
 
-  public List<OzoneManager> getOzoneManagersList(int clusterIndex) {
-    return this.omhaServiceList.get(clusterIndex).getServices();
+  public List<OzoneManager> getOzoneManagersList(int haServiceIndex) {
+    return this.omhaServiceList.get(haServiceIndex).getServices();
   }
 
   public List<StorageContainerManager> getStorageContainerManagersList() {
@@ -211,7 +214,7 @@ public class MultiOMMiniOzoneHACluster {
     return this.scmhaService.getServiceByIndex(index);
   }
 
-  public OzoneManager getOMLeader(int clusterIndex,
+  public OzoneManager getOMLeader(int haServiceIndex,
       boolean waitForLeaderElection)
       throws TimeoutException, InterruptedException {
     if (waitForLeaderElection) {
@@ -219,13 +222,13 @@ public class MultiOMMiniOzoneHACluster {
       GenericTestUtils.waitFor(new Supplier<Boolean>() {
         @Override
         public Boolean get() {
-          om[0] = getOMLeader(clusterIndex);
+          om[0] = getOMLeader(haServiceIndex);
           return om[0] != null;
         }
       }, 200, waitForClusterToBeReadyTimeout);
       return om[0];
     } else {
-      return getOMLeader(clusterIndex);
+      return getOMLeader(haServiceIndex);
     }
   }
 
@@ -233,9 +236,9 @@ public class MultiOMMiniOzoneHACluster {
    * Get OzoneManager leader object.
    * @return OzoneManager object, null if there isn't one or more than one
    */
-  public OzoneManager getOMLeader(int clusterIndex) {
+  public OzoneManager getOMLeader(int haServiceIndex) {
     OzoneManager res = null;
-    for (OzoneManager ozoneManager : this.omhaServiceList.get(clusterIndex)
+    for (OzoneManager ozoneManager : this.omhaServiceList.get(haServiceIndex)
         .getActiveServices()) {
       if (ozoneManager.isLeaderReady()) {
         if (res != null) {
@@ -250,12 +253,31 @@ public class MultiOMMiniOzoneHACluster {
     return res;
   }
 
+  public OzoneManager transferOMLeadership(int haServiceIndex, String nodeId)
+      throws TimeoutException, InterruptedException, IOException {
+    OzoneManager previousLeader = getOMLeader(haServiceIndex);
+    if (previousLeader.getOMNodeId().equals(nodeId)) {
+      return previousLeader;
+    }
+
+    previousLeader.transferLeadership(nodeId);
+    final OzoneManager[] newLeader = new OzoneManager[1];
+    GenericTestUtils.waitFor(new Supplier<Boolean>() {
+      @Override
+      public Boolean get() {
+        newLeader[0] = getOMLeader(haServiceIndex);
+        return newLeader[0].equals(nodeId);
+      }
+    }, 200, waitForTransferLeadershipTimeout);
+    return newLeader[0];
+  }
+
   /**
    * Start a previously inactive OM.
    */
-  public void startInactiveOM(int clusterIndex, String omNodeID)
+  public void startInactiveOM(int haServiceIndex, String omNodeID)
       throws IOException {
-    omhaServiceList.get(clusterIndex).startInactiveService(omNodeID,
+    omhaServiceList.get(haServiceIndex).startInactiveService(omNodeID,
         OzoneManager::start);
   }
 
@@ -279,8 +301,8 @@ public class MultiOMMiniOzoneHACluster {
   }
 
   
-  public void restartOzoneManager(int clusterIndex) throws IOException {
-    for (OzoneManager ozoneManager : this.omhaServiceList.get(clusterIndex)
+  public void restartOzoneManager(int haServiceIndex) throws IOException {
+    for (OzoneManager ozoneManager : this.omhaServiceList.get(haServiceIndex)
         .getServices()) {
       ozoneManager.stop();
       ozoneManager.restart();
@@ -379,7 +401,7 @@ public class MultiOMMiniOzoneHACluster {
     try {
       LOG.info("Shutting down the Mini Ozone Cluster");
       File baseDir = new File(GenericTestUtils.getTempPath(
-          MiniOzoneClusterImpl.class.getSimpleName() + "-" +
+          MultiOMMiniOzoneHACluster.class.getSimpleName() + "-" +
               getClusterId()));
       stop();
       FileUtils.deleteDirectory(baseDir);
@@ -460,21 +482,21 @@ public class MultiOMMiniOzoneHACluster {
     }
   }
 
-  public void stopOzoneManager(int clusterIndex, int omNodeIndex) {
-    OzoneManager om = omhaServiceList.get(clusterIndex).
+  public void stopOzoneManager(int haServiceIndex, int omNodeIndex) {
+    OzoneManager om = omhaServiceList.get(haServiceIndex).
         getServiceByIndex(omNodeIndex);
     om.stop();
     om.join();
-    omhaServiceList.get(clusterIndex).deactivate(om);
+    omhaServiceList.get(haServiceIndex).deactivate(om);
   }
 
-  public void stopOzoneManager(int clusterIndex, String omNodeId) {
+  public void stopOzoneManager(int haServiceIndex, String omNodeId) {
     LOG.info("Stopping Ozone Manager with OM Node ID: {}", omNodeId);
-    OzoneManager om = omhaServiceList.get(clusterIndex)
+    OzoneManager om = omhaServiceList.get(haServiceIndex)
         .getServiceById(omNodeId);
     om.stop();
     om.join();
-    omhaServiceList.get(clusterIndex).deactivate(om);
+    omhaServiceList.get(haServiceIndex).deactivate(om);
   }
 
   /**
@@ -953,8 +975,8 @@ public class MultiOMMiniOzoneHACluster {
           TimeUnit.MILLISECONDS);
     }
 
-    private String getOmNodeId(int clusterIndex, int nodeId) {
-      return OM_NODE_ID_PREFIX + clusterIndex + "-" + nodeId;
+    private String getOmNodeId(int nodeId) {
+      return OM_NODE_ID_PREFIX + nodeId;
     }
 
     /**
@@ -980,7 +1002,7 @@ public class MultiOMMiniOzoneHACluster {
 
             for (int j = 1; j <= numOfOMsPerCluster; j++) {
               // Set nodeId
-              String nodeId = getOmNodeId(i, j);
+              String nodeId = getOmNodeId(j);
               OzoneConfiguration config = new OzoneConfiguration(conf);
               config.set(OMConfigKeys.OZONE_OM_NODE_ID_KEY, nodeId);
               // Set the OM http(s) address to null so that the cluster picks
@@ -989,8 +1011,13 @@ public class MultiOMMiniOzoneHACluster {
               config.set(OMConfigKeys.OZONE_OM_HTTPS_ADDRESS_KEY, "");
 
               // Set metadata/DB dir base path
-              String metaDirPath = path + "/" + nodeId;
+              String metaDirPath = path + "/" + i + "/" + nodeId;
               config.set(OZONE_METADATA_DIRS, metaDirPath);
+
+              config.set(OMConfigKeys.OZONE_OM_RATIS_STORAGE_DIR,
+                  metaDirPath + "/ratis");
+              config.set(OMConfigKeys.OZONE_OM_RATIS_SNAPSHOT_DIR,
+                  metaDirPath + "/ratis-snapshot");
 
               // Set non standard layout version if needed.
               omLayoutVersion.ifPresent(integer ->
@@ -1169,9 +1196,9 @@ public class MultiOMMiniOzoneHACluster {
     /**
      * Initialize HA related configurations.
      */
-    private void initOMHAConfig(int basePort, int omClusterIndex)
+    private void initOMHAConfig(int basePort, int omhaServiceIndex)
         throws IOException {
-      String omServiceId = omServiceIds.get(omClusterIndex);
+      String omServiceId = omServiceIds.get(omhaServiceIndex);
       conf.set(OMConfigKeys.OZONE_OM_INTERNAL_SERVICE_ID, omServiceId);
       String omNodesKey = ConfUtils.addKeySuffixes(
           OMConfigKeys.OZONE_OM_NODES_KEY, omServiceId);
@@ -1180,7 +1207,7 @@ public class MultiOMMiniOzoneHACluster {
       int port = basePort;
 
       for (int i = 1; i <= numOfOMsPerCluster; i++, port+=6) {
-        String omNodeId = getOmNodeId(omClusterIndex, i);
+        String omNodeId = getOmNodeId(i);
         omNodeIds.add(omNodeId);
 
         String omAddrKey = ConfUtils.addKeySuffixes(
@@ -1231,7 +1258,7 @@ public class MultiOMMiniOzoneHACluster {
     public Builder setClusterId(String id) {
       clusterId = id;
       path = GenericTestUtils.getTempPath(
-          MiniOzoneClusterImpl.class.getSimpleName() + "-" + clusterId);
+          MultiOMMiniOzoneHACluster.class.getSimpleName() + "-" + clusterId);
       return this;
     }
 
@@ -1495,21 +1522,21 @@ public class MultiOMMiniOzoneHACluster {
       return this;
     }
 
-    public List<OzoneManager> getActiveOMs(int clusterIndex) {
-      return activeOMs.get(clusterIndex);
+    public List<OzoneManager> getActiveOMs(int haServiceIndex) {
+      return activeOMs.get(haServiceIndex);
     }
 
-    public List<OzoneManager> getInactiveOMs(int clusterIndex) {
-      return inactiveOMs.get(clusterIndex);
+    public List<OzoneManager> getInactiveOMs(int haServiceIndex) {
+      return inactiveOMs.get(haServiceIndex);
     }
   }
 
   /**
    * Bootstrap new OM by updating existing OM configs.
    */
-  public void bootstrapOzoneManager(int clusterIndex, String omNodeId)
+  public void bootstrapOzoneManager(int haServiceIndex, String omNodeId)
       throws Exception {
-    bootstrapOzoneManager(clusterIndex, omNodeId, true, false);
+    bootstrapOzoneManager(haServiceIndex, omNodeId, true, false);
   }
 
   /**
@@ -1520,7 +1547,7 @@ public class MultiOMMiniOzoneHACluster {
    * @param force if true, start new OM with FORCE_BOOTSTRAP option.
    *              Otherwise, start new OM with BOOTSTRAP option.
    */
-  public void bootstrapOzoneManager(int clusterIndex, String omNodeId,
+  public void bootstrapOzoneManager(int haServiceIndex, String omNodeId,
       boolean updateConfigs, boolean force) throws Exception {
 
     // Set testReloadConfigFlag to true so that
@@ -1531,33 +1558,33 @@ public class MultiOMMiniOzoneHACluster {
     int retryCount = 0;
     OzoneManager om = null;
 
-    OzoneManager omLeader = getOMLeader(clusterIndex, true);
+    OzoneManager omLeader = getOMLeader(haServiceIndex, true);
     long leaderSnapshotIndex = omLeader.getRatisSnapshotIndex();
 
     while (true) {
       try {
         List<Integer> portSet = getFreePortList(4);
-        OzoneConfiguration newConf = addNewOMToConfig(clusterIndex,
-            getOMServiceId(clusterIndex), omNodeId, portSet);
+        OzoneConfiguration newConf = addNewOMToConfig(haServiceIndex,
+            getOMServiceId(haServiceIndex), omNodeId, portSet);
 
         if (updateConfigs) {
-          updateOMConfigs(clusterIndex, newConf);
+          updateOMConfigs(haServiceIndex, newConf);
         }
 
-        om = bootstrapNewOM(clusterIndex, omNodeId, newConf, force);
+        om = bootstrapNewOM(haServiceIndex, omNodeId, newConf, force);
 
         LOG.info("Bootstrapped OzoneManager {} RPC server at {}", omNodeId,
             om.getOmRpcServerAddr());
 
         // Add new OMs to cluster's in memory map and update existing OMs conf.
-        setConf(clusterIndex, newConf);
+        setConf(haServiceIndex, newConf);
 
         break;
       } catch (IOException e) {
         // Existing OM config could have been updated with new conf. Reset it.
-        for (OzoneManager existingOM : omhaServiceList.get(clusterIndex)
+        for (OzoneManager existingOM : omhaServiceList.get(haServiceIndex)
             .getServices()) {
-          existingOM.setConfiguration(getConf(clusterIndex));
+          existingOM.setConfiguration(getConf(haServiceIndex));
         }
         if (e instanceof BindException ||
             e.getCause() instanceof BindException) {
@@ -1572,17 +1599,17 @@ public class MultiOMMiniOzoneHACluster {
 
     waitForBootstrappedNodeToBeReady(om, leaderSnapshotIndex);
     if (updateConfigs) {
-      waitForConfigUpdateOnActiveOMs(clusterIndex, omNodeId);
+      waitForConfigUpdateOnActiveOMs(haServiceIndex, omNodeId);
     }
   }
 
   /**
    * Set the configs for new OMs.
    */
-  private OzoneConfiguration addNewOMToConfig(int clusterIndex,
+  private OzoneConfiguration addNewOMToConfig(int haServiceIndex,
       String omServiceId, String omNodeId, List<Integer> portList) {
 
-    OzoneConfiguration newConf = new OzoneConfiguration(getConf(clusterIndex));
+    OzoneConfiguration newConf = new OzoneConfiguration(getConf(haServiceIndex));
     String omNodesKey = ConfUtils.addKeySuffixes(
         OMConfigKeys.OZONE_OM_NODES_KEY, omServiceId);
     StringBuilder omNodesKeyValue = new StringBuilder();
@@ -1611,8 +1638,8 @@ public class MultiOMMiniOzoneHACluster {
   /**
    * Update the configurations of the given list of OMs.
    */
-  public void updateOMConfigs(int clusterIndex, OzoneConfiguration newConf) {
-    for (OzoneManager om : omhaServiceList.get(clusterIndex)
+  public void updateOMConfigs(int haServiceIndex, OzoneConfiguration newConf) {
+    for (OzoneManager om : omhaServiceList.get(haServiceIndex)
         .getActiveServices()) {
       om.setConfiguration(newConf);
     }
@@ -1622,7 +1649,7 @@ public class MultiOMMiniOzoneHACluster {
    * Start a new OM in Bootstrap mode. Configs (address and ports) for the new
    * OM must already be set in the newConf.
    */
-  private OzoneManager bootstrapNewOM(int clusterIndex,
+  private OzoneManager bootstrapNewOM(int haServiceIndex,
                                       String nodeId, OzoneConfiguration newConf,
                                       boolean force)
       throws IOException, AuthenticationException {
@@ -1633,7 +1660,7 @@ public class MultiOMMiniOzoneHACluster {
     config.set(OMConfigKeys.OZONE_OM_NODE_ID_KEY, nodeId);
 
     // Set metadata/DB dir base path
-    String metaDirPath = clusterMetaPaths.get(clusterIndex) + "/" + nodeId;
+    String metaDirPath = clusterMetaPaths.get(haServiceIndex) + "/" + nodeId;
     config.set(OZONE_METADATA_DIRS, metaDirPath);
 
     OzoneManager.omInit(config);
@@ -1648,10 +1675,10 @@ public class MultiOMMiniOzoneHACluster {
 
     ExitManagerForOM exitManager = new ExitManagerForOM(this, nodeId);
     om.setExitManagerForTesting(exitManager);
-    omhaServiceList.get(clusterIndex).addInstance(om, false);
+    omhaServiceList.get(haServiceIndex).addInstance(om, false);
 
     om.start();
-    omhaServiceList.get(clusterIndex).activate(om);
+    omhaServiceList.get(haServiceIndex).activate(om);
 
     return om;
   }
@@ -1674,16 +1701,16 @@ public class MultiOMMiniOzoneHACluster {
     }, 1000, waitForClusterToBeReadyTimeout);
   }
 
-  private void waitForConfigUpdateOnActiveOMs(int clusterIndex,
+  private void waitForConfigUpdateOnActiveOMs(int haServiceIndex,
       String newOMNodeId) throws Exception {
-    OzoneManager newOMNode = omhaServiceList.get(clusterIndex)
+    OzoneManager newOMNode = omhaServiceList.get(haServiceIndex)
         .getServiceById(newOMNodeId);
     OzoneManagerRatisServer newOMRatisServer = newOMNode.getOmRatisServer();
     GenericTestUtils.waitFor(() -> {
       // Each existing active OM should contain the new OM in its peerList.
       // Also, the new OM should contain each existing active OM in it's OM
       // peer list and RatisServer peerList.
-      for (OzoneManager om : omhaServiceList.get(clusterIndex)
+      for (OzoneManager om : omhaServiceList.get(haServiceIndex)
           .getActiveServices()) {
         if (!om.doesPeerExist(newOMNodeId)) {
           return false;
@@ -1699,8 +1726,8 @@ public class MultiOMMiniOzoneHACluster {
     }, 1000, waitForClusterToBeReadyTimeout);
   }
 
-  public void setupExitManagerForTesting(int clusterIndex) {
-    for (OzoneManager om : omhaServiceList.get(clusterIndex).getServices()) {
+  public void setupExitManagerForTesting(int haServiceIndex) {
+    for (OzoneManager om : omhaServiceList.get(haServiceIndex).getServices()) {
       om.setExitManagerForTesting(new ExitManagerForOM(this, om.getOMNodeId()));
     }
   }
@@ -1853,18 +1880,18 @@ public class MultiOMMiniOzoneHACluster {
     }
 
     
-    public void exitSystem(int clusterIndex, int status, String message,
+    public void exitSystem(int haServiceIndex, int status, String message,
                            Throwable throwable, Logger log) throws IOException {
       LOG.error(omNodeId + " - System Exit: " + message, throwable);
-      cluster.stopOzoneManager(clusterIndex, omNodeId);
+      cluster.stopOzoneManager(haServiceIndex, omNodeId);
       throw new IOException(throwable);
     }
 
     
-    public void exitSystem(int clusterIndex, int status, String message,
+    public void exitSystem(int haServiceIndex, int status, String message,
                            Logger log) throws IOException {
       LOG.error(omNodeId + " - System Exit: " + message);
-      cluster.stopOzoneManager(clusterIndex, omNodeId);
+      cluster.stopOzoneManager(haServiceIndex, omNodeId);
       throw new IOException(message);
     }
   }
