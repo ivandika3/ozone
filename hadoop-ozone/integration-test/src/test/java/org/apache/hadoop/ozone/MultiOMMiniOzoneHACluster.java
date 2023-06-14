@@ -578,7 +578,6 @@ public class MultiOMMiniOzoneHACluster {
     private Optional<Integer> hbInterval = Optional.empty();
     private Optional<Integer> hbProcessorInterval = Optional.empty();
     private Optional<String> scmId = Optional.empty();
-    private Optional<List<String>> omIds = Optional.empty();
 
     private Boolean enableContainerDatastream = true;
     private Optional<String> datanodeReservedSpace = Optional.empty();
@@ -605,7 +604,6 @@ public class MultiOMMiniOzoneHACluster {
     private int numDataVolumes = 1;
     private boolean  startDataNodes = true;
     private CertificateClient certClient;
-    private SecretKeyClient secretKeyClient;
     private int pipelineNumLimit = DEFAULT_PIPELINE_LIMIT;
 
     private static final String SCM_NODE_ID_PREFIX = "scmNode-";
@@ -1334,11 +1332,6 @@ public class MultiOMMiniOzoneHACluster {
      */
     public Builder setCertificateClient(CertificateClient client) {
       this.certClient = client;
-      return this;
-    }
-
-    public Builder setSecretKeyClient(SecretKeyClient client) {
-      this.secretKeyClient = client;
       return this;
     }
 

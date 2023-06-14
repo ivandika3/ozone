@@ -51,8 +51,8 @@ import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_ADMINISTRATORS_WILDC
 public class TestMultiOMMiniOzoneHACluster {
 
   // Multiple Ozone clusters with the same SCM instance
-  private static MultiOMMiniOzoneHACluster cluster;
-  private static OzoneConfiguration conf;
+  private MultiOMMiniOzoneHACluster cluster;
+  private OzoneConfiguration conf;
   private String clusterId;
   private List<String> omServiceIds;
 
