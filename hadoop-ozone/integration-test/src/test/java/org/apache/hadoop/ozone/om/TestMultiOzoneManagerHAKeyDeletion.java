@@ -17,7 +17,11 @@
 
 package org.apache.hadoop.ozone.om;
 
+import org.apache.hadoop.hdds.utils.db.Table;
+import org.apache.hadoop.hdds.utils.db.TableIterator;
 import org.apache.hadoop.ozone.client.OzoneBucket;
+import org.apache.hadoop.ozone.om.helpers.RepeatedOmKeyInfo;
+import org.apache.hadoop.ozone.om.service.KeyDeletingService;
 import org.apache.ozone.test.GenericTestUtils;
 import org.junit.jupiter.api.Test;
 
@@ -80,15 +84,16 @@ public class TestMultiOzoneManagerHAKeyDeletion
       getCluster().getOzoneManagersList(i).forEach((om) -> {
         try {
           GenericTestUtils.waitFor(() -> {
-            try {
-              return !om.getMetadataManager().getDeletedTable().iterator()
-                  .hasNext();
+            Table<String, RepeatedOmKeyInfo> deletedTable =
+                om.getMetadataManager().getDeletedTable();
+            try (TableIterator<?, ?> iterator = deletedTable.iterator()) {
+              return !iterator.hasNext();
             } catch (Exception ex) {
               return false;
             }
           }, 10000, 120000);
         } catch (Exception ex) {
-          fail("TestOzoneManagerHAKeyDeletion failed");
+          fail("TestMultiOzoneManagerHAKeyDeletion failed");
         }
       });
     }

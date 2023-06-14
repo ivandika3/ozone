@@ -25,6 +25,7 @@ import org.apache.hadoop.ozone.MultiOMMiniOzoneHACluster;
 import org.apache.hadoop.ozone.OzoneConfigKeys;
 import org.apache.hadoop.ozone.client.ObjectStore;
 import org.apache.hadoop.ozone.client.OzoneBucket;
+import org.apache.hadoop.ozone.client.OzoneClient;
 import org.apache.hadoop.ozone.client.OzoneKeyDetails;
 import org.apache.hadoop.ozone.client.OzoneVolume;
 import org.apache.hadoop.ozone.client.VolumeArgs;
@@ -33,7 +34,7 @@ import org.apache.hadoop.ozone.client.OzoneClientFactory;
 import org.apache.hadoop.ozone.client.io.OzoneInputStream;
 import org.apache.hadoop.ozone.client.io.OzoneOutputStream;
 import org.apache.hadoop.ozone.client.rpc.RpcClient;
-import org.apache.hadoop.ozone.om.ha.OMFailoverProxyProvider;
+import org.apache.hadoop.ozone.om.ha.HadoopRpcOMFailoverProxyProvider;
 import org.apache.hadoop.ozone.om.ratis.OzoneManagerRatisServerConfig;
 import org.apache.ozone.test.GenericTestUtils;
 import org.junit.Assert;
@@ -57,9 +58,9 @@ import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.IPC_CLIENT_CONN
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_ACL_ENABLED;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_ADMINISTRATORS_WILDCARD;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_BLOCK_DELETING_SERVICE_INTERVAL;
-import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_OPEN_KEY_EXPIRE_THRESHOLD_SECONDS;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_FAILOVER_MAX_ATTEMPTS_KEY;
 
+import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_DEFAULT_BUCKET_LAYOUT;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_KEY_DELETING_LIMIT_PER_TASK;
 import static org.junit.Assert.fail;
 
@@ -86,6 +87,7 @@ public abstract class TestMultiOzoneManagerHA {
   private static final int IPC_CLIENT_CONNECT_MAX_RETRIES = 4;
   private static final long SNAPSHOT_THRESHOLD = 50;
   private static final Duration RETRY_CACHE_DURATION = Duration.ofSeconds(30);
+  private static List<OzoneClient> clients;
 
 
   public MultiOMMiniOzoneHACluster getCluster() {
@@ -98,6 +100,10 @@ public abstract class TestMultiOzoneManagerHA {
 
   public ObjectStore getObjectStore(int index) {
     return objectStores.get(index);
+  }
+
+  public static OzoneClient getClient(int index) {
+    return clients.get(index);
   }
 
   public OzoneConfiguration getConf() {
@@ -161,7 +167,6 @@ public abstract class TestMultiOzoneManagerHA {
     conf.setBoolean(OZONE_ACL_ENABLED, true);
     conf.set(OzoneConfigKeys.OZONE_ADMINISTRATORS,
         OZONE_ADMINISTRATORS_WILDCARD);
-    conf.setInt(OZONE_OPEN_KEY_EXPIRE_THRESHOLD_SECONDS, 2);
     conf.setInt(OZONE_CLIENT_FAILOVER_MAX_ATTEMPTS_KEY,
         OZONE_CLIENT_FAILOVER_MAX_ATTEMPTS);
     conf.setInt(IPC_CLIENT_CONNECT_MAX_RETRIES_KEY,
@@ -172,6 +177,13 @@ public abstract class TestMultiOzoneManagerHA {
     conf.setLong(
         OMConfigKeys.OZONE_OM_RATIS_SNAPSHOT_AUTO_TRIGGER_THRESHOLD_KEY,
         SNAPSHOT_THRESHOLD);
+    // Enable filesystem snapshot feature for the test regardless of the default
+    conf.setBoolean(OMConfigKeys.OZONE_FILESYSTEM_SNAPSHOT_ENABLED_KEY, true);
+
+    // Some subclasses check RocksDB directly as part of their tests. These
+    // depend on OBS layout.
+    conf.set(OZONE_DEFAULT_BUCKET_LAYOUT,
+        OMConfigKeys.OZONE_BUCKET_LAYOUT_OBJECT_STORE);
 
     OzoneManagerRatisServerConfig omHAConfig =
         conf.getObject(OzoneManagerRatisServerConfig.class);
@@ -191,19 +203,20 @@ public abstract class TestMultiOzoneManagerHA {
         .setScmId(scmId)
         .setOMServiceIds(omServiceIds)
         .setSCMServiceId(scmServiceId)
-        .setNumOfOMClusters(numOfOmClusters)
-        .setNumOfOMPerCluster(numOfOMsPerCluster);
+        .setNumOfOMHAServices(numOfOmClusters)
+        .setNumOfOmsPerHAService(numOfOMsPerCluster);
 
     cluster = clusterBuilder.build();
     cluster.waitForClusterToBeReady();
 
     objectStores = new ArrayList<>();
+    clients = new ArrayList<>();
     for (String omServiceId: omServiceIds) {
-      ObjectStore objectStore = OzoneClientFactory.getRpcClient(
-          omServiceId, conf).getObjectStore();
+      OzoneClient client = OzoneClientFactory.getRpcClient(omServiceId, conf);
+      ObjectStore objectStore = client.getObjectStore();
+      clients.add(client);
       objectStores.add(objectStore);
     }
-
   }
 
 
@@ -283,7 +296,7 @@ public abstract class TestMultiOzoneManagerHA {
    */
   protected void stopLeaderOM(int index) {
     //Stop the leader OM.
-    OMFailoverProxyProvider omFailoverProxyProvider =
+    HadoopRpcOMFailoverProxyProvider omFailoverProxyProvider =
         OmFailoverProxyUtil.getFailoverProxyProvider(
             (RpcClient) getObjectStore(index).getClientProxy());
 

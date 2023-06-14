@@ -44,7 +44,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_ACL_ENABLED;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_ADMINISTRATORS_WILDCARD;
-import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_OPEN_KEY_EXPIRE_THRESHOLD_SECONDS;
 
 /**
  * This class tests MultiOMMiniOzoneHACluster.
@@ -78,14 +77,13 @@ public class TestMultiOMMiniOzoneHACluster {
     conf.setBoolean(OZONE_ACL_ENABLED, true);
     conf.set(OzoneConfigKeys.OZONE_ADMINISTRATORS,
         OZONE_ADMINISTRATORS_WILDCARD);
-    conf.setInt(OZONE_OPEN_KEY_EXPIRE_THRESHOLD_SECONDS, 2);
     cluster = new MultiOMMiniOzoneHACluster.Builder(conf)
         .setClusterId(clusterId)
         .setScmId(scmId)
         .setOMServiceIds(omServiceIds)
         .setSCMServiceId(scmServiceId)
-        .setNumOfOMClusters(numOfOmClusters)
-        .setNumOfOMPerCluster(numOfOmsPerCluster)
+        .setNumOfOMHAServices(numOfOmClusters)
+        .setNumOfOmsPerHAService(numOfOmsPerCluster)
         .build();
     cluster.waitForClusterToBeReady();
   }
