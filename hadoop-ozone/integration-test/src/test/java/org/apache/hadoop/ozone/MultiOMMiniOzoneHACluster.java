@@ -149,7 +149,7 @@ public class MultiOMMiniOzoneHACluster {
   public static final int NODE_FAILURE_TIMEOUT = 2000; // 2 seconds
 
   /**
-   * Creates a new 
+   * Creates a new MiniOMMiniOzoneHACluster.
    *
    * @throws IOException if there is an I/O error
    */
@@ -192,7 +192,7 @@ public class MultiOMMiniOzoneHACluster {
   }
 
   /**
-   * Returns the first OzoneManager from an OM HA Service
+   * Returns the first OzoneManager from an OM HA Service.
    * @return
    */
   public OzoneManager getOzoneManager(int haServiceIndex) {
@@ -218,7 +218,7 @@ public class MultiOMMiniOzoneHACluster {
     return scmhaService.inactiveServices();
   }
 
-  public StorageContainerManager getSCM( String scmNodeId) {
+  public StorageContainerManager getSCM(String scmNodeId) {
     return this.scmhaService.getServiceById(scmNodeId);
   }
 
@@ -292,7 +292,8 @@ public class MultiOMMiniOzoneHACluster {
    */
   public void startInactiveOM(int haServiceIndex, String omNodeID)
       throws IOException {
-    omhaServiceList.get(haServiceIndex).startInactiveService(omNodeID, OzoneManager::start);
+    omhaServiceList.get(haServiceIndex)
+        .startInactiveService(omNodeID, OzoneManager::start);
   }
 
   /**
@@ -545,6 +546,7 @@ public class MultiOMMiniOzoneHACluster {
   /**
    * Builder for configuring the MultiOMMiniOzoneHACluster to run.
    */
+  @SuppressWarnings("visibilitymodifier")
   public static class Builder {
 
     private static final int DEFAULT_HB_INTERVAL_MS = 1000;
@@ -802,19 +804,19 @@ public class MultiOMMiniOzoneHACluster {
       }
     }
 
-    private void configureDatanodePorts(ConfigurationTarget conf) {
-      conf.set(ScmConfigKeys.HDDS_REST_HTTP_ADDRESS_KEY,
+    private void configureDatanodePorts(ConfigurationTarget dnConf) {
+      dnConf.set(ScmConfigKeys.HDDS_REST_HTTP_ADDRESS_KEY,
           anyHostWithFreePort());
-      conf.set(HddsConfigKeys.HDDS_DATANODE_HTTP_ADDRESS_KEY,
+      dnConf.set(HddsConfigKeys.HDDS_DATANODE_HTTP_ADDRESS_KEY,
           anyHostWithFreePort());
-      conf.set(HddsConfigKeys.HDDS_DATANODE_CLIENT_ADDRESS_KEY,
+      dnConf.set(HddsConfigKeys.HDDS_DATANODE_CLIENT_ADDRESS_KEY,
           anyHostWithFreePort());
-      conf.setInt(DFS_CONTAINER_IPC_PORT, getFreePort());
-      conf.setInt(DFS_CONTAINER_RATIS_IPC_PORT, getFreePort());
-      conf.setInt(DFS_CONTAINER_RATIS_ADMIN_PORT, getFreePort());
-      conf.setInt(DFS_CONTAINER_RATIS_SERVER_PORT, getFreePort());
-      conf.setInt(DFS_CONTAINER_RATIS_DATASTREAM_PORT, getFreePort());
-      conf.setFromObject(new ReplicationConfig().setPort(getFreePort()));
+      dnConf.setInt(DFS_CONTAINER_IPC_PORT, getFreePort());
+      dnConf.setInt(DFS_CONTAINER_RATIS_IPC_PORT, getFreePort());
+      dnConf.setInt(DFS_CONTAINER_RATIS_ADMIN_PORT, getFreePort());
+      dnConf.setInt(DFS_CONTAINER_RATIS_SERVER_PORT, getFreePort());
+      dnConf.setInt(DFS_CONTAINER_RATIS_DATASTREAM_PORT, getFreePort());
+      dnConf.setFromObject(new ReplicationConfig().setPort(getFreePort()));
     }
 
     private void configureTrace() {
@@ -854,6 +856,7 @@ public class MultiOMMiniOzoneHACluster {
 
     /**
      * Initializes the configuration required for starting 
+     * MultiOMMiniOzoneHACluster.
      *
      * @throws IOException
      */
@@ -977,7 +980,7 @@ public class MultiOMMiniOzoneHACluster {
         AuthenticationException {
       if (omServiceIds == null || numOfOMHAServices != omServiceIds.size()) {
         throw new IllegalArgumentException("OM HA Service Ids should be " +
-            "specified and consistent with the number of OM HA services" );
+            "specified and consistent with the number of OM HA services");
       }
 
       List<OzoneManager> omList = Lists.newArrayList();
@@ -1341,7 +1344,7 @@ public class MultiOMMiniOzoneHACluster {
 
     /**
      * Sets the number of HddsDatanodes to be started as part of
-     * 
+     * MultiOMMiniOzoneHACluster.
      *
      * @param val number of datanodes
      *
@@ -1569,7 +1572,7 @@ public class MultiOMMiniOzoneHACluster {
    *              Otherwise, start new OM with BOOTSTRAP option.
    */
   public void bootstrapOzoneManager(int omHAServiceIndex, String omNodeId,
-                                    boolean updateConfigs, boolean force) throws Exception {
+        boolean updateConfigs, boolean force) throws Exception {
 
     // Set testReloadConfigFlag to true so that
     // OzoneManager#reloadConfiguration does not reload config as it will
@@ -1628,7 +1631,6 @@ public class MultiOMMiniOzoneHACluster {
    */
   private OzoneConfiguration addNewOMToConfig(String omServiceId,
                                               String omNodeId) {
-
     OzoneConfiguration newConf = new OzoneConfiguration(getConf());
     configureOMPorts(newConf, omServiceId, omNodeId);
 
@@ -1655,7 +1657,8 @@ public class MultiOMMiniOzoneHACluster {
    */
   private OzoneManager bootstrapNewOM(int omHAServiceIndex,
                                       String nodeId, OzoneConfiguration newConf,
-                                      boolean force) throws IOException, AuthenticationException {
+                                      boolean force)
+      throws IOException, AuthenticationException {
 
     OzoneConfiguration config = new OzoneConfiguration(newConf);
 
@@ -1663,7 +1666,8 @@ public class MultiOMMiniOzoneHACluster {
     config.set(OMConfigKeys.OZONE_OM_NODE_ID_KEY, nodeId);
 
     // Set metadata/DB dir base path
-    String metaDirPath = clusterMetaPath + "/" + omHAServiceIndex + "/" + nodeId;
+    String metaDirPath = clusterMetaPath + "/" + omHAServiceIndex +
+        "/" + nodeId;
     config.set(OZONE_METADATA_DIRS, metaDirPath);
 
     OzoneManager.omInit(config);
@@ -1688,7 +1692,7 @@ public class MultiOMMiniOzoneHACluster {
    * Wait for AddOM command to execute on all OMs.
    */
   private void waitForBootstrappedNodeToBeReady(OzoneManager newOM,
-                                                long leaderSnapshotIndex) throws Exception {
+        long leaderSnapshotIndex) throws Exception {
     // Wait for bootstrapped nodes to catch up with others
     GenericTestUtils.waitFor(() -> {
       try {
@@ -1704,7 +1708,8 @@ public class MultiOMMiniOzoneHACluster {
 
   private void waitForConfigUpdateOnActiveOMs(int haServiceIndex,
       String newOMNodeId) throws Exception {
-    OzoneManager newOMNode = omhaServiceList.get(haServiceIndex).getServiceById(newOMNodeId);
+    OzoneManager newOMNode = omhaServiceList.get(haServiceIndex)
+        .getServiceById(newOMNodeId);
     OzoneManagerRatisServer newOMRatisServer = newOMNode.getOmRatisServer();
     GenericTestUtils.waitFor(() -> {
       // Each existing active OM should contain the new OM in its peerList.
@@ -1834,7 +1839,7 @@ public class MultiOMMiniOzoneHACluster {
     }
 
     public void startInactiveService(String id,
-                                     CheckedConsumer<Type, IOException> serviceStarter) throws IOException {
+        CheckedConsumer<Type, IOException> serviceStarter) throws IOException {
       Type service = serviceMap.get(id);
       if (!inactiveServices.contains(service)) {
         throw new IOException(serviceName + " is already active.");

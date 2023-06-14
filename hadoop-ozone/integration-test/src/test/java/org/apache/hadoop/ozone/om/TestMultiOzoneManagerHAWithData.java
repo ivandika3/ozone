@@ -522,7 +522,8 @@ public class TestMultiOzoneManagerHAWithData extends TestMultiOzoneManagerHA {
       // the logs corresponding to atleast some of the missed transactions
       // should be purged. This will force the OM to install snapshot when
       // restarted.
-      long minNewTxIndex = followerOM1LastAppliedIndex + (getLogPurgeGap() * 10);
+      long minNewTxIndex = followerOM1LastAppliedIndex +
+          (getLogPurgeGap() * 10);
 
       while (leaderOM.getOmRatisServer().getLastAppliedTermIndex().getIndex()
           < minNewTxIndex) {
@@ -533,7 +534,8 @@ public class TestMultiOzoneManagerHAWithData extends TestMultiOzoneManagerHA {
       long leaderOMSnaphsotIndex = leaderOM.getRatisSnapshotIndex();
 
       // The stopped OM should be lagging behind the leader OM.
-      Assertions.assertTrue(followerOM1LastAppliedIndex < leaderOMSnaphsotIndex);
+      Assertions.assertTrue(followerOM1LastAppliedIndex <
+          leaderOMSnaphsotIndex);
 
       // Restart the stopped OM.
       followerOM1.restart();
@@ -600,7 +602,7 @@ public class TestMultiOzoneManagerHAWithData extends TestMultiOzoneManagerHA {
 
     Assertions.assertTrue(partInfoList.size() == partsMap.size());
 
-    for (int i=0; i< partsMap.size(); i++) {
+    for (int i = 0; i < partsMap.size(); i++) {
       Assertions.assertEquals(partsMap.get(partInfoList.get(i).getPartNumber()),
           partInfoList.get(i).getPartName());
 

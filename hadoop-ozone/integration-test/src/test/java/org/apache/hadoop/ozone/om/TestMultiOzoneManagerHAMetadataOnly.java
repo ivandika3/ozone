@@ -233,8 +233,9 @@ public class TestMultiOzoneManagerHAMetadataOnly extends
   public void testOMProxyProviderFailoverToCurrentLeader() throws Exception {
     for (int i = 0; i < getNumOfOmClusters(); i++) {
       ObjectStore objectStore = getObjectStore(i);
-      HadoopRpcOMFailoverProxyProvider omFailoverProxyProvider = OmFailoverProxyUtil
-          .getFailoverProxyProvider(objectStore.getClientProxy());
+      HadoopRpcOMFailoverProxyProvider omFailoverProxyProvider =
+          OmFailoverProxyUtil.getFailoverProxyProvider(
+              objectStore.getClientProxy());
 
       // Run couple of createVolume tests to discover the current Leader OM
       createVolumeTest(i, true);
@@ -355,8 +356,9 @@ public class TestMultiOzoneManagerHAMetadataOnly extends
       ObjectStore objectStore = getObjectStore(i);
       objectStore.createVolume(volumeName);
 
-      HadoopRpcOMFailoverProxyProvider omFailoverProxyProvider = OmFailoverProxyUtil
-          .getFailoverProxyProvider(objectStore.getClientProxy());
+      HadoopRpcOMFailoverProxyProvider omFailoverProxyProvider =
+          OmFailoverProxyUtil.getFailoverProxyProvider(
+              objectStore.getClientProxy());
 
       String currentLeaderNodeId = omFailoverProxyProvider
           .getCurrentProxyOMNodeId();
