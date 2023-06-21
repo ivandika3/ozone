@@ -19,7 +19,6 @@
 package org.apache.hadoop.ozone;
 
 import com.google.common.base.Preconditions;
-import com.google.common.base.Supplier;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import org.apache.commons.io.FileUtils;
@@ -253,12 +252,9 @@ public class MultiOMMiniOzoneHACluster {
       throws TimeoutException, InterruptedException {
     if (waitForLeaderElection) {
       final OzoneManager[] om = new OzoneManager[1];
-      GenericTestUtils.waitFor(new Supplier<Boolean>() {
-        @Override
-        public Boolean get() {
-          om[0] = getOMLeader(haServiceIndex);
-          return om[0] != null;
-        }
+      GenericTestUtils.waitFor(() -> {
+        om[0] = getOMLeader(haServiceIndex);
+        return om[0] != null;
       }, 200, waitForClusterToBeReadyTimeout);
       return om[0];
     } else {

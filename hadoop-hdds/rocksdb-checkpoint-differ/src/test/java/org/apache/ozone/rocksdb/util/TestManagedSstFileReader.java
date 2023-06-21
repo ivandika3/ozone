@@ -58,7 +58,7 @@ import static org.apache.hadoop.hdds.utils.NativeConstants.ROCKS_TOOLS_NATIVE_LI
  */
 class TestManagedSstFileReader {
 
-  private static final Logger LOG =git 
+  private static final Logger LOG =
       LoggerFactory.getLogger(TestManagedSstFileReader.class);
 
   // Key prefix containing all characters, to check if all characters can be
