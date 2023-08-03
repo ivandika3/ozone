@@ -81,6 +81,7 @@ import org.apache.hadoop.ozone.om.lock.OmReadOnlyLock;
 import org.apache.hadoop.ozone.om.lock.OzoneManagerLock;
 import org.apache.hadoop.hdds.utils.TransactionInfo;
 import org.apache.hadoop.ozone.om.protocolPB.OzoneManagerProtocolClientSideTranslatorPB;
+import org.apache.hadoop.ozone.om.request.util.OMMultipartUploadUtils;
 import org.apache.hadoop.ozone.om.snapshot.ReferenceCounted;
 import org.apache.hadoop.ozone.om.snapshot.SnapshotCache;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.KeyArgs;
@@ -1675,6 +1676,41 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
     return rcOmSnapshot.orElse(null);
   }
 
+  /**
+   * Decide whether the open key is a multipart upload related key.
+   * @param openKeyInfo open key related to multipart upload
+   * @param openDbKey db key of open key related to multipart upload, which
+   *                  might have different format depending on the bucket
+   *                  layout
+   * @return true open key is a multipart upload related key.
+   *         false otherwise.
+   */
+  private boolean isOpenMultipartKey(OmKeyInfo openKeyInfo, String openDbKey)
+      throws IOException {
+    if (OMMultipartUploadUtils.isMultipartKeySet(openKeyInfo)) {
+      return true;
+    }
+
+    String multipartUploadId =
+        OmMultipartUpload.getUploadIdFromDbKey(openDbKey);
+
+    if (StringUtils.isEmpty(multipartUploadId)) {
+      return false;
+    }
+
+    String multipartInfoDbKey = getMultipartKey(openKeyInfo.getVolumeName(),
+        openKeyInfo.getBucketName(), openKeyInfo.getKeyName(),
+        multipartUploadId);
+
+    // multipartInfoTable needs to be checked to handle multipart upload
+    // open keys that set isMultipartKey = false (due to the previous bug), but
+    // should not be deleted since doing so will result in orphan MPUs
+    // (i.e. multipart upload exists in multipartInfoTable, but does not
+    // exist in the openKeyTable/openFileTable). These orphan MPUs cannot
+    // be aborted / completed since it requires the open MPU keys to exist.
+    return getMultipartInfoTable().isExist(multipartInfoDbKey);
+  }
+
   @Override
   public ExpiredOpenKeys getExpiredOpenKeys(Duration expireThreshold,
       int count, BucketLayout bucketLayout) throws IOException {
@@ -1699,6 +1735,10 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
         final int lastPrefix = dbOpenKeyName.lastIndexOf(OM_KEY_PREFIX);
         final String dbKeyName = dbOpenKeyName.substring(0, lastPrefix);
         OmKeyInfo openKeyInfo = openKeyValue.getValue();
+
+        if (isOpenMultipartKey(openKeyInfo, dbOpenKeyName)) {
+          continue;
+        }
 
         if (openKeyInfo.getCreationTime() <= expiredCreationTimestamp) {
           final String clientIdString

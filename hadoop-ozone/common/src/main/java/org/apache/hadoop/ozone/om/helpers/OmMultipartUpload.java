@@ -20,6 +20,7 @@ package org.apache.hadoop.ozone.om.helpers;
 
 import java.time.Instant;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 
 import static org.apache.hadoop.ozone.OzoneConsts.OM_KEY_PREFIX;
@@ -82,6 +83,43 @@ public class OmMultipartUpload {
         key.substring(volume.length() + bucket.length() + 3,
             key.length() - uploadId.length() - 1), uploadId);
   }
+
+  /**
+   * Get multipart upload ID from the DB key of multipart upload
+   * form openKeyTable/openFileTable.
+   *
+   * The DB keys of openKeyTable and openFileTable are different:
+   *   openKeyTable: /{volumeName}/{bucketName}/{keyName}/{uploadId}
+   *   openFileTable: /{volumeId}/{bucketId}/{parentId}/{fileName}/{uploadId}
+   *
+   *
+   * Despite the difference, both have the uploadId as the suffix of the DB
+   * key, we can extract this suffix to get the upload ID from the DB key.
+   *
+   * Upload ID format: uploadId = UUIDv4 + "-" + UniqueId#next
+   *
+   * @param key DB key
+   * @return upload ID if uploadId can be extracted from openDBKey
+   *         otherwise null
+   */
+  public static String getUploadIdFromDbKey(String key) {
+    String[] split = key.split(OM_KEY_PREFIX);
+    if (split.length < 5) {
+      return null;
+    }
+
+    String uploadId = split[split.length - 1];
+
+    // Similar to the logic of UUID#fromString, but use 6 since there is
+    // another "-" between the UUID and the UniqueId
+    if (StringUtils.isEmpty(uploadId) ||
+        uploadId.split("-").length != 6) {
+      return null;
+    }
+
+    return uploadId;
+  }
+
 
   public String getDbKey() {
     return OmMultipartUpload
