@@ -18,13 +18,14 @@
 
 import React from 'react';
 import Plot from 'react-plotly.js';
-import {Row, Col, Icon, Button, Input, Menu, Dropdown} from 'antd';
+import {Row, Col, Icon, Button, Input, Menu, Dropdown, Form } from 'antd';
 import {DetailPanel} from 'components/rightDrawer/rightDrawer';
 import * as Plotly from 'plotly.js';
 import {showDataFetchError} from 'utils/common';
 import './diskUsage.less';
 import moment from 'moment';
 import { AxiosGetHelper, cancelRequests } from 'utils/axiosRequestHelper';
+import Title from "antd/es/typography/Title";
 
 const DEFAULT_DISPLAY_LIMIT = 10;
 const OTHER_PATH_NAME = 'Other Objects';
@@ -542,67 +543,67 @@ export class DiskUsage extends React.Component<Record<string, object>, IDUState>
           Disk Usage
         </div>
         <div className='content-div'>
-          {isLoading ? <span><Icon type='loading'/> Loading...</span> : (
-            <div>
-              <Row>
-                <Col>
-                  <div className='go-back-button'>
-                    <Button type='primary' onClick={e => this.goBack(e, returnPath)}><Icon type='left'/></Button>
-                  </div>
-                  <div className='input-bar'>
-                    <h3>Path</h3>
-                    <form className='input' id='input-form' onSubmit={this.handleSubmit}>
-                      <Input placeholder='/' value={inputPath} onChange={this.handleChange}/>
-                    </form>
-                  </div>
-                  <div className='go-back-button'>
-                    <Button type='primary' onClick={e => this.refreshCurPath(e, returnPath)}><Icon type='redo'/></Button>
-                  </div>
-                  <div className='dropdown-button'>
-                    <Dropdown overlay={menu} placement='bottomCenter'>
-                      <Button>Display Limit: {(displayLimit === Number.MAX_VALUE) ? 'All' : displayLimit}</Button>
-                    </Dropdown>
-                  </div>
-                  <div className='metadata-button'>
-                    <Button type='primary' onClick={e => this.showMetadataDetails(e, returnPath)}>
-                      <b>
-                        Show Metadata for Current Path
-                      </b>
-                    </Button>
-                  </div>
+          {isLoading ? <Icon type='loading' title={"Loading..."}/> : (
+            <>
+              <Row align="bottom" gutter={4}>
+                <Col span={1}>
+                  <Button type='primary' onClick={e => this.goBack(e, returnPath)} icon={'left'} />
+                </Col>
+                <Col span={1}>
+                  <Title level={3}>Path</Title>
+                </Col>
+                <Col span={8}>
+                  <Input placeholder='/' value={inputPath} onChange={this.handleChange}/>
+                </Col>
+                <Col span={1} offset={1}>
+                  <Button type='primary' onClick={e => this.refreshCurPath(e, returnPath)} icon={'redo'}/>
+                </Col>
+                <Col span={4}>
+                  <Dropdown overlay={menu}>
+                    <Button>Display Limit: {(displayLimit === Number.MAX_VALUE) ? 'All' : displayLimit}</Button>
+                  </Dropdown>
+                </Col>
+                <Col span={5} offset={3}>
+                  <Button type='primary' onClick={e => this.showMetadataDetails(e, returnPath)}>
+                    <b>
+                      Show Metadata for Current Path
+                    </b>
+                  </Button>
                 </Col>
               </Row>
               <Row>
-                {(duResponse.size > 0) ?
-                  <div style={{height: 1000}}>
-                    <Plot
-                      data={plotData}
-                      layout={
-                        {
-                          width: 1200,
-                          height: 750,
-                          font: {
-                            family: 'Roboto, sans-serif',
-                            size: 15
-                          },
-                          showlegend: true,
-                          legend: {
-                            "x": 1.2,
-                            "xanchor": "right"
-                          },
-                          title: 'Disk Usage for ' + returnPath + ' (Total Size: ' + this.byteToSize(duResponse.size, 1) + ')'
-                        }
-                      }
-                      onClick={(duResponse.subPathCount === 0) ? undefined : e => this.clickPieSection(e, returnPath)}/>
-                  </div>
-                    :
-                  <div style={{height: 800}} className='metadatainformation'><br/>
-                    This object is empty. Add files to it to see a visualization on disk usage.{' '}<br/>
-                      You can also view its metadata details by clicking the top right button.
-                  </div>}
-                <DetailPanel path={returnPath} keys={panelKeys} values={panelValues} visible={showPanel}/>
+                <Col span={24}>
+                  {(duResponse.size > 0) ?
+                      <Plot
+                          data={plotData}
+                          layout={
+                            {
+                              width: 1200,
+                              height: 750,
+                              autosize: true,
+                              font: {
+                                family: 'Roboto, sans-serif',
+                                size: 15
+                              },
+                              showlegend: true,
+                              legend: {
+                                "x": 1.2,
+                                "xanchor": "right"
+                              },
+                              paper_bgcolor: "rgba(0,0,0,0)",
+                              title: 'Disk Usage for ' + returnPath + ' (Total Size: ' + this.byteToSize(duResponse.size, 1) + ')'
+                            }
+                          }
+                          onClick={(duResponse.subPathCount === 0) ? undefined : e => this.clickPieSection(e, returnPath)}/>
+                      :
+                      <div className='metadatainformation'><br/>
+                        This object is empty. Add files to it to see a visualization on disk usage.{' '}<br/>
+                        You can also view its metadata details by clicking the top right button.
+                      </div>}
+                </Col>
               </Row>
-            </div>)}
+              <DetailPanel path={returnPath} keys={panelKeys} values={panelValues} visible={showPanel}/>
+            </>)}
         </div>
       </div>
     );

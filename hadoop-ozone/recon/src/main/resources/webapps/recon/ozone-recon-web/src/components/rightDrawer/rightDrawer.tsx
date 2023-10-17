@@ -50,12 +50,11 @@ export class DetailPanel extends React.Component<IRightDrawerProps> {
     }
 
     return (
-      <div className='site-drawer-render-in-current-wrapper'>
         <Drawer
           title={`Metadata Summary for ${path}`}
           placement='right'
           width='40%'
-          closable={false}
+          closable={true}
           visible={visible}
           getContainer={false}
           style={{position: 'absolute'}}
@@ -66,7 +65,6 @@ export class DetailPanel extends React.Component<IRightDrawerProps> {
             <Column title='Value' dataIndex='value'/>
           </Table>
         </Drawer>
-      </div>
     );
   }
 }
