@@ -36,7 +36,7 @@ Create bucket to be deleted
 
 Delete existing bucket
     ${bucket} =                Create bucket to be deleted
-    Execute AWSS3APICli        delete-bucket --bucket ${bucket}
+    ${result} =                Execute AWSS3APICli and checkrc        delete-bucket --bucket ${bucket}
 
 Delete non-existent bucket
     [tags]    no-bucket-type
