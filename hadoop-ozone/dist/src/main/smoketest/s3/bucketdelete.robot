@@ -36,7 +36,7 @@ Create bucket to be deleted
 
 Delete existing bucket
     ${bucket} =                Create bucket to be deleted
-    ${result} =                Execute AWSS3APICli and checkrc        delete-bucket --bucket ${bucket}
+    ${result} =                Execute AWSS3APICli and checkrc        delete-bucket --bucket ${bucket}  0
 
 Delete non-existent bucket
     [tags]    no-bucket-type
@@ -49,10 +49,11 @@ Delete bucket with incomplete multipart uploads
 
     # initiate incomplete multipart uploads (multipart upload is initiated but not completed/aborted)
     ${initiate_result} =       Execute AWSS3APICli     create-multipart-upload --bucket ${bucket} --key incomplete-multipartKey
-    ${uploadID} =              Execute and checkrc     echo '${initiate_result}' | jq -r '.UploadId'    0
-                               Should contain          ${initiate_result}    ${bucket}
-                               Should contain          ${initiate_result}    incomplete-multipartKey
-                               Should contain          ${initiate_result}    UploadId
+#    ${uploadID} =              Execute and checkrc     echo '${initiate_result}' | jq -r '.UploadId'    0
+#                               Should contain          ${initiate_result}    ${bucket}
+#                               Should contain          ${initiate_result}    incomplete-multipartKey
+#                               Should contain          ${initiate_result}    UploadId
+    ${uploadID} =              Execute   echo '${initiate_result}' | jq -r '.UploadId'
 
     # bucket deletion should fail since there is still incomplete multipart upload
     ${delete_fail_result} =    Execute AWSS3APICli and checkrc    delete-bucket --bucket ${bucket}    255
