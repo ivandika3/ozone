@@ -23,8 +23,10 @@ import java.nio.file.InvalidPathException;
 import java.util.Iterator;
 import java.util.Map;
 
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.TableIterator;
+import org.apache.hadoop.ozone.om.ResolvedBucket;
 import org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
@@ -142,8 +144,12 @@ public class OMBucketDeleteRequest extends OMClientRequest {
             OMException.ResultCodes.BUCKET_NOT_EMPTY);
       }
 
+      ResolvedBucket resolvedBucket = ozoneManager.resolveBucketLink(
+          Pair.of(volumeName, bucketName));
+
       // Check if bucket does not contain incomplete MPUs
-      if (omMetadataManager.containsIncompleteMPUs(volumeName, bucketName)) {
+      if (omMetadataManager.containsIncompleteMPUs(resolvedBucket.realVolume(),
+            resolvedBucket.realBucket())) {
         LOG.debug("Volume '{}', Bucket '{}' can't be deleted when it has " +
                 "incomplete multipart uploads", volumeName, bucketName);
         throw new OMException(
