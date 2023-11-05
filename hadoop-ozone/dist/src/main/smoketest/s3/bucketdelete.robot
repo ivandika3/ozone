@@ -48,7 +48,7 @@ Delete bucket with incomplete multipart uploads
     ${bucket} =                Create bucket to be deleted
 
     # initiate incomplete multipart uploads (multipart upload is initiated but not completed/aborted)
-    ${initiate_result} =       Execute AWSS3APICli     create-multipart-upload --bucket ${bucket} --key incomplete-multipartKey
+    ${initiate_result} =       Execute AWSS3APICli     create-multipart-upload --bucket ${bucket} --key incomplete-multipartkey
     ${uploadID} =              Execute and checkrc     echo '${initiate_result}' | jq -r '.UploadId'    0
                                Should contain          ${initiate_result}    ${bucket}
                                Should contain          ${initiate_result}    incomplete-multipartKey
@@ -57,7 +57,7 @@ Delete bucket with incomplete multipart uploads
     # bucket deletion should fail since there is still incomplete multipart upload
     ${delete_fail_result} =    Execute AWSS3APICli and checkrc    delete-bucket --bucket ${bucket}    255
                                Should contain                     ${delete_fail_result}               BucketNotEmpty
-#
-#    # after aborting the multipart upload, the bucket deletion should succeed
-#    ${abort_result} =          Execute AWSS3APICli and checkrc    abort-multipart-upload --bucket ${bucket} --key incomplete-multipartkey --upload-id ${uploadID}   0
-#    ${delete_result} =         Execute AWSS3APICli and checkrc    delete-bucket --bucket ${bucket}    0
+
+    # after aborting the multipart upload, the bucket deletion should succeed
+    ${abort_result} =          Execute AWSS3APICli and checkrc    abort-multipart-upload --bucket ${bucket} --key incomplete-multipartkey --upload-id ${uploadID}   0
+    ${delete_result} =         Execute AWSS3APICli and checkrc    delete-bucket --bucket ${bucket}    0
