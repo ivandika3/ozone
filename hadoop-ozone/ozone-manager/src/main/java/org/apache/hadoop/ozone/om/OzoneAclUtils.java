@@ -109,11 +109,14 @@ public final class OzoneAclUtils {
         if (omMetadataReader.isNativeAuthorizerEnabled()) {
           parentAclRight = getParentNativeAcl(aclType, resType);
         }
-
         omMetadataReader.checkAcls(OzoneObj.ResourceType.VOLUME, storeType,
             parentAclRight, vol, bucket, key, user,
             remoteAddress, hostName, true,
             volOwner);
+        omMetadataReader.checkAcls(resType, storeType,
+            aclType, vol, bucket, key,
+            user, remoteAddress, hostName, true,
+            bucketOwner);
       }
       break;
     case KEY:
