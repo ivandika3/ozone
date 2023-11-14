@@ -94,12 +94,6 @@ public final class OzoneAclUtils {
           volOwner);
       break;
     case BUCKET:
-    case KEY:
-    //For Bucket/Key/Prefix level access, first we need to check {OWNER} equal
-    // to volume owner on parent volume. Then we need to check {OWNER} equals
-    // volume owner if current ugi user is volume owner else we need check
-    //{OWNER} equals bucket owner for bucket/key/prefix.
-    case PREFIX:
       if (isVolOwner) {
         omMetadataReader.checkAcls(resType, storeType,
             aclType, vol, bucket, key,
@@ -112,7 +106,7 @@ public final class OzoneAclUtils {
         // requires only READ access on parent level access.
         // OzoneNativeAuthorizer has different parent level access based on the
         // child level access type.
-        if (omMetadataReader.isNativeAuthorizerEnabled() && resType == BUCKET) {
+        if (omMetadataReader.isNativeAuthorizerEnabled()) {
           parentAclRight = getParentNativeAcl(aclType, resType);
         }
 
@@ -120,6 +114,20 @@ public final class OzoneAclUtils {
             parentAclRight, vol, bucket, key, user,
             remoteAddress, hostName, true,
             volOwner);
+      }
+      break;
+    case KEY:
+    //For Key/Prefix level access, first we need to check {OWNER} equal
+    // to volume owner on parent volume. Then we need to check {OWNER} equals
+    // volume owner if current ugi user is volume owner else we need check
+    //{OWNER} equals bucket owner for bucket/key/prefix.
+    case PREFIX:
+      if (isVolOwner) {
+        omMetadataReader.checkAcls(resType, storeType,
+            aclType, vol, bucket, key,
+            user, remoteAddress, hostName, true,
+            volOwner);
+      } else {
         omMetadataReader.checkAcls(resType, storeType,
             aclType, vol, bucket, key,
             user, remoteAddress, hostName, true,
