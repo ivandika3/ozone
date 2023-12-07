@@ -25,12 +25,9 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -83,6 +80,7 @@ import org.apache.ratis.grpc.GrpcTlsConfig;
 import org.apache.ratis.netty.NettyConfigKeys;
 import org.apache.ratis.proto.RaftProtos;
 import org.apache.ratis.proto.RaftProtos.RoleInfoProto;
+import org.apache.ratis.protocol.exceptions.GroupMismatchException;
 import org.apache.ratis.protocol.exceptions.NotLeaderException;
 import org.apache.ratis.protocol.exceptions.StateMachineException;
 import org.apache.ratis.protocol.ClientId;
@@ -148,13 +146,6 @@ public final class XceiverServerRatis implements XceiverServerSpi {
   private boolean isStarted = false;
   private final DatanodeDetails datanodeDetails;
   private final ConfigurationSource conf;
-  // TODO: Remove the gids set when Ratis supports an api to query active
-  // pipelines
-  private final Set<RaftGroupId> raftGids = ConcurrentHashMap.newKeySet();
-  private final RaftPeerId raftPeerId;
-  // pipelines for which I am the leader
-  private final Map<RaftGroupId, Boolean> groupLeaderMap =
-      new ConcurrentHashMap<>();
   // Timeout used while calling submitRequest directly.
   private final long requestTimeout;
   private final boolean shouldDeleteRatisLogDirectory;
@@ -177,13 +168,13 @@ public final class XceiverServerRatis implements XceiverServerSpi {
     this.context = context;
     this.dispatcher = dispatcher;
     this.containerController = containerController;
-    this.raftPeerId = RatisHelper.toRaftPeerId(dd);
     String threadNamePrefix = datanodeDetails.threadNamePrefix();
     chunkExecutors = createChunkExecutors(conf, threadNamePrefix);
     nodeFailureTimeoutMs = ratisServerConfig.getFollowerSlownessTimeout();
     shouldDeleteRatisLogDirectory =
         ratisServerConfig.shouldDeleteRatisLogDirectory();
 
+    RaftPeerId raftPeerId = RatisHelper.toRaftPeerId(dd);
     this.server =
         RaftServer.newBuilder().setServerId(raftPeerId)
             .setProperties(serverProperties)
@@ -756,8 +747,17 @@ public final class XceiverServerRatis implements XceiverServerSpi {
 
   @Override
   public boolean isExist(HddsProtos.PipelineID pipelineId) {
-    return raftGids.contains(
-        RaftGroupId.valueOf(PipelineID.getFromProtobuf(pipelineId).getId()));
+    try {
+      server.getDivision(
+          RaftGroupId.valueOf(PipelineID.getFromProtobuf(pipelineId).getId()));
+      return true;
+    } catch (GroupMismatchException e) {
+      return false;
+    } catch (IOException e) {
+      LOG.error("Unexpected error when checking the existence of pipeline {}",
+          pipelineId, e);
+      return false;
+    }
   }
 
   private long calculatePipelineBytesWritten(HddsProtos.PipelineID pipelineID) {
@@ -782,7 +782,7 @@ public final class XceiverServerRatis implements XceiverServerSpi {
             .valueOf(groupId.getUuid()).getProtobuf();
         reports.add(PipelineReport.newBuilder()
             .setPipelineID(pipelineID)
-            .setIsLeader(groupLeaderMap.getOrDefault(groupId, Boolean.FALSE))
+            .setIsLeader(getServerDivision(groupId).getInfo().isLeader())
             .setBytesWritten(calculatePipelineBytesWritten(pipelineID))
             .build());
       }
@@ -919,24 +919,20 @@ public final class XceiverServerRatis implements XceiverServerSpi {
     return minIndex == null ? -1 : minIndex;
   }
 
-  public void notifyGroupRemove(RaftGroupId gid) {
-    raftGids.remove(gid);
-    // Remove any entries for group leader map
-    groupLeaderMap.remove(gid);
-  }
-
-  void notifyGroupAdd(RaftGroupId gid) {
-    raftGids.add(gid);
+  void notifyGroupAdd() {
     sendPipelineReport();
   }
 
+  RaftPeerId getPeerId() {
+    return getServer().getPeer().getId();
+  }
+
   void handleLeaderChangedNotification(RaftGroupMemberId groupMemberId,
-                                       RaftPeerId raftPeerId1) {
+                                       RaftPeerId newLeaderId) {
     LOG.info("Leader change notification received for group: {} with new " +
-        "leaderId: {}", groupMemberId.getGroupId(), raftPeerId1);
+        "leaderId: {}", groupMemberId.getGroupId(), newLeaderId);
     // Save the reported leader to be sent with the report to SCM
-    boolean leaderForGroup = this.raftPeerId.equals(raftPeerId1);
-    groupLeaderMap.put(groupMemberId.getGroupId(), leaderForGroup);
+    boolean leaderForGroup = getPeerId().equals(newLeaderId);
     if (context != null && leaderForGroup) {
       // Publish new report from leader
       sendPipelineReport();

@@ -257,7 +257,7 @@ public class ContainerStateMachine extends BaseStateMachine {
       throws IOException {
     super.initialize(server, id, raftStorage);
     storage.init(raftStorage);
-    ratisServer.notifyGroupAdd(gid);
+    ratisServer.notifyGroupAdd();
 
     loadSnapshot(storage.getLatestSnapshot());
   }
@@ -1070,7 +1070,6 @@ public class ContainerStateMachine extends BaseStateMachine {
 
   @Override
   public void notifyGroupRemove() {
-    ratisServer.notifyGroupRemove(gid);
     // Make best effort to quasi-close all the containers on group removal.
     // Containers already in terminal state like CLOSED or UNHEALTHY will not
     // be affected.
@@ -1094,8 +1093,8 @@ public class ContainerStateMachine extends BaseStateMachine {
 
   @Override
   public void notifyLeaderChanged(RaftGroupMemberId groupMemberId,
-                                  RaftPeerId raftPeerId) {
-    ratisServer.handleLeaderChangedNotification(groupMemberId, raftPeerId);
+                                  RaftPeerId newLeaderId) {
+    ratisServer.handleLeaderChangedNotification(groupMemberId, newLeaderId);
   }
 
   @Override

@@ -229,8 +229,6 @@ public class TestContainerStateMachineFailures {
         // Test applicable only for RATIS based channel.
         return;
       }
-      wc.notifyGroupRemove(RaftGroupId
-          .valueOf(omKeyLocationInfo.getPipeline().getId().getId()));
       SCMCommand<?> command = new CloseContainerCommand(
           containerID, omKeyLocationInfo.getPipeline().getId());
       command.setTerm(
