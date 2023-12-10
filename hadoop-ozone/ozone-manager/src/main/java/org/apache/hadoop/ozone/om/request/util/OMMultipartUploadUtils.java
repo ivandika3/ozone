@@ -22,14 +22,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hdds.utils.UniqueId;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
+import org.apache.hadoop.ozone.om.helpers.OmGetKey;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
-import org.apache.hadoop.ozone.om.helpers.OzoneFSUtils;
-import org.apache.hadoop.ozone.om.request.file.OMFileRequest;
 
 import java.io.IOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Iterator;
 import java.util.UUID;
 
 import static org.apache.hadoop.ozone.OzoneConsts.OM_KEY_PREFIX;
@@ -114,18 +110,12 @@ public final class OMMultipartUploadUtils {
   public static String getMultipartOpenKeyFSO(String volumeName,
         String bucketName, String keyName, String uploadID,
         OMMetadataManager metaMgr) throws IOException {
-    String fileName = OzoneFSUtils.getFileName(keyName);
-    Iterator<Path> pathComponents = Paths.get(keyName).iterator();
-    final long volumeId = metaMgr.getVolumeId(volumeName);
-    final long bucketId = metaMgr.getBucketId(volumeName, bucketName);
-    long parentID =
-        OMFileRequest.getParentID(volumeId, bucketId, pathComponents,
-            keyName, metaMgr);
-
-    String multipartKey = metaMgr.getMultipartKey(volumeId, bucketId,
-        parentID, fileName, uploadID);
-
-    return multipartKey;
+    return new OmGetKey.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setKeyName(keyName)
+        .setOmMetadataManager(metaMgr)
+        .build().getMultipartKey(uploadID);
   }
 
 

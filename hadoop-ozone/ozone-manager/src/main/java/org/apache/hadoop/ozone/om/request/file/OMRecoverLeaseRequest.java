@@ -27,8 +27,8 @@ import org.apache.hadoop.ozone.om.OMMetrics;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
+import org.apache.hadoop.ozone.om.helpers.OmGetKey;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
-import org.apache.hadoop.ozone.om.helpers.OzoneFSUtils;
 import org.apache.hadoop.ozone.om.ratis.utils.OzoneManagerDoubleBufferHelper;
 import org.apache.hadoop.ozone.om.request.key.OMKeyRequest;
 import org.apache.hadoop.ozone.om.request.util.OmResponseUtil;
@@ -52,9 +52,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.InvalidPathException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -70,9 +67,10 @@ public class OMRecoverLeaseRequest extends OMKeyRequest {
   private static final Logger LOG =
       LoggerFactory.getLogger(OMRecoverLeaseRequest.class);
 
-  private String volumeName;
-  private String bucketName;
-  private String keyName;
+  private final String volumeName;
+  private final String bucketName;
+  private final String keyName;
+
   private OmKeyInfo keyInfo;
   private String dbFileKey;
 
@@ -188,19 +186,15 @@ public class OMRecoverLeaseRequest extends OMKeyRequest {
 
   private String doWork(OzoneManager ozoneManager, long transactionLogIndex)
       throws IOException {
-
-    final long volumeId = omMetadataManager.getVolumeId(volumeName);
-    final long bucketId = omMetadataManager.getBucketId(
-        volumeName, bucketName);
-    Iterator<Path> pathComponents = Paths.get(keyName).iterator();
-    long parentID = OMFileRequest.getParentID(volumeId, bucketId,
-        pathComponents, keyName, omMetadataManager,
-        "Cannot recover file : " + keyName
-            + " as parent directory doesn't exist");
-    String fileName = OzoneFSUtils.getFileName(keyName);
-    dbFileKey = omMetadataManager.getOzonePathKey(volumeId, bucketId,
-        parentID, fileName);
-
+    OmGetKey omGetKey = new OmGetKey.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setKeyName(keyName)
+        .setOmMetadataManager(omMetadataManager)
+        .setErrMsg("Cannot recover file : " + keyName
+            + " as parent directory doesn't exist")
+        .build();
+    dbFileKey = omGetKey.getFileDBKey();
     keyInfo = getKey(dbFileKey);
     if (keyInfo == null) {
       throw new OMException("Key:" + keyName + " not found", KEY_NOT_FOUND);
@@ -212,12 +206,11 @@ public class OMRecoverLeaseRequest extends OMKeyRequest {
       LOG.warn("Key:" + keyName + " is already closed");
       return null;
     }
-    String openFileDBKey = omMetadataManager.getOpenFileName(
-            volumeId, bucketId, parentID, fileName, Long.parseLong(clientId));
+    String openFileDBKey = omGetKey.getOpenFileDBKey(Long.parseLong(clientId));
     if (openFileDBKey != null) {
-      commitKey(dbFileKey, keyInfo, fileName, ozoneManager,
+      commitKey(dbFileKey, keyInfo, omGetKey.getFileName(), ozoneManager,
           transactionLogIndex);
-      removeOpenKey(openFileDBKey, fileName, transactionLogIndex);
+      removeOpenKey(openFileDBKey, omGetKey.getFileName(), transactionLogIndex);
     }
 
     return openFileDBKey;

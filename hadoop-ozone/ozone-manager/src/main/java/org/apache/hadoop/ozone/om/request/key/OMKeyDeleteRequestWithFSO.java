@@ -27,6 +27,7 @@ import org.apache.hadoop.ozone.om.OMMetrics;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
+import org.apache.hadoop.ozone.om.helpers.OmGetKey;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
@@ -128,12 +129,13 @@ public class OMKeyDeleteRequestWithFSO extends OMKeyDeleteRequest {
       // Set the UpdateID to current transactionLogIndex
       omKeyInfo.setUpdateID(trxnLogIndex, ozoneManager.isRatisEnabled());
 
-      final long volumeId = omMetadataManager.getVolumeId(volumeName);
-      final long bucketId = omMetadataManager.getBucketId(volumeName,
-              bucketName);
-      String ozonePathKey = omMetadataManager.getOzonePathKey(volumeId,
-              bucketId, omKeyInfo.getParentObjectID(),
-              omKeyInfo.getFileName());
+      OmGetKey omGetKey = new OmGetKey.Builder()
+          .setVolumeName(volumeName)
+          .setBucketName(bucketName)
+          .setKeyName(keyName)
+          .setOmMetadataManager(omMetadataManager)
+          .build();
+      String ozonePathKey = omGetKey.getFileDBKey();
 
       if (keyStatus.isDirectory()) {
         // Check if there are any sub path exists under the user requested path
@@ -169,7 +171,8 @@ public class OMKeyDeleteRequestWithFSO extends OMKeyDeleteRequest {
       omClientResponse = new OMKeyDeleteResponseWithFSO(omResponse
           .setDeleteKeyResponse(DeleteKeyResponse.newBuilder()).build(),
           keyName, omKeyInfo, ozoneManager.isRatisEnabled(),
-          omBucketInfo.copyObject(), keyStatus.isDirectory(), volumeId);
+          omBucketInfo.copyObject(), keyStatus.isDirectory(),
+          omGetKey.getVolumeID());
 
       result = Result.SUCCESS;
     } catch (IOException | InvalidPathException ex) {

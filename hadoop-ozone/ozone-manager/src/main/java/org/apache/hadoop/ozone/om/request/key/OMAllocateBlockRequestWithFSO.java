@@ -28,9 +28,9 @@ import org.apache.hadoop.ozone.om.OMMetrics;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
+import org.apache.hadoop.ozone.om.helpers.OmGetKey;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfo;
-import org.apache.hadoop.ozone.om.helpers.OzoneFSUtils;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.QuotaUtil;
 import org.apache.hadoop.ozone.om.ratis.utils.OzoneManagerDoubleBufferHelper;
@@ -51,10 +51,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.InvalidPathException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -102,12 +99,12 @@ public class OMAllocateBlockRequestWithFSO extends OMAllocateBlockRequest {
     auditMap.put(OzoneConsts.CLIENT_ID, String.valueOf(clientID));
 
     OMMetadataManager omMetadataManager = ozoneManager.getMetadataManager();
-    String openKeyName = null;
 
     OMResponse.Builder omResponse = OmResponseUtil.getOMResponseBuilder(
             getOmRequest());
     OMClientResponse omClientResponse = null;
 
+    String openFileDBKey = null;
     OmKeyInfo openKeyInfo = null;
     Exception exception = null;
     OmBucketInfo omBucketInfo = null;
@@ -120,20 +117,27 @@ public class OMAllocateBlockRequestWithFSO extends OMAllocateBlockRequest {
 
       // check Acl
       checkKeyAclsInOpenKeyTable(ozoneManager, volumeName, bucketName, keyName,
-          IAccessAuthorizer.ACLType.WRITE, allocateBlockRequest.getClientID());
+          IAccessAuthorizer.ACLType.WRITE, clientID);
 
       validateBucketAndVolume(omMetadataManager, volumeName,
           bucketName);
+
+      OmGetKey omGetKey = new OmGetKey.Builder()
+          .setVolumeName(volumeName)
+          .setBucketName(bucketName)
+          .setKeyName(keyName)
+          .setOmMetadataManager(omMetadataManager)
+          .build();
 
       // Here we don't acquire bucket/volume lock because for a single client
       // allocateBlock is called in serial fashion. With this approach, it
       // won't make 'fail-fast' during race condition case on delete/rename op,
       // assuming that later it will fail at the key commit operation.
-      openKeyName = getOpenKeyName(volumeName, bucketName, keyName, clientID,
-              ozoneManager);
-      openKeyInfo = getOpenKeyInfo(omMetadataManager, openKeyName, keyName);
+      openFileDBKey = omGetKey.getOpenFileDBKey(clientID);
+      openKeyInfo = OMFileRequest.getOmKeyInfoFromFileTable(true,
+          omMetadataManager, openFileDBKey, omGetKey.getFileName());
       if (openKeyInfo == null) {
-        throw new OMException("Open Key not found " + openKeyName,
+        throw new OMException("Open Key not found " + openFileDBKey,
                 KEY_NOT_FOUND);
       }
 
@@ -167,8 +171,8 @@ public class OMAllocateBlockRequestWithFSO extends OMAllocateBlockRequest {
       openKeyInfo.setUpdateID(trxnLogIndex, ozoneManager.isRatisEnabled());
 
       // Add to cache.
-      addOpenTableCacheEntry(trxnLogIndex, omMetadataManager, openKeyName,
-              openKeyInfo);
+      OMFileRequest.addOpenFileTableCacheEntry(omMetadataManager, openFileDBKey,
+          openKeyInfo, openKeyInfo.getFileName(), trxnLogIndex);
 
       omResponse.setAllocateBlockResponse(AllocateBlockResponse.newBuilder()
               .setKeyLocation(blockLocation).build());
@@ -176,14 +180,15 @@ public class OMAllocateBlockRequestWithFSO extends OMAllocateBlockRequest {
       omClientResponse = getOmClientResponse(clientID, omResponse,
               openKeyInfo, omBucketInfo.copyObject(), volumeId);
       LOG.debug("Allocated block for Volume:{}, Bucket:{}, OpenKey:{}",
-              volumeName, bucketName, openKeyName);
+              volumeName, bucketName, openFileDBKey);
     } catch (IOException | InvalidPathException ex) {
       omMetrics.incNumBlockAllocateCallFails();
       exception = ex;
       omClientResponse = new OMAllocateBlockResponseWithFSO(
           createErrorOMResponse(omResponse, exception), getBucketLayout());
       LOG.error("Allocate Block failed. Volume:{}, Bucket:{}, OpenKey:{}. " +
-              "Exception:{}", volumeName, bucketName, openKeyName, exception);
+              "Exception:{}", volumeName, bucketName, openFileDBKey,
+              exception);
     } finally {
       addResponseToDoubleBuffer(trxnLogIndex, omClientResponse,
               omDoubleBufferHelper);
@@ -201,36 +206,6 @@ public class OMAllocateBlockRequestWithFSO extends OMAllocateBlockRequest {
             exception, getOmRequest().getUserInfo()));
 
     return omClientResponse;
-  }
-
-  private OmKeyInfo getOpenKeyInfo(OMMetadataManager omMetadataManager,
-      String openKeyName, String keyName) throws IOException {
-    String fileName = OzoneFSUtils.getFileName(keyName);
-    return OMFileRequest.getOmKeyInfoFromFileTable(true,
-            omMetadataManager, openKeyName, fileName);
-  }
-
-  private String getOpenKeyName(String volumeName, String bucketName,
-      String keyName, long clientID, OzoneManager ozoneManager)
-          throws IOException {
-    OMMetadataManager omMetadataManager = ozoneManager.getMetadataManager();
-    final long volumeId = omMetadataManager.getVolumeId(volumeName);
-    final long bucketId = omMetadataManager.getBucketId(
-            volumeName, bucketName);
-    String fileName = OzoneFSUtils.getFileName(keyName);
-    Iterator<Path> pathComponents = Paths.get(keyName).iterator();
-    long parentID = OMFileRequest.getParentID(volumeId, bucketId,
-            pathComponents, keyName, omMetadataManager);
-    return omMetadataManager.getOpenFileName(volumeId, bucketId, parentID,
-            fileName, clientID);
-  }
-
-  private void addOpenTableCacheEntry(long trxnLogIndex,
-      OMMetadataManager omMetadataManager, String openKeyName,
-      OmKeyInfo openKeyInfo) {
-    String fileName = openKeyInfo.getFileName();
-    OMFileRequest.addOpenFileTableCacheEntry(omMetadataManager, openKeyName,
-            openKeyInfo, fileName, trxnLogIndex);
   }
 
   @NotNull

@@ -32,9 +32,9 @@ import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.KeyValueUtil;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
+import org.apache.hadoop.ozone.om.helpers.OmGetKey;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfo;
-import org.apache.hadoop.ozone.om.helpers.OzoneFSUtils;
 import org.apache.hadoop.ozone.om.helpers.RepeatedOmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.WithMetadata;
 import org.apache.hadoop.ozone.om.ratis.utils.OzoneManagerDoubleBufferHelper;
@@ -51,9 +51,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -125,11 +122,6 @@ public class OMKeyCommitRequestWithFSO extends OMKeyCommitRequest {
       checkKeyAclsInOpenKeyTable(ozoneManager, volumeName, bucketName,
               keyName, IAccessAuthorizer.ACLType.WRITE,
               commitKeyRequest.getClientID());
-
-
-      Iterator<Path> pathComponents = Paths.get(keyName).iterator();
-      String dbOpenFileKey = null;
-
       List<OmKeyLocationInfo>
           locationInfoList = getOmKeyLocationInfos(ozoneManager, commitKeyArgs);
 
@@ -139,19 +131,20 @@ public class OMKeyCommitRequestWithFSO extends OMKeyCommitRequest {
 
       validateBucketAndVolume(omMetadataManager, volumeName, bucketName);
 
-      String fileName = OzoneFSUtils.getFileName(keyName);
+      OmGetKey omGetKey = new OmGetKey.Builder()
+          .setVolumeName(volumeName)
+          .setBucketName(bucketName)
+          .setKeyName(keyName)
+          .setOmMetadataManager(omMetadataManager)
+          .setErrMsg("Cannot create file : " + keyName
+              + " as parent directory doesn't exist")
+          .build();
+
       omBucketInfo = getBucketInfo(omMetadataManager, volumeName, bucketName);
-      final long volumeId = omMetadataManager.getVolumeId(volumeName);
-      final long bucketId = omMetadataManager.getBucketId(
-              volumeName, bucketName);
-      long parentID = OMFileRequest.getParentID(volumeId, bucketId,
-              pathComponents, keyName, omMetadataManager,
-              "Cannot create file : " + keyName
-              + " as parent directory doesn't exist");
-      String dbFileKey = omMetadataManager.getOzonePathKey(volumeId, bucketId,
-              parentID, fileName);
-      dbOpenFileKey = omMetadataManager.getOpenFileName(volumeId, bucketId,
-              parentID, fileName, commitKeyRequest.getClientID());
+
+      String dbFileKey = omGetKey.getFileDBKey();
+      String dbOpenFileKey = omGetKey.getOpenFileDBKey(
+          commitKeyRequest.getClientID());
 
       omKeyInfo = OMFileRequest.getOmKeyInfoFromFileTable(true,
               omMetadataManager, dbOpenFileKey, keyName);
@@ -215,7 +208,7 @@ public class OMKeyCommitRequestWithFSO extends OMKeyCommitRequest {
         checkBucketQuotaInBytes(omMetadataManager, omBucketInfo,
             correctedSpace);
         String delKeyName = omMetadataManager
-            .getOzoneKey(volumeName, bucketName, fileName);
+            .getOzoneKey(volumeName, bucketName, omGetKey.getFileName());
         delKeyName = omMetadataManager.getOzoneDeletePathKey(
             keyToDelete.getObjectID(), delKeyName);
         if (null == oldKeyVersionsToDeleteMap) {
@@ -244,7 +237,7 @@ public class OMKeyCommitRequestWithFSO extends OMKeyCommitRequest {
           : wrapUncommittedBlocksAsPseudoKey(uncommitted, omKeyInfo);
       if (pseudoKeyInfo != null) {
         String delKeyName = omMetadataManager
-            .getOzoneKey(volumeName, bucketName, fileName);
+            .getOzoneKey(volumeName, bucketName, omGetKey.getFileName());
         long pseudoObjId = ozoneManager.getObjectIdFromTxId(trxnLogIndex);
         delKeyName = omMetadataManager.getOzoneDeletePathKey(
             pseudoObjId, delKeyName);
@@ -261,17 +254,18 @@ public class OMKeyCommitRequestWithFSO extends OMKeyCommitRequest {
         // indicating the key is removed from OpenKeyTable.
         // So that this key can't be committed again.
         OMFileRequest.addOpenFileTableCacheEntry(omMetadataManager,
-            dbOpenFileKey, null, fileName, trxnLogIndex);
+            dbOpenFileKey, null, omGetKey.getFileName(),
+            trxnLogIndex);
       }
 
       OMFileRequest.addFileTableCacheEntry(omMetadataManager, dbFileKey,
-              omKeyInfo, fileName, trxnLogIndex);
+              omKeyInfo, omGetKey.getFileName(), trxnLogIndex);
 
       omBucketInfo.incrUsedBytes(correctedSpace);
 
       omClientResponse = new OMKeyCommitResponseWithFSO(omResponse.build(),
               omKeyInfo, dbFileKey, dbOpenFileKey, omBucketInfo.copyObject(),
-          oldKeyVersionsToDeleteMap, volumeId, isHSync);
+          oldKeyVersionsToDeleteMap, omGetKey.getVolumeID(), isHSync);
 
       result = Result.SUCCESS;
     } catch (IOException | InvalidPathException ex) {
