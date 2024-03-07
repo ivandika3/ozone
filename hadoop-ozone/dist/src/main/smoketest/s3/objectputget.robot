@@ -42,7 +42,7 @@ Put object to s3
 
 Put object with wrong storage class
                         Execute                                echo "Randomtext" > /tmp/testfile
-    ${result} =         Execute AWSS3ApiCli and checkrc        put-object --bucket ${BUCKET} --key ${PREFIX}/putobject/key=value/f1 --body /tmp/testfile --storage-class INVALID 255
+    ${result} =         Execute AWSS3ApiCli and checkrc        put-object --bucket ${BUCKET} --key ${PREFIX}/putobject/key=value/f1 --body /tmp/testfile --storage-class INVALID     255
                         Should contain                         ${result}         InvalidArgument
 
 
