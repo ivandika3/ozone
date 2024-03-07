@@ -41,9 +41,9 @@ Put object to s3
                         Should contain             ${result}         zerobyte
 
 Put object with wrong storage class
-                        Execute                    echo "Randomtext" > /tmp/testfile
-    ${result} =         Execute AWSS3ApiCli        put-object --bucket ${BUCKET} --key ${PREFIX}/putobject/key=value/f1 --body /tmp/testfile --storage-class INVALID
-                        Should contain             ${result}         InvalidArgument
+                        Execute                                echo "Randomtext" > /tmp/testfile
+    ${result} =         Execute AWSS3ApiCli and checkrc        put-object --bucket ${BUCKET} --key ${PREFIX}/putobject/key=value/f1 --body /tmp/testfile --storage-class INVALID
+                        Should contain                         ${result}         InvalidArgument
 
 
 #This test depends on the previous test case. Can't be executes alone
