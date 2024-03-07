@@ -151,7 +151,7 @@ public final class S3ErrorTable {
    * @return creates a new instance of error based on the template
    */
   public static OS3Exception newError(OS3Exception e, String resource,
-      Exception ex) {
+      Throwable ex) {
     OS3Exception err =  new OS3Exception(e.getCode(), e.getErrorMessage(),
         e.getHttpCode());
     err.setResource(resource);
