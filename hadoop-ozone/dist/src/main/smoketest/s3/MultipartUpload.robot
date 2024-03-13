@@ -390,3 +390,7 @@ Test Multipart Upload list
 
     ${count} =          Execute and checkrc      echo '${result}' | jq -r '.Uploads | length'  0
                         Should Be Equal          ${count}     2
+
+Test Multipart Upload list for bucket that doesn't exist
+    ${result} =         Execute AWSS3APICli and checkrc   list-multipart-uploads --bucket ${BUCKET}-nosuchbucket --key f1      255
+                        Should contain                    ${result}         NoSuchBucket
