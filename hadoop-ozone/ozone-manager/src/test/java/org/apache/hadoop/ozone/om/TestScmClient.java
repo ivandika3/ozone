@@ -18,7 +18,6 @@
 package org.apache.hadoop.ozone.om;
 
 import static com.google.common.collect.Sets.newHashSet;
-import static java.util.Arrays.asList;
 import static org.apache.hadoop.hdds.client.ReplicationConfig.fromTypeAndFactor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -106,9 +105,12 @@ public class TestScmClient {
       throws IOException {
 
     Map<Long, ContainerWithPipeline> actualLocations = new HashMap<>();
-
+    List<DatanodeDetails> dnList = new ArrayList<>();
+    for (int i = 0; i < 3; i++) {
+      dnList.add(randomDatanode());
+    }
     for (long containerId : prepopulatedIds) {
-      ContainerWithPipeline pipeline = createPipeline(containerId);
+      ContainerWithPipeline pipeline = createPipeline(containerId, dnList);
       actualLocations.put(containerId, pipeline);
     }
 
@@ -128,7 +130,7 @@ public class TestScmClient {
     if (!expectedScmCallIds.isEmpty()) {
       List<ContainerWithPipeline> scmLocations = new ArrayList<>();
       for (long containerId : expectedScmCallIds) {
-        ContainerWithPipeline pipeline = createPipeline(containerId);
+        ContainerWithPipeline pipeline = createPipeline(containerId, dnList);
         scmLocations.add(pipeline);
         actualLocations.put(containerId, pipeline);
       }
@@ -166,13 +168,14 @@ public class TestScmClient {
     assertEquals(runtimeException, actualRt.getCause());
   }
 
-  ContainerWithPipeline createPipeline(long containerId) {
+  ContainerWithPipeline createPipeline(long containerId,
+                                       List<DatanodeDetails> dnList) {
     ContainerInfo containerInfo = new ContainerInfo.Builder()
         .setContainerID(containerId)
         .build();
     Pipeline pipeline = Pipeline.newBuilder()
         .setId(PipelineID.randomId())
-        .setNodes(asList(randomDatanode(), randomDatanode()))
+        .setNodes(dnList)
         .setReplicationConfig(fromTypeAndFactor(
             ReplicationType.RATIS, ReplicationFactor.THREE))
         .setState(Pipeline.PipelineState.OPEN)
