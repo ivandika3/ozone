@@ -964,7 +964,8 @@ public class BlockOutputStream extends OutputStream {
       }
 
       asyncReply = writeChunkAsync(xceiverClient, chunkInfo,
-          blockID.get(), data, tokenString, replicationIndex, blockData, close);
+          blockID.get(), data, tokenString, replicationIndex, blockData, close,
+          null);
       CompletableFuture<ContainerCommandResponseProto>
           respFuture = asyncReply.getResponse();
       validateFuture = respFuture.thenApplyAsync(e -> {

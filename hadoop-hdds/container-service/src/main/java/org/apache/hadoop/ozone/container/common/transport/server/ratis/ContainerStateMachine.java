@@ -495,7 +495,6 @@ public class ContainerStateMachine extends BaseStateMachine {
       }
       return builder.build().setException(ioe);
     }
-
     // once the token is verified, clear it from the proto
     final ContainerCommandRequestProto.Builder protoBuilder = ContainerCommandRequestProto.newBuilder(proto)
         .clearEncodedToken();

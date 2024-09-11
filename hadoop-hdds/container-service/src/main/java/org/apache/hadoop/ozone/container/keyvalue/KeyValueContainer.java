@@ -183,12 +183,18 @@ public class KeyValueContainer implements Container<KeyValueContainerData> {
           // commit bytes have been reserved in volumeChoosingPolicy#chooseVolume
           containerData.setCommittedSpace(true);
         } catch (DiskOutOfSpaceException ex) {
-          throw new StorageContainerException("Container creation failed, " +
-              "due to disk out of space", ex, DISK_OUT_OF_SPACE);
+          String message = storageType == null
+              ? "Container creation failed, due to disk out of space"
+              : "Container creation failed, due to disk out of space on "
+                  + "StorageType: " + storageType;
+          throw new StorageContainerException(message, ex, DISK_OUT_OF_SPACE);
         } catch (IOException ex) {
+          String message = storageType == null
+              ? "Container creation failed. " + ex.getMessage()
+              : "Container creation failed on StorageType:" + storageType
+                  + ". " + ex.getMessage();
           throw new StorageContainerException(
-              "Container creation failed. " + ex.getMessage(), ex,
-              CONTAINER_INTERNAL_ERROR);
+              message, ex, CONTAINER_INTERNAL_ERROR);
         }
 
         try {

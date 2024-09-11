@@ -33,6 +33,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
 import org.apache.hadoop.hdds.annotation.InterfaceStability;
 import org.apache.hadoop.hdds.client.BlockID;
+import org.apache.hadoop.hdds.client.StorageTypeUtils;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.BlockData;
@@ -62,6 +63,7 @@ import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.ReadContai
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.ReadContainerResponseProto;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.Type;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.WriteChunkRequestProto;
+import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.scm.XceiverClientReply;
 import org.apache.hadoop.hdds.scm.XceiverClientSpi;
 import org.apache.hadoop.hdds.scm.XceiverClientSpi.Validator;
@@ -435,8 +437,30 @@ public final class ContainerProtocolCalls  {
   @SuppressWarnings("parameternumber")
   public static XceiverClientReply writeChunkAsync(
       XceiverClientSpi xceiverClient, ChunkInfo chunk, BlockID blockID,
-      ByteString data, String tokenString,
-      int replicationIndex, BlockData blockData, boolean close)
+      ByteString data, String tokenString, int replicationIndex,
+      BlockData blockData, boolean close)
+      throws IOException, ExecutionException, InterruptedException {
+    return writeChunkAsync(xceiverClient, chunk, blockID, data, tokenString,
+        replicationIndex, blockData, close, null);
+  }
+
+  /**
+   * Calls the container protocol to write a chunk.
+   *
+   * @param xceiverClient client to perform call
+   * @param chunk information about chunk to write
+   * @param blockID ID of the block
+   * @param data the data of the chunk to write
+   * @param tokenString serialized block token
+   * @param storageType the requested storage type for auto-created containers,
+   *                    or {@code null} to allow any volume type
+   * @throws IOException if there is an I/O error while performing the call
+   */
+  @SuppressWarnings("parameternumber")
+  public static XceiverClientReply writeChunkAsync(
+      XceiverClientSpi xceiverClient, ChunkInfo chunk, BlockID blockID,
+      ByteString data, String tokenString, int replicationIndex,
+      BlockData blockData, boolean close, HddsProtos.StorageType storageType)
       throws IOException, ExecutionException, InterruptedException {
 
     WriteChunkRequestProto.Builder writeChunkRequest =
@@ -455,6 +479,10 @@ public final class ContainerProtocolCalls  {
               .setBlockData(blockData)
               .setEof(close);
       writeChunkRequest.setBlock(createBlockRequest);
+    }
+    if (storageType != null) {
+      writeChunkRequest.setStorageTypeID(
+          StorageTypeUtils.getIDFromProtobuf(storageType));
     }
     String id = xceiverClient.getPipeline().getFirstNode().getUuidString();
     ContainerCommandRequestProto.Builder builder =
@@ -477,15 +505,18 @@ public final class ContainerProtocolCalls  {
    * using a single RPC. This API is designed to be used for files which are
    * smaller than 1 MB.
    *
-   * @param client - client that communicates with the container.
-   * @param blockID - ID of the block
-   * @param data - Data to be written into the container.
-   * @param token a token for this block (may be null)
+   * @param client      - client that communicates with the container.
+   * @param blockID     - ID of the block
+   * @param data        - Data to be written into the container.
+   * @param token       a token for this block (may be null)
+   * @param storageType - the type of storage that is required, if the storageType
+   *                    is null, any storageType will be considered.
    * @return container protocol writeSmallFile response
    */
   public static PutSmallFileResponseProto writeSmallFile(
       XceiverClientSpi client, BlockID blockID, byte[] data,
-      Token<OzoneBlockTokenIdentifier> token) throws IOException {
+      Token<OzoneBlockTokenIdentifier> token,
+      HddsProtos.StorageType storageType) throws IOException {
 
     BlockData containerBlockData =
         BlockData.newBuilder().setBlockID(blockID.getDatanodeBlockIDProtobuf())
@@ -509,10 +540,13 @@ public final class ContainerProtocolCalls  {
             .setChecksumData(checksumData.getProtoBufMessage())
             .build();
 
-    PutSmallFileRequestProto putSmallFileRequest =
+    PutSmallFileRequestProto.Builder putSmallFileBuilder =
         PutSmallFileRequestProto.newBuilder().setChunkInfo(chunk)
-            .setBlock(createBlockRequest).setData(ByteString.copyFrom(data))
-            .build();
+            .setBlock(createBlockRequest)
+            .setData(ByteString.copyFrom(data));
+    if (storageType != null) {
+      putSmallFileBuilder.setStorageTypeID(StorageTypeUtils.getIDFromProtobuf(storageType));
+    }
 
     String id = client.getPipeline().getFirstNode().getUuidString();
     ContainerCommandRequestProto.Builder builder =
@@ -520,7 +554,7 @@ public final class ContainerProtocolCalls  {
             .setCmdType(Type.PutSmallFile)
             .setContainerID(blockID.getContainerID())
             .setDatanodeUuid(id)
-            .setPutSmallFile(putSmallFileRequest);
+            .setPutSmallFile(putSmallFileBuilder);
     if (token != null) {
       builder.setEncodedToken(token.encodeToUrlString());
     }
@@ -573,6 +607,7 @@ public final class ContainerProtocolCalls  {
       throws IOException {
     ContainerProtos.CreateContainerRequestProto.Builder createRequest =
         ContainerProtos.CreateContainerRequestProto.newBuilder();
+    // TODO StoragePolicy Support createContainer Command
     createRequest
         .setContainerType(ContainerProtos.ContainerType.KeyValueContainer);
     if (state != null) {

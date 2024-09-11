@@ -17,6 +17,8 @@
 
 package org.apache.hadoop.ozone.container.common.impl;
 
+import static org.apache.hadoop.hdds.HddsConfigKeys.HDDS_DATANODE_SLOW_OP_WARNING_THRESHOLD_DEFAULT;
+import static org.apache.hadoop.hdds.HddsConfigKeys.HDDS_DATANODE_SLOW_OP_WARNING_THRESHOLD_KEY;
 import static org.apache.hadoop.hdds.scm.protocolPB.ContainerCommandResponseBuilders.malformedRequest;
 import static org.apache.hadoop.hdds.scm.protocolPB.ContainerCommandResponseBuilders.unsupportedRequest;
 import static org.apache.hadoop.ozone.audit.AuditLogger.PerformanceStringBuilder;
@@ -45,6 +47,7 @@ import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.ContainerC
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.ContainerDataProto;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.ContainerDataProto.State;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.ContainerType;
+import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.DatanodeBlockID;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.Result;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.Type;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.ContainerAction;
@@ -80,6 +83,7 @@ import org.apache.hadoop.util.Time;
 import org.apache.ratis.statemachine.StateMachine;
 import org.apache.ratis.thirdparty.io.grpc.stub.StreamObserver;
 import org.apache.ratis.util.UncheckedAutoCloseable;
+import org.apache.ratis.thirdparty.com.google.protobuf.ProtocolMessageEnum;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -302,8 +306,7 @@ public class HddsDispatcher implements ContainerDispatcher, Auditor {
         responseProto = createContainer(msg);
         metrics.incContainerOpsMetrics(Type.CreateContainer);
         metrics.incContainerOpsLatencies(Type.CreateContainer,
-                Time.monotonicNowNanos() - startTime);
-
+            Time.monotonicNowNanos() - startTime);
         if (responseProto.getResult() != Result.SUCCESS) {
           StorageContainerException sce = new StorageContainerException(
               "ContainerID " + containerID + " creation failed",
@@ -499,16 +502,28 @@ public class HddsDispatcher implements ContainerDispatcher, Auditor {
     createRequest.setContainerType(containerType);
 
     if (containerRequest.hasWriteChunk()) {
-      createRequest.setReplicaIndex(
-          containerRequest.getWriteChunk().getBlockID().getReplicaIndex());
+      DatanodeBlockID blockID = containerRequest.getWriteChunk().getBlockID();
+      createRequest.setReplicaIndex(blockID.getReplicaIndex());
+      if (containerRequest.getWriteChunk().hasStorageTypeID()) {
+        createRequest.setStorageTypeID(
+            containerRequest.getWriteChunk().getStorageTypeID());
+      }
     }
 
     if (containerRequest.hasPutBlock()) {
-      createRequest.setReplicaIndex(
-          containerRequest.getPutBlock().getBlockData().getBlockID()
-              .getReplicaIndex());
+      DatanodeBlockID blockID = containerRequest.getPutBlock().getBlockData().getBlockID();
+      createRequest.setReplicaIndex(blockID.getReplicaIndex());
     }
 
+    if (containerRequest.hasPutSmallFile()) {
+      // PutSmallFile Not support EC yet
+      DatanodeBlockID blockID = containerRequest.getPutSmallFile().getBlock().getBlockData().getBlockID();
+      createRequest.setReplicaIndex(blockID.getReplicaIndex());
+      if (containerRequest.getPutSmallFile().hasStorageTypeID()) {
+        createRequest.setStorageTypeID(
+            containerRequest.getPutSmallFile().getStorageTypeID());
+      }
+    }
     ContainerCommandRequestProto.Builder requestBuilder =
         ContainerCommandRequestProto.newBuilder()
             .setCmdType(Type.CreateContainer)
