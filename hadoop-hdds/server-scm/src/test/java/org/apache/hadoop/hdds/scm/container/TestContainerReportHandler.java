@@ -23,6 +23,7 @@ import static org.apache.hadoop.hdds.scm.HddsTestUtils.getContainerReports;
 import static org.apache.hadoop.hdds.scm.HddsTestUtils.getECContainer;
 import static org.apache.hadoop.hdds.scm.HddsTestUtils.getReplicas;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.eq;
@@ -48,8 +49,10 @@ import java.util.Set;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTypeUtils;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
@@ -1188,6 +1191,50 @@ public class TestContainerReportHandler {
     assertEquals(1, containerManager.getContainerReplicas(containerOne.containerID()).size());
   }
 
+  @Test
+  public void testReplicaStorageTypeValidation()
+      throws IOException, NodeNotFoundException {
+    final ContainerReportHandler reportHandler = new ContainerReportHandler(
+        nodeManager, containerManager);
+    final Iterator<DatanodeDetails> nodeIterator = nodeManager.getNodes(
+        NodeStatus.inServiceHealthy()).iterator();
+    final DatanodeDetails datanodeOne = nodeIterator.next();
+    final DatanodeDetails datanodeTwo = nodeIterator.next();
+    final DatanodeDetails datanodeThree = nodeIterator.next();
+    final ContainerInfo containerOne = getContainer(LifeCycleState.CLOSED);
+
+    containerStateManager.addContainer(containerOne.getProtobuf());
+    reportHandler.onMessage(getContainerReportFromDatanode(
+        containerOne.containerID(), ContainerReplicaProto.State.CLOSED,
+        datanodeOne, 50L, 60L, StorageType.DISK), publisher);
+    reportHandler.onMessage(getContainerReportFromDatanode(
+        containerOne.containerID(), ContainerReplicaProto.State.CLOSED,
+        datanodeTwo, 50L, 60L, StorageType.SSD), publisher);
+    reportHandler.onMessage(getContainerReportFromDatanode(
+        containerOne.containerID(), ContainerReplicaProto.State.CLOSED,
+        datanodeThree, 50L, 60L, StorageType.ARCHIVE), publisher);
+
+    Map<StorageType, DatanodeDetails> expected = new HashMap<>();
+    expected.put(StorageType.DISK, datanodeOne);
+    expected.put(StorageType.SSD, datanodeTwo);
+    expected.put(StorageType.ARCHIVE, datanodeThree);
+    for (ContainerReplica replica :
+        containerManager.getContainerReplicas(containerOne.containerID())) {
+      assertEquals(expected.get(replica.getStorageType()),
+          replica.getDatanodeDetails());
+    }
+
+    reportHandler.onMessage(getContainerReportFromDatanode(
+        containerOne.containerID(), ContainerReplicaProto.State.CLOSED,
+        datanodeThree, 50L, 60L, null), publisher);
+    for (ContainerReplica replica :
+        containerManager.getContainerReplicas(containerOne.containerID())) {
+      if (replica.getDatanodeDetails().equals(datanodeThree)) {
+        assertNull(replica.getStorageType());
+      }
+    }
+  }
+
   /**
    * Test resurrection of DELETED container to QUASI_CLOSED state when a non-empty
    * QUASI_CLOSED replica with matching bcsId is reported.
@@ -1426,11 +1473,30 @@ public class TestContainerReportHandler {
 
   private ContainerReportFromDatanode getContainerReportFromDatanode(
       ContainerID containerId, ContainerReplicaProto.State state,
+      DatanodeDetails dn, long bytesUsed, long keyCount,
+      StorageType storageType) {
+    return getContainerReportFromDatanode(containerId, state, dn, bytesUsed,
+        keyCount, 10000L, 0, false, storageType);
+  }
+
+  private ContainerReportFromDatanode getContainerReportFromDatanode(
+      ContainerID containerId, ContainerReplicaProto.State state,
       DatanodeDetails dn, long bytesUsed, long keyCount, int replicaIndex) {
     ContainerReportsProto containerReport = getContainerReportsProto(
         containerId, state, dn.getUuidString(), bytesUsed, keyCount,
         10000L, replicaIndex);
 
+    return new ContainerReportFromDatanode(dn, containerReport);
+  }
+
+  @SuppressWarnings("checkstyle:parameternumber")
+  private ContainerReportFromDatanode getContainerReportFromDatanode(
+      ContainerID containerId, ContainerReplicaProto.State state,
+      DatanodeDetails dn, long bytesUsed, long keyCount, long bcsId,
+      int replicaIndex, boolean isEmpty, StorageType storageType) {
+    ContainerReportsProto containerReport = getContainerReportsProto(
+        containerId, state, dn.getUuidString(), bytesUsed, keyCount,
+        bcsId, replicaIndex, isEmpty, storageType);
     return new ContainerReportFromDatanode(dn, containerReport);
   }
 
@@ -1481,10 +1547,11 @@ public class TestContainerReportHandler {
   protected static ContainerReportsProto getContainerReportsProto(
       final ContainerID containerId, final ContainerReplicaProto.State state,
       final String originNodeId, final long usedBytes, final long keyCount,
-      final long bcsId, final int replicaIndex, final boolean isEmpty) {
+      final long bcsId, final int replicaIndex, final boolean isEmpty,
+      final StorageType storageType) {
     final ContainerReportsProto.Builder crBuilder =
         ContainerReportsProto.newBuilder();
-    final ContainerReplicaProto replicaProto =
+    final ContainerReplicaProto.Builder replicaProto =
         ContainerReplicaProto.newBuilder()
             .setContainerID(containerId.getId())
             .setState(state)
@@ -1499,8 +1566,20 @@ public class TestContainerReportHandler {
             .setBlockCommitSequenceId(bcsId)
             .setDeleteTransactionId(0)
             .setReplicaIndex(replicaIndex)
-            .setIsEmpty(isEmpty)
-            .build();
-    return crBuilder.addReports(replicaProto).build();
+            .setIsEmpty(isEmpty);
+    if (storageType != null) {
+      replicaProto.setStorageType(
+          StorageTypeUtils.getStorageTypeProto(storageType));
+    }
+    return crBuilder.addReports(replicaProto.build()).build();
+  }
+
+  @SuppressWarnings("checkstyle:ParameterNumber")
+  protected static ContainerReportsProto getContainerReportsProto(
+      final ContainerID containerId, final ContainerReplicaProto.State state,
+      final String originNodeId, final long usedBytes, final long keyCount,
+      final long bcsId, final int replicaIndex, final boolean isEmpty) {
+    return getContainerReportsProto(containerId, state, originNodeId, usedBytes,
+        keyCount, bcsId, replicaIndex, isEmpty, null);
   }
 }

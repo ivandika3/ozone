@@ -43,6 +43,7 @@ import java.nio.file.Paths;
 import java.time.Clock;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,9 +54,11 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.HddsConfigKeys;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTypeUtils;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
@@ -619,6 +622,54 @@ public class TestIncrementalContainerReportHandler {
   }
 
   @Test
+  public void testReplicaStorageTypeValidation() throws IOException {
+    final IncrementalContainerReportHandler reportHandler =
+        new IncrementalContainerReportHandler(
+            nodeManager, containerManager, scmContext);
+    final ContainerInfo container = getContainer(LifeCycleState.CLOSING);
+    final DatanodeDetails datanodeOne = randomDatanodeDetails();
+    final DatanodeDetails datanodeTwo = randomDatanodeDetails();
+    final DatanodeDetails datanodeThree = randomDatanodeDetails();
+    nodeManager.register(datanodeOne, null, null);
+    nodeManager.register(datanodeTwo, null, null);
+    nodeManager.register(datanodeThree, null, null);
+    containerStateManager.addContainer(container.getProtobuf());
+    getReplicas(container.containerID(), ContainerReplicaProto.State.CLOSING,
+        datanodeOne, datanodeTwo, datanodeThree)
+        .forEach(containerStateManager::updateContainerReplica);
+
+    addIncrContainerReport(
+        container, datanodeOne, reportHandler, StorageType.DISK);
+    addIncrContainerReport(
+        container, datanodeTwo, reportHandler, StorageType.SSD);
+    addIncrContainerReport(
+        container, datanodeThree, reportHandler, StorageType.RAM_DISK);
+
+    Map<StorageType, DatanodeDetails> expected = new HashMap<>();
+    expected.put(StorageType.DISK, datanodeOne);
+    expected.put(StorageType.SSD, datanodeTwo);
+    expected.put(StorageType.RAM_DISK, datanodeThree);
+    for (ContainerReplica replica :
+        containerStateManager.getContainerReplicas(container.containerID())) {
+      assertEquals(expected.get(replica.getStorageType()),
+          replica.getDatanodeDetails());
+    }
+  }
+
+  private void addIncrContainerReport(ContainerInfo container,
+      DatanodeDetails datanode,
+      IncrementalContainerReportHandler reportHandler,
+      StorageType storageType) {
+    final IncrementalContainerReportProto containerReport =
+        getIncrementalContainerReportProto(container.containerID(),
+            ContainerReplicaProto.State.CLOSED, datanode.getUuidString(),
+            true, 0, 10000L, storageType);
+    final IncrementalContainerReportFromDatanode icrFromDatanode =
+        new IncrementalContainerReportFromDatanode(datanode, containerReport);
+    reportHandler.onMessage(icrFromDatanode, publisher);
+  }
+
+  @Test
   public void testWithNoContainerDataChecksum() throws Exception {
     final IncrementalContainerReportHandler reportHandler = new IncrementalContainerReportHandler(nodeManager,
         containerManager, scmContext);
@@ -778,6 +829,19 @@ public class TestIncrementalContainerReportHandler {
           final boolean hasReplicaIndex,
           final int replicaIndex,
           final long bcsId) {
+    return getIncrementalContainerReportProto(containerId, state, originNodeId,
+        hasReplicaIndex, replicaIndex, bcsId, null);
+  }
+
+  private static IncrementalContainerReportProto
+      getIncrementalContainerReportProto(
+          final ContainerID containerId,
+          final ContainerReplicaProto.State state,
+          final String originNodeId,
+          final boolean hasReplicaIndex,
+          final int replicaIndex,
+          final long bcsId,
+          final StorageType storageType) {
     final ContainerReplicaProto.Builder replicaProto =
             ContainerReplicaProto.newBuilder()
                     .setContainerID(containerId.getId())
@@ -794,6 +858,10 @@ public class TestIncrementalContainerReportHandler {
                     .setDeleteTransactionId(0);
     if (hasReplicaIndex) {
       replicaProto.setReplicaIndex(replicaIndex);
+    }
+    if (storageType != null) {
+      replicaProto.setStorageType(
+          StorageTypeUtils.getStorageTypeProto(storageType));
     }
     return getIncrementalContainerReportProto(replicaProto.build());
   }

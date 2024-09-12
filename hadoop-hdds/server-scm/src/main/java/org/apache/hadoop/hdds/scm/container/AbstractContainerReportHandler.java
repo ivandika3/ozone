@@ -25,6 +25,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTypeUtils;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.DatanodeID;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
@@ -379,7 +380,8 @@ abstract class AbstractContainerReportHandler {
                                       final ContainerReplicaProto replicaProto)
       throws ContainerNotFoundException, ContainerReplicaNotFoundException {
 
-    final ContainerReplica replica = ContainerReplica.newBuilder()
+    final ContainerReplica.ContainerReplicaBuilder replicaBuilder =
+        ContainerReplica.newBuilder()
         .setContainerID(containerId)
         .setContainerState(replicaProto.getState())
         .setDatanodeDetails(datanodeDetails)
@@ -389,8 +391,12 @@ abstract class AbstractContainerReportHandler {
         .setReplicaIndex(replicaProto.getReplicaIndex())
         .setBytesUsed(replicaProto.getUsed())
         .setEmpty(replicaProto.getIsEmpty())
-        .setChecksums(ContainerChecksums.of(replicaProto.getDataChecksum()))
-        .build();
+        .setChecksums(ContainerChecksums.of(replicaProto.getDataChecksum()));
+    if (replicaProto.hasStorageType()) {
+      replicaBuilder.setStorageType(
+          StorageTypeUtils.getFromProtobuf(replicaProto.getStorageType()));
+    }
+    final ContainerReplica replica = replicaBuilder.build();
 
     if (replica.getState().equals(State.DELETED)) {
       containerManager.removeContainerReplica(containerId, replica);
