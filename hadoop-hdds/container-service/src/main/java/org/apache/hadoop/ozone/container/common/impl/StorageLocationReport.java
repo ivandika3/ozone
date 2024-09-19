@@ -20,7 +20,9 @@ package org.apache.hadoop.ozone.container.common.impl;
 import java.io.IOException;
 import net.jcip.annotations.Immutable;
 import org.apache.hadoop.fs.StorageType;
+import org.apache.hadoop.hdds.client.StorageTypeUtils;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
+import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.StorageTypeProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.MetadataStorageReportProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.StorageReportProto;
@@ -119,6 +121,11 @@ public final class StorageLocationReport implements StorageLocationReportMXBean 
     return getStorageTypeProto(getStorageType());
   }
 
+  private HddsProtos.StorageType getStorageTypeProtoV2()
+      throws IllegalArgumentException {
+    return StorageTypeUtils.getStorageTypeProto(getStorageType());
+  }
+
   public static StorageTypeProto getStorageTypeProto(StorageType type)
       throws IllegalArgumentException {
     StorageTypeProto storageTypeProto;
@@ -200,6 +207,7 @@ public final class StorageLocationReport implements StorageLocationReportMXBean 
         .setRemaining(getRemaining())
         .setCommitted(getCommitted())
         .setStorageType(getStorageTypeProto())
+        .setStorageTypeProto(getStorageTypeProtoV2())
         .setStorageLocation(getStorageLocation())
         .setFailed(isFailed())
         .setFreeSpaceToSpare(getFreeSpaceToSpare())
@@ -223,6 +231,7 @@ public final class StorageLocationReport implements StorageLocationReportMXBean 
         .setScmUsed(getScmUsed())
         .setRemaining(getRemaining())
         .setStorageType(getStorageTypeProto())
+        .setStorageTypeProto(getStorageTypeProtoV2())
         .setStorageLocation(getStorageLocation())
         .setFailed(isFailed())
         .build();
@@ -246,7 +255,10 @@ public final class StorageLocationReport implements StorageLocationReportMXBean 
     if (report.hasScmUsed()) {
       builder.setScmUsed(report.getScmUsed());
     }
-    if (report.hasStorageType()) {
+    if (report.hasStorageTypeProto()) {
+      builder.setStorageType(
+          StorageTypeUtils.getFromProtobuf(report.getStorageTypeProto()));
+    } else if (report.hasStorageType()) {
       builder.setStorageType(getStorageType(report.getStorageType()));
     }
     if (report.hasRemaining()) {
@@ -285,7 +297,10 @@ public final class StorageLocationReport implements StorageLocationReportMXBean 
     if (report.hasScmUsed()) {
       builder.setScmUsed(report.getScmUsed());
     }
-    if (report.hasStorageType()) {
+    if (report.hasStorageTypeProto()) {
+      builder.setStorageType(
+          StorageTypeUtils.getFromProtobuf(report.getStorageTypeProto()));
+    } else if (report.hasStorageType()) {
       builder.setStorageType(getStorageType(report.getStorageType()));
     }
     if (report.hasRemaining()) {
