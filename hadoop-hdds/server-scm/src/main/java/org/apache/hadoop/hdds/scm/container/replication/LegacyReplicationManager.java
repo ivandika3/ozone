@@ -2111,6 +2111,7 @@ public class LegacyReplicationManager {
   */
   private void onLeaderReadyAndOutOfSafeMode() {
     List<HddsProtos.ContainerID> needToRemove = new LinkedList<>();
+    LOG.info("onLeaderReadyAndOutOfSafeMode inflightMove size: {}", moveScheduler.getInflightMove().size());
     moveScheduler.getInflightMove().forEach((k, v) -> {
       Set<ContainerReplica> replicas;
       ContainerInfo cif;
