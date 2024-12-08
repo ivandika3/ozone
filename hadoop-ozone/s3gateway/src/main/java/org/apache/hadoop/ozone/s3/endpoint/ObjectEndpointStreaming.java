@@ -105,7 +105,7 @@ final class ObjectEndpointStreaming {
     long writeLen;
     String eTag;
     try (OzoneDataStreamOutput streamOutput = bucket.createStreamKey(keyPath,
-        length, replicationConfig, keyMetadata, tags)) {
+        length, replicationConfig, keyMetadata)) {
       long metadataLatencyNs = METRICS.updatePutKeyMetadataStats(startNanos);
       writeLen = writeToStreamOutput(streamOutput, body, bufferSize, length);
       eTag = DatatypeConverter.printHexBinary(body.getMessageDigest().digest())
