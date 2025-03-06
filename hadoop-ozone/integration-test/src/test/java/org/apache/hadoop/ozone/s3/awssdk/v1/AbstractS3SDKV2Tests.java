@@ -106,7 +106,7 @@ public abstract class AbstractS3SDKV2Tests extends OzoneTestBase {
     final String keyName = getKeyName();
     final String content = "bar";
     s3Client.createBucket(b -> b.bucket(bucketName));
-    final byte[] contentBytes = content.getBytes(StandardCharsets.UTF_8);
+//    final byte[] contentBytes = content.getBytes(StandardCharsets.UTF_8);
 
     PutObjectResponse putObjectResponse = s3Client.putObject(b -> b
         .bucket(bucketName)
