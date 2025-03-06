@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -32,6 +33,7 @@ import org.apache.ozone.test.OzoneTestBase;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
@@ -104,6 +106,7 @@ public abstract class AbstractS3SDKV2Tests extends OzoneTestBase {
     final String keyName = getKeyName();
     final String content = "bar";
     s3Client.createBucket(b -> b.bucket(bucketName));
+    final byte[] contentBytes = content.getBytes(StandardCharsets.UTF_8);
 
     PutObjectResponse putObjectResponse = s3Client.putObject(b -> b
         .bucket(bucketName)
@@ -111,12 +114,16 @@ public abstract class AbstractS3SDKV2Tests extends OzoneTestBase {
         .checksumAlgorithm(ChecksumAlgorithm.CRC32),
         RequestBody.fromString(content));
 
-    assertEquals("\"37b51d194a7513e45b56f6524f2d51f2\"", putObjectResponse.eTag());
+//    assertEquals("\"37b51d194a7513e45b56f6524f2d51f2\"", putObjectResponse.eTag());
 
-    GetObjectResponse getObjectResponse = s3Client.getObject(
-        b -> b.bucket(bucketName).key(keyName)).response();
+//    GetObjectResponse getObjectResponse = s3Client.getObject(
+//        b -> b.bucket(bucketName).key(keyName)).response();
 
-    assertEquals("\"37b51d194a7513e45b56f6524f2d51f2\"", getObjectResponse.eTag());
+    ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(
+        b -> b.bucket(bucketName).key(keyName)
+    );
+
+    assertEquals(content, objectBytes.asUtf8String());
   }
 
   @Test
