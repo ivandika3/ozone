@@ -17,9 +17,9 @@
 
 package org.apache.hadoop.ozone.om;
 
-import javax.xml.bind.DatatypeConverter;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import javax.xml.bind.DatatypeConverter;
 
 public class DatatypeConverterResolveIssue {
 
