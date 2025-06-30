@@ -21,7 +21,13 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import javax.xml.bind.DatatypeConverter;
 
+/**
+ * Reproduce HDDS-13342 issue on JDK21.
+ */
 public class DatatypeConverterResolveIssue {
+
+  private DatatypeConverterResolveIssue() {
+  }
 
   public static void main(String[] args) throws Exception {
     String toHash = "toHash";
