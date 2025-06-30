@@ -24,7 +24,7 @@ import javax.xml.bind.DatatypeConverter;
 /**
  * Reproduce HDDS-13342 issue on JDK21.
  */
-public class DatatypeConverterResolveIssue {
+public final class DatatypeConverterResolveIssue {
 
   private DatatypeConverterResolveIssue() {
   }
