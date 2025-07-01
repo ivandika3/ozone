@@ -362,6 +362,11 @@ public abstract class TestOmSnapshot {
     OzoneBucket volBbucketA = volB.getBucket(bucketA);
     OzoneBucket volBbucketB = volB.getBucket(bucketB);
 
+    String emptyBucketSnapshotKeyPrefix = createSnapshot(volumeA, bucketA);
+    int emptyBucketSnapshotCount = keyCount(volAbucketA,
+        emptyBucketSnapshotKeyPrefix);
+    assertEquals(0, emptyBucketSnapshotCount);
+
     /*
     Create 10 keys in  vol-a-<random>/buc-a-<random>,
     vol-a-<random>/buc-b-<random>, vol-b-<random>/buc-a-<random> and
