@@ -17,19 +17,29 @@
 
 package org.apache.hadoop.ozone.repair.ldb;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.ServiceLoader;
+import java.util.Set;
+import java.util.stream.Collectors;
+import org.apache.hadoop.hdds.StringUtils;
 import org.apache.hadoop.hdds.cli.HddsVersionProvider;
 import org.apache.hadoop.hdds.utils.IOUtils;
+import org.apache.hadoop.hdds.utils.db.DBDefinition;
+import org.apache.hadoop.hdds.utils.db.DBStoreBuilder;
+import org.apache.hadoop.hdds.utils.db.RDBStore;
+import org.apache.hadoop.hdds.utils.db.RocksDatabase.ColumnFamily;
+import org.apache.hadoop.hdds.utils.db.RocksDatabaseException;
 import org.apache.hadoop.hdds.utils.db.managed.ManagedCompactRangeOptions;
-import org.apache.hadoop.hdds.utils.db.managed.ManagedRocksDB;
 import org.apache.hadoop.ozone.debug.RocksDBUtils;
 import org.apache.hadoop.ozone.repair.RepairTool;
 import org.apache.hadoop.util.Time;
 import org.rocksdb.ColumnFamilyDescriptor;
 import org.rocksdb.ColumnFamilyHandle;
-import org.rocksdb.RocksDBException;
 import picocli.CommandLine;
 
 /**
@@ -61,8 +71,27 @@ public class RocksDBManualCompaction extends RepairTool {
     List<ColumnFamilyDescriptor> cfDescList = RocksDBUtils.getColumnFamilyDescriptors(
         dbPath);
 
-    try (ManagedRocksDB db = ManagedRocksDB.open(dbPath, cfDescList, cfHandleList)) {
-      ColumnFamilyHandle cfh = RocksDBUtils.getColumnFamilyHandle(columnFamilyName, cfHandleList);
+    ServiceLoader<DBDefinition> dbDefinitionServiceLoader = ServiceLoader.load(DBDefinition.class);
+    DBDefinition dbDefinition = null;
+    Set<String> dbColumnFamilyNames =
+        cfDescList.stream().map(ColumnFamilyDescriptor::getName).map(StringUtils::bytes2String)
+            .collect(Collectors.toSet());
+    for (DBDefinition def : dbDefinitionServiceLoader) {
+      Set<String> definitionColumnFamilyNames = new HashSet<>(def.getColumnFamilyNames());
+      if (definitionColumnFamilyNames.containsAll(dbColumnFamilyNames)) {
+        dbDefinition = def;
+        break;
+      }
+    }
+
+    if (dbDefinition == null) {
+      throw new IllegalArgumentException("The DB column family does not match any known DB definition, " +
+          "column families: " + Arrays.toString(dbColumnFamilyNames.toArray()));
+    }
+
+    File dbDir = new File(dbPath);
+    try (RDBStore db = DBStoreBuilder.newBuilder(getOzoneConf(), dbDefinition, dbDir).build()) {
+      ColumnFamily cfh = db.getDb().getColumnFamily(columnFamilyName);
       if (cfh == null) {
         throw new IllegalArgumentException(columnFamilyName +
             " is not in a column family in DB for the given path.");
@@ -73,12 +102,11 @@ public class RocksDBManualCompaction extends RepairTool {
       if (!isDryRun()) {
         ManagedCompactRangeOptions compactOptions = new ManagedCompactRangeOptions();
         compactOptions.setBottommostLevelCompaction(ManagedCompactRangeOptions.BottommostLevelCompaction.kForce);
-        db.get().compactRange(cfh, null, null, compactOptions);
+        db.compactTable(columnFamilyName, compactOptions);
       }
       long duration = Time.monotonicNow() - startTime;
       info("Compaction completed in " + duration + "ms.");
-
-    } catch (RocksDBException exception) {
+    } catch (RocksDatabaseException exception) {
       error("Exception: " + exception);
       String errorMsg = "Failed to compact RocksDB for the given path: " + dbPath +
           ", column family: " + columnFamilyName;
