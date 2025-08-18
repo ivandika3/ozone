@@ -1074,7 +1074,7 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
           CacheValue<OmKeyInfo> cacheValue =
               keyTable.getCacheValue(new CacheKey<>(kv.getKey()));
           if (cacheValue == null || cacheValue.getCacheValue() != null) {
-            cacheKeyMap.put(kv.getKey(), kv.getValue());
+            cacheKeyMap.putIfAbsent(kv.getKey(), kv.getValue());
             currentCount++;
           }
         } else {
