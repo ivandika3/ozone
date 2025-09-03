@@ -676,11 +676,6 @@ public abstract class AbstractS3SDKV2Tests extends OzoneTestBase {
         //verify the object was uploaded
         actualContent = downloadKey(bucketName, keyName);
         assertEquals(expectedContent, actualContent);
-
-        // Verify uploaded content
-        actualContent = downloadKey(bucketName, keyName);
-        assertEquals(expectedContent, actualContent,
-            "Content verification failed for upload with SHA256 header");
       } finally {
         if (connection != null) {
           connection.disconnect();
@@ -690,7 +685,7 @@ public abstract class AbstractS3SDKV2Tests extends OzoneTestBase {
   }
 
   @Test
-  public void testPresignedUrlForMultipartUpload(@TempDir Path tempDir) throws Exception {
+  public void testPresignedUrlMultipartUpload(@TempDir Path tempDir) throws Exception {
     final String bucketName = getBucketName();
     final String keyName = getKeyName();
     final Map<String, String> userMetadata = new HashMap<>();
@@ -776,7 +771,6 @@ public abstract class AbstractS3SDKV2Tests extends OzoneTestBase {
                 .eTag(etag)
                 .build();
             completedParts.add(part);
-
           } finally {
             connection.disconnect();
           }
