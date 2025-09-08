@@ -644,6 +644,7 @@ public abstract class AbstractS3SDKV2Tests extends OzoneTestBase {
         expectedContent = "This is a test content for presigned PUT URL.";
         connection = (HttpURLConnection) presignedUrl.openConnection();
         connection.setRequestMethod("PUT");
+        connection.setRequestProperty("Content-Type", "text/plain");
         connection.setDoOutput(true);
         try (OutputStream os = connection.getOutputStream()) {
           os.write(expectedContent.getBytes(StandardCharsets.UTF_8));
@@ -660,6 +661,7 @@ public abstract class AbstractS3SDKV2Tests extends OzoneTestBase {
         expectedContent = "This content is for testing the SdkHttpClient PUT request.";
         SdkHttpRequest request = SdkHttpRequest.builder()
             .method(SdkHttpMethod.PUT)
+            .appendHeader("Content-Type", "text/plain")
             .uri(presignedUrl.toURI())
             .build();
 
