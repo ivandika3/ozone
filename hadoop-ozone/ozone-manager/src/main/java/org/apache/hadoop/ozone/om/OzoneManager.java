@@ -77,6 +77,8 @@ import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_READ_THREADPOOL_D
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_READ_THREADPOOL_KEY;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_S3_GPRC_SERVER_ENABLED;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_S3_GRPC_SERVER_ENABLED_DEFAULT;
+import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_STATE_CONTEXT_ENABLED_DEFAULT;
+import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_STATE_CONTEXT_ENABLED_KEY;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_SERVER_DEFAULT_REPLICATION_DEFAULT;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_SERVER_DEFAULT_REPLICATION_KEY;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_SERVER_DEFAULT_REPLICATION_TYPE_DEFAULT;
@@ -1445,6 +1447,16 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
     final int readThreads = conf.getInt(OZONE_OM_READ_THREADPOOL_KEY,
         OZONE_OM_READ_THREADPOOL_DEFAULT);
 
+    boolean enableStateContext = conf.getBoolean(
+        OZONE_OM_STATE_CONTEXT_ENABLED_KEY,
+        OZONE_OM_STATE_CONTEXT_ENABLED_DEFAULT);
+    LOG.info("Enable OzoneManager state context:" + enableStateContext);
+
+    OmAlignmentContext stateIdContext = null;
+    if (enableStateContext) {
+      stateIdContext = new OmAlignmentContext(this);
+    }
+
     RPC.Server rpcServer = new RPC.Builder(conf)
         .setProtocol(OzoneManagerProtocolPB.class)
         .setInstance(clientProtocolService)
@@ -1454,6 +1466,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
         .setNumReaders(readThreads)
         .setVerbose(false)
         .setSecretManager(delegationTokenMgr)
+        .setAlignmentContext(stateIdContext)
         .build();
 
     HddsServerUtil.addPBProtocol(conf, OMInterServiceProtocolPB.class,
@@ -3295,14 +3308,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
       selfRole = RaftPeerRole.LEADER;
     } else {
       leaderId = omRatisServer.getLeaderId();
-      RaftPeerId selfPeerId = omRatisServer.getRaftPeerId();
-      if (leaderId != null && leaderId.equals(selfPeerId)) {
-        selfRole = RaftPeerRole.LEADER;
-      } else if (omNodeDetails.isRatisListener()) {
-        selfRole = RaftPeerRole.LISTENER;
-      } else {
-        selfRole = RaftPeerRole.FOLLOWER;
-      }
+      selfRole = getSelfRole(leaderId);
     }
     OMRoleInfo omRole = OMRoleInfo.newBuilder()
         .setNodeId(getOMNodeId())
@@ -3374,6 +3380,17 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
         buildAuditMessageForSuccess(OMAction.GET_SERVICE_LIST,
             new LinkedHashMap<>()));
     return services;
+  }
+
+  public RaftPeerRole getSelfRole(RaftPeerId leaderId) {
+    RaftPeerId selfPeerId = omRatisServer.getRaftPeerId();
+    if (leaderId != null && leaderId.equals(selfPeerId)) {
+      return RaftPeerRole.LEADER;
+    } else if (omNodeDetails.isRatisListener()) {
+      return RaftPeerRole.LISTENER;
+    } else {
+      return RaftPeerRole.FOLLOWER;
+    }
   }
 
   @Override
