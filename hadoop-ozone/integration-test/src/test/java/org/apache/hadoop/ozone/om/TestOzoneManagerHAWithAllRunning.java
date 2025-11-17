@@ -1158,4 +1158,22 @@ class TestOzoneManagerHAWithAllRunning extends TestOzoneManagerHA {
             "snapshot indices");
 
   }
+
+  /**
+   * This test checks if after a client writes we can see the state id in
+   * updated via the response.
+   */
+  @Test
+  void testStateTransferOnWrite() throws Exception {
+
+  }
+
+  /**
+   * This test checks if after a client reads we can see the state id in
+   * updated via the response.
+   */
+  @Test
+  void testStateTransferOnRead() throws Exception {
+    
+  }
 }

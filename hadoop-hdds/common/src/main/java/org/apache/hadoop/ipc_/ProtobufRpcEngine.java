@@ -582,6 +582,10 @@ public class ProtobufRpcEngine implements RpcEngine {
       return requestHeader;
     }
 
+    Message getPayload() throws IOException {
+      return payload;
+    }
+
     @Override
     public void writeTo(ResponseBuffer out) throws IOException {
       requestHeader.writeDelimitedTo(out);

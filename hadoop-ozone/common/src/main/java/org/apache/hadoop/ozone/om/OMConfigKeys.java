@@ -51,6 +51,10 @@ public final class OMConfigKeys {
   public static final int OZONE_OM_DB_MAX_OPEN_FILES_DEFAULT
       = -1;
 
+  public static final String OZONE_OM_STATE_CONTEXT_ENABLED_KEY =
+      "ozone.om.state.context.enabled";
+  public static final boolean OZONE_OM_STATE_CONTEXT_ENABLED_DEFAULT = false;
+
   public static final String OZONE_OM_INTERNAL_SERVICE_ID =
       "ozone.om.internal.service.id";
 

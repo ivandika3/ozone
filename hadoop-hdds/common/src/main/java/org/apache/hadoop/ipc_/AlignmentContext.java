@@ -20,6 +20,7 @@ package org.apache.hadoop.ipc_;
 
 import java.io.IOException;
 
+import com.google.protobuf.Message;
 import org.apache.hadoop.ipc_.protobuf.RpcHeaderProtos.RpcRequestHeaderProto;
 import org.apache.hadoop.ipc_.protobuf.RpcHeaderProtos.RpcResponseHeaderProto;
 
@@ -86,7 +87,8 @@ public interface AlignmentContext {
    *
    * @param protocolName the name of the protocol
    * @param method the method call to check
+   * @param payload the payload to check
    * @return true if this method is async, false otherwise.
    */
-  boolean isCoordinatedCall(String protocolName, String method);
+  boolean isCoordinatedCall(String protocolName, String method, Message payload);
 }
