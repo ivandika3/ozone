@@ -29,6 +29,7 @@ import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
 import org.apache.hadoop.ozone.om.helpers.OzoneFileStatusLight;
+import org.apache.hadoop.ozone.om.protocol.ReadOnly;
 import org.apache.hadoop.ozone.security.acl.OzoneObj;
 
 /**
@@ -41,8 +42,10 @@ public interface IOmMetadataReader {
    * @param args the args of the key.
    * @return OmKeyInfo instance that client uses to talk to container.
    */
+  @ReadOnly(isCoordinated = true)
   OmKeyInfo lookupKey(OmKeyArgs args) throws IOException;
 
+  @ReadOnly(isCoordinated = true)
   KeyInfoWithVolumeContext getKeyInfo(OmKeyArgs args,
                                       boolean assumeS3Context)
       throws IOException;
@@ -60,6 +63,7 @@ public interface IOmMetadataReader {
    *                             this is needed in context of ListKeys
    * @return list of file status
    */
+  @ReadOnly(isCoordinated = true)
   List<OzoneFileStatus> listStatus(OmKeyArgs args, boolean recursive,
                                    String startKey, long numEntries,
                                    boolean allowPartialPrefixes)
@@ -78,11 +82,13 @@ public interface IOmMetadataReader {
    *                             this is needed in context of ListKeys
    * @return list of file status
    */
+  @ReadOnly(isCoordinated = true)
   List<OzoneFileStatusLight> listStatusLight(OmKeyArgs args, boolean recursive,
                                    String startKey, long numEntries,
                                    boolean allowPartialPrefixes)
       throws IOException;
 
+  @ReadOnly(isCoordinated = true)
   default List<OzoneFileStatus> listStatus(OmKeyArgs args, boolean recursive,
       String startKey, long numEntries)
       throws IOException {
@@ -98,6 +104,7 @@ public interface IOmMetadataReader {
    * @throws IOException if there is error in the db
    *                     invalid arguments
    */
+  @ReadOnly(isCoordinated = true)
   OzoneFileStatus getFileStatus(OmKeyArgs keyArgs) throws IOException;
 
   /**
@@ -109,6 +116,7 @@ public interface IOmMetadataReader {
    * @throws IOException if there is error in the db
    *                     invalid arguments
    */
+  @ReadOnly(isCoordinated = true)
   OmKeyInfo lookupFile(OmKeyArgs args) throws IOException;
 
   /**
@@ -131,6 +139,7 @@ public interface IOmMetadataReader {
    *   the size of the result will not exceed this limit.
    * @return a list of keys.
    */
+  @ReadOnly(isCoordinated = true)
   ListKeysResult listKeys(String volumeName, String bucketName,
                           String startKey, String keyPrefix, int maxKeys)
       throws IOException;
@@ -154,6 +163,7 @@ public interface IOmMetadataReader {
    * @return a list of keys.
    * @throws IOException
    */
+  @ReadOnly(isCoordinated = true)
   ListKeysLightResult listKeysLight(String volumeName, String bucketName,
                                      String startKey, String keyPrefix,
                                      int maxKeys)
@@ -165,6 +175,7 @@ public interface IOmMetadataReader {
    * @param obj Ozone object.
    * @throws IOException if there is error.
    */
+  @ReadOnly(isCoordinated = true)
   List<OzoneAcl> getAcl(OzoneObj obj) throws IOException;
 
   /**
@@ -172,5 +183,6 @@ public interface IOmMetadataReader {
    * @param args Key args
    * @return Tags associated with the key.
    */
+  @ReadOnly(isCoordinated = true)
   Map<String, String> getObjectTagging(OmKeyArgs args) throws IOException;
 }

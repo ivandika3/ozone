@@ -168,6 +168,7 @@ public interface OzoneManagerProtocol
    * @return List of Volumes.
    * @throws IOException
    */
+  @ReadOnly(isCoordinated = true)
   List<OmVolumeArgs> listVolumeByUser(String userName, String prefix, String
       prevKey, int maxKeys) throws IOException;
 
@@ -179,6 +180,7 @@ public interface OzoneManagerProtocol
    * @return List of Volumes.
    * @throws IOException
    */
+  @ReadOnly(isCoordinated = true)
   List<OmVolumeArgs> listAllVolumes(String prefix, String
       prevKey, int maxKeys) throws IOException;
 
@@ -199,6 +201,7 @@ public interface OzoneManagerProtocol
    * @return OmBucketInfo or exception is thrown.
    * @throws IOException
    */
+  @ReadOnly(isCoordinated = true)
   OmBucketInfo getBucketInfo(String volumeName, String bucketName)
       throws IOException;
 
@@ -305,6 +308,7 @@ public interface OzoneManagerProtocol
    */
   @Override
   @Deprecated
+  @ReadOnly(isCoordinated = true)
   OmKeyInfo lookupKey(OmKeyArgs args) throws IOException;
 
   /**
@@ -316,7 +320,9 @@ public interface OzoneManagerProtocol
    * @return KeyInfoWithVolumeContext includes info that client uses to talk
    *         to containers and S3 volume context info if assumeS3Context is set.
    */
+
   @Override
+  @ReadOnly(isCoordinated = true)
   KeyInfoWithVolumeContext getKeyInfo(OmKeyArgs args, boolean assumeS3Context)
       throws IOException;
 
@@ -424,8 +430,10 @@ public interface OzoneManagerProtocol
    * @return list of Ozone services
    * @throws IOException
    */
+  @ReadOnly
   List<ServiceInfo> getServiceList() throws IOException;
 
+  @ReadOnly
   ServiceInfoEx getServiceInfo() throws IOException;
 
   /**
@@ -436,6 +444,7 @@ public interface OzoneManagerProtocol
    * @return ListOpenFilesResult
    * @throws IOException
    */
+  @ReadOnly(isCoordinated = true)
   ListOpenFilesResult listOpenFiles(String path, int maxKeys, String contToken)
       throws IOException;
 
@@ -585,6 +594,7 @@ public interface OzoneManagerProtocol
    * @param maxParts
    * @return OmMultipartUploadListParts
    */
+  @ReadOnly(isCoordinated = true)
   OmMultipartUploadListParts listParts(String volumeName, String bucketName,
       String keyName, String uploadID, int partNumberMarker,
       int maxParts)  throws IOException;
@@ -594,6 +604,7 @@ public interface OzoneManagerProtocol
    * withPagination is for backward compatible as older listMultipartUploads does
    * not support pagination.
    */
+  @ReadOnly(isCoordinated = true)
   OmMultipartUploadList listMultipartUploads(String volumeName,
       String bucketName, String prefix,
       String keyMarker, String uploadIdMarker, int maxUploads, boolean withPagination) throws IOException;
@@ -746,6 +757,7 @@ public interface OzoneManagerProtocol
    * @return snapshot info for volume/bucket snapshot path.
    * @throws IOException
    */
+  @ReadOnly(isCoordinated = true)
   default SnapshotInfo getSnapshotInfo(String volumeName,
                                        String bucketName,
                                        String snapshotName) throws IOException {
@@ -942,6 +954,7 @@ public interface OzoneManagerProtocol
    */
   @Override
   @Deprecated
+  @ReadOnly(isCoordinated = true)
   OmKeyInfo lookupFile(OmKeyArgs keyArgs) throws IOException;
 
   /**
@@ -956,6 +969,7 @@ public interface OzoneManagerProtocol
    * @return list of file status
    */
   @Override
+  @ReadOnly(isCoordinated = true)
   List<OzoneFileStatus> listStatus(OmKeyArgs keyArgs, boolean recursive,
       String startKey, long numEntries) throws IOException;
 
@@ -973,6 +987,7 @@ public interface OzoneManagerProtocol
    * @return list of file status
    */
   @Override
+  @ReadOnly(isCoordinated = true)
   List<OzoneFileStatus> listStatus(OmKeyArgs keyArgs, boolean recursive,
                                    String startKey, long numEntries,
                                    boolean allowPartialPrefixes)
@@ -992,6 +1007,7 @@ public interface OzoneManagerProtocol
    * @return list of file status
    */
   @Override
+  @ReadOnly(isCoordinated = true)
   List<OzoneFileStatusLight> listStatusLight(OmKeyArgs keyArgs,
       boolean recursive, String startKey, long numEntries,
       boolean allowPartialPrefixes) throws IOException;
@@ -1143,6 +1159,7 @@ public interface OzoneManagerProtocol
    * @return Tags associated with the key.
    */
   @Override
+  @ReadOnly(isCoordinated = true)
   Map<String, String> getObjectTagging(OmKeyArgs args) throws IOException;
 
   /**
