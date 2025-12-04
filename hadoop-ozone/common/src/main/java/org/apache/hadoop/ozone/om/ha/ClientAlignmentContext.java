@@ -19,9 +19,10 @@ package org.apache.hadoop.ozone.om.ha;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.LongAccumulator;
-import org.apache.hadoop.ipc.AlignmentContext;
-import org.apache.hadoop.ipc.protobuf.RpcHeaderProtos.RpcRequestHeaderProto;
-import org.apache.hadoop.ipc.protobuf.RpcHeaderProtos.RpcResponseHeaderProto;
+import com.google.protobuf.Message;
+import org.apache.hadoop.ipc_.AlignmentContext;
+import org.apache.hadoop.ipc_.protobuf.RpcHeaderProtos.RpcRequestHeaderProto;
+import org.apache.hadoop.ipc_.protobuf.RpcHeaderProtos.RpcResponseHeaderProto;
 
 /**
  * Global State Id context for the client.
@@ -33,6 +34,10 @@ public class ClientAlignmentContext implements AlignmentContext {
 
   private final LongAccumulator lastSeenStateId;
 
+  public ClientAlignmentContext() {
+    this(new LongAccumulator(Math::max, Long.MIN_VALUE));
+  }
+
   public ClientAlignmentContext(LongAccumulator lastSeenStateId) {
     this.lastSeenStateId = lastSeenStateId;
   }
@@ -43,7 +48,7 @@ public class ClientAlignmentContext implements AlignmentContext {
   }
 
   @Override
-  public boolean isCoordinatedCall(String protocolName, String method) {
+  public boolean isCoordinatedCall(String protocolName, String method, Message payload) {
     throw new UnsupportedOperationException(
         "Client should not be checking uncoordinated call");
   }
