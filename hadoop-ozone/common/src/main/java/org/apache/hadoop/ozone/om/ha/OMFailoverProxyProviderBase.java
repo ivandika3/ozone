@@ -146,6 +146,7 @@ public abstract class OMFailoverProxyProviderBase<T> implements
         NetUtils.getDefaultSocketFactory(hadoopConf),
         (int) OmUtils.getOMClientRpcTimeOut(getConf()),
         connectionRetryPolicy
+        // TODO: Implement and add alignment context here
     ).getProxy();
   }
 

@@ -2699,16 +2699,18 @@ public abstract class Server {
           (call.rpcRequest instanceof ProtobufRpcEngine.RpcProtobufRequest)) {
         // if call.rpcRequest is not RpcProtobufRequest, will skip the following
         // step and treat the call as uncoordinated. As currently only certain
-        // ClientProtocol methods request made through RPC protobuf needs to be
+        // OzoneManagerProtocol methods request made through RPC protobuf needs to be
         // coordinated.
         String methodName;
         String protoName;
         ProtobufRpcEngine.RpcProtobufRequest req =
             (ProtobufRpcEngine.RpcProtobufRequest) call.rpcRequest;
+        Message payload;
         try {
           methodName = req.getRequestHeader().getMethodName();
           protoName = req.getRequestHeader().getDeclaringClassProtocolName();
-          if (alignmentContext.isCoordinatedCall(protoName, methodName)) {
+          payload = req.getPayload();
+          if (alignmentContext.isCoordinatedCall(protoName, methodName, payload)) {
             call.markCallCoordinated(true);
             long stateId;
             stateId = alignmentContext.receiveRequestState(
