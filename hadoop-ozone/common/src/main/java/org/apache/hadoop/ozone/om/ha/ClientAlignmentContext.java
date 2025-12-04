@@ -17,9 +17,9 @@
 
 package org.apache.hadoop.ozone.om.ha;
 
+import com.google.protobuf.Message;
 import java.io.IOException;
 import java.util.concurrent.atomic.LongAccumulator;
-import com.google.protobuf.Message;
 import org.apache.hadoop.ipc_.AlignmentContext;
 import org.apache.hadoop.ipc_.protobuf.RpcHeaderProtos.RpcRequestHeaderProto;
 import org.apache.hadoop.ipc_.protobuf.RpcHeaderProtos.RpcResponseHeaderProto;
