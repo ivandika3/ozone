@@ -1175,4 +1175,13 @@ public interface OzoneManagerProtocol
    * @throws IOException
    */
   void startQuotaRepair(List<String> buckets) throws IOException;
+
+  /**
+   * Called by client to wait until the server has reached the state id of the
+   * client. The client and server state id are given by client side and server
+   * side alignment context respectively. This can be a blocking call.
+   *
+   * @throws IOException
+   */
+  void msync() throws IOException;
 }

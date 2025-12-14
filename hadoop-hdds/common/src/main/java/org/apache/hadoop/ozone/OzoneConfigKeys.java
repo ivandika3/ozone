@@ -488,6 +488,19 @@ public final class OzoneConfigKeys {
   public static final long OZONE_CLIENT_WAIT_BETWEEN_RETRIES_MILLIS_DEFAULT =
       2000;
 
+  public static final String OZONE_CLIENT_FAILOVER_AUTO_MSYNC_PERIOD_KEY_PREFIX =
+      "ozone.client.failover.follower.auto-msync-period";
+  /** Auto-msync disabled by default. */
+  public static final long OZONE_CLIENT_FAILOVER_AUTO_MSYNC_PERIOD_DEFAULT = -1;
+  public static final String OZONE_CLIENT_FAILOVER_FOLLOWER_PROBE_RETRY_PERIOD_KEY =
+      "ozone.client.failover.observer.probe.retry.period";
+  /** Observer probe retry period default to 10 min. */
+  public static final long OZONE_CLIENT_FAILOVER_FOLLOWER_PROBE_RETRY_PERIOD_DEFAULT = 60 * 10 * 1000;
+  public static final String OZONE_CLIENT_FAILOVER_OM_HAS_STATE_PROBE_TIMEOUT =
+      "ozone.client.failover.om.ha-state.probe.timeout";
+  /** Default to disable OM ha-state probe timeout. */
+  public static final long OZONE_CLIENT_FAILOVER_OM_HAS_STATE_PROBE_TIMEOUT_DEFAULT = 0;
+
   public static final String OZONE_FREON_HTTP_ENABLED_KEY =
       "ozone.freon.http.enabled";
   public static final String OZONE_FREON_HTTP_BIND_HOST_KEY =
