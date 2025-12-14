@@ -156,6 +156,7 @@ enum Type {
   PutObjectTagging = 140;
   GetObjectTagging = 141;
   DeleteObjectTagging = 142;
+  Msync = 143;
 }
 
 enum SafeMode {
@@ -178,6 +179,13 @@ message OMRequest {
   optional uint32 version = 5;
 
   optional LayoutVersion layoutVersion = 6;
+
+  // If isDirect is set to true, this means that this client request is specifically
+  // made to the particular OM node, regardless whether the OM node is a leader.
+  // OM needs to rejects the request if it does not support it.
+  // If isDirect flag is not specified (or set to false),
+  // this means that this client request is expected to be sent to the leader.
+  optional bool isDirect = 3000;
 
   optional CreateVolumeRequest              createVolumeRequest            = 11;
   optional SetVolumePropertyRequest         setVolumePropertyRequest       = 12;
@@ -304,6 +312,8 @@ message OMRequest {
   optional PutObjectTaggingRequest          putObjectTaggingRequest        = 141;
   optional DeleteObjectTaggingRequest       deleteObjectTaggingRequest     = 142;
   repeated SetSnapshotPropertyRequest       SetSnapshotPropertyRequests    = 143;
+
+  optional MsyncRequest MsyncRequest = 144;
 }
 
 message OMResponse {
@@ -437,6 +447,8 @@ message OMResponse {
   optional GetObjectTaggingResponse          getObjectTaggingResponse      = 140;
   optional PutObjectTaggingResponse          putObjectTaggingResponse      = 141;
   optional DeleteObjectTaggingResponse       deleteObjectTaggingResponse   = 142;
+
+  optional MsyncResponse MsyncResponse = 143;
 }
 
 enum Status {
@@ -2353,6 +2365,12 @@ message DeleteObjectTaggingRequest {
 }
 
 message DeleteObjectTaggingResponse {
+}
+
+message MsyncRequest {
+}
+
+message MsyncResponse {
 }
 
 /**
