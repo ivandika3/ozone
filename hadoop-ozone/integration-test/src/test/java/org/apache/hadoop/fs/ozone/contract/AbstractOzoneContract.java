@@ -20,6 +20,7 @@ package org.apache.hadoop.fs.ozone.contract;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.io.IOException;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.contract.AbstractFSContract;
 import org.apache.hadoop.ozone.MiniOzoneCluster;
@@ -41,8 +42,8 @@ abstract class AbstractOzoneContract extends AbstractFSContract {
     return cluster;
   }
 
-  AbstractOzoneContract(MiniOzoneCluster cluster) {
-    super(cluster.getConf());
+  AbstractOzoneContract(MiniOzoneCluster cluster, Configuration conf) {
+    super(conf);
     this.cluster = cluster;
   }
 

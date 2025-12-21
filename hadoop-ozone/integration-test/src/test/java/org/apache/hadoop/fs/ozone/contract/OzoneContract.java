@@ -20,6 +20,7 @@ package org.apache.hadoop.fs.ozone.contract;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_DEFAULT_BUCKET_LAYOUT;
 
 import java.io.IOException;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.ozone.MiniOzoneCluster;
 import org.apache.hadoop.ozone.OzoneConsts;
@@ -33,8 +34,8 @@ import org.apache.hadoop.ozone.om.helpers.BucketLayout;
  */
 final class OzoneContract extends AbstractOzoneContract {
 
-  OzoneContract(MiniOzoneCluster cluster) {
-    super(cluster);
+  OzoneContract(MiniOzoneCluster cluster, Configuration conf) {
+    super(cluster, conf);
   }
 
   @Override

@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.fs.ozone.contract;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.ozone.MiniOzoneCluster;
 import org.apache.hadoop.ozone.OzoneConsts;
@@ -26,8 +27,8 @@ import org.apache.hadoop.ozone.OzoneConsts;
  */
 final class RootedOzoneContract extends AbstractOzoneContract {
 
-  RootedOzoneContract(MiniOzoneCluster cluster) {
-    super(cluster);
+  RootedOzoneContract(MiniOzoneCluster cluster, Configuration conf) {
+    super(cluster, conf);
   }
 
   @Override

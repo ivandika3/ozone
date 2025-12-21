@@ -38,6 +38,6 @@ class TestOzoneContractFSO extends AbstractOzoneContractTest {
 
   @Override
   AbstractFSContract createOzoneContract(Configuration conf) {
-    return new OzoneContract(getCluster());
+    return new OzoneContract(getCluster(), conf);
   }
 }

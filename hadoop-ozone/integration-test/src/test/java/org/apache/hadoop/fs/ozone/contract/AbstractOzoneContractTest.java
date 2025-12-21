@@ -23,6 +23,7 @@ import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_DEFAULT_BUCKET_LAYOU
 import static org.assertj.core.api.Assumptions.assumeThat;
 
 import java.io.IOException;
+import java.util.Map;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.contract.AbstractContractCreateTest;
 import org.apache.hadoop.fs.contract.AbstractContractDeleteTest;
@@ -78,11 +79,26 @@ abstract class AbstractOzoneContractTest extends ClusterForTests<MiniOzoneCluste
         .build();
   }
 
+  /**
+   * Creates a configuration that merges Ozone configurations with the parent class's configuration.
+   * Parent class configurations take precedence to ensure test-specific settings are applied.
+   *
+   * @param parentConf the configuration from the parent contract test class
+   * @return merged configuration with both Ozone and parent settings
+   */
+  protected Configuration createMergedConfiguration(Configuration parentConf) {
+    OzoneConfiguration ozoneConf = createOzoneConfig();
+    for (Map.Entry<String, String> entry : parentConf) {
+      ozoneConf.set(entry.getKey(), entry.getValue());
+    }
+    return ozoneConf;
+  }
+
   @Nested
   class TestContractCreate extends AbstractContractCreateTest {
     @Override
     protected Configuration createConfiguration() {
-      return createOzoneConfig();
+      return createMergedConfiguration(super.createConfiguration());
     }
 
     @Override
@@ -95,7 +111,7 @@ abstract class AbstractOzoneContractTest extends ClusterForTests<MiniOzoneCluste
   class TestContractDistCp extends AbstractContractDistCpTest {
     @Override
     protected Configuration createConfiguration() {
-      return createOzoneConfig();
+      return createMergedConfiguration(super.createConfiguration());
     }
 
     @Override
@@ -114,7 +130,7 @@ abstract class AbstractOzoneContractTest extends ClusterForTests<MiniOzoneCluste
   class TestContractDelete extends AbstractContractDeleteTest {
     @Override
     protected Configuration createConfiguration() {
-      return createOzoneConfig();
+      return createMergedConfiguration(super.createConfiguration());
     }
 
     @Override
@@ -127,7 +143,7 @@ abstract class AbstractOzoneContractTest extends ClusterForTests<MiniOzoneCluste
   class TestContractGetFileStatus extends AbstractContractGetFileStatusTest {
     @Override
     protected Configuration createConfiguration() {
-      return createOzoneConfig();
+      return createMergedConfiguration(super.createConfiguration());
     }
 
     @Override
@@ -140,7 +156,7 @@ abstract class AbstractOzoneContractTest extends ClusterForTests<MiniOzoneCluste
   class TestContractMkdir extends AbstractContractMkdirTest {
     @Override
     protected Configuration createConfiguration() {
-      return createOzoneConfig();
+      return createMergedConfiguration(super.createConfiguration());
     }
 
     @Override
@@ -153,7 +169,7 @@ abstract class AbstractOzoneContractTest extends ClusterForTests<MiniOzoneCluste
   class TestContractOpen extends AbstractContractOpenTest {
     @Override
     protected Configuration createConfiguration() {
-      return createOzoneConfig();
+      return createMergedConfiguration(super.createConfiguration());
     }
 
     @Override
@@ -166,7 +182,7 @@ abstract class AbstractOzoneContractTest extends ClusterForTests<MiniOzoneCluste
   class TestContractRename extends AbstractContractRenameTest {
     @Override
     protected Configuration createConfiguration() {
-      return createOzoneConfig();
+      return createMergedConfiguration(super.createConfiguration());
     }
 
     @Override
@@ -179,7 +195,7 @@ abstract class AbstractOzoneContractTest extends ClusterForTests<MiniOzoneCluste
   class TestContractRootDirectory extends AbstractContractRootDirectoryTest {
     @Override
     protected Configuration createConfiguration() {
-      return createOzoneConfig();
+      return createMergedConfiguration(super.createConfiguration());
     }
 
     @Override
@@ -249,7 +265,7 @@ abstract class AbstractOzoneContractTest extends ClusterForTests<MiniOzoneCluste
   class TestContractSeek extends AbstractContractSeekTest {
     @Override
     protected Configuration createConfiguration() {
-      return createOzoneConfig();
+      return createMergedConfiguration(super.createConfiguration());
     }
 
     @Override
@@ -262,7 +278,7 @@ abstract class AbstractOzoneContractTest extends ClusterForTests<MiniOzoneCluste
   class TestContractUnbuffer extends AbstractContractUnbufferTest {
     @Override
     protected Configuration createConfiguration() {
-      return createOzoneConfig();
+      return createMergedConfiguration(super.createConfiguration());
     }
 
     @Override
@@ -281,7 +297,7 @@ abstract class AbstractOzoneContractTest extends ClusterForTests<MiniOzoneCluste
 
     @Override
     protected Configuration createConfiguration() {
-      return createOzoneConfig();
+      return createMergedConfiguration(super.createConfiguration());
     }
 
     @Override

@@ -26,6 +26,6 @@ import org.apache.hadoop.fs.contract.AbstractFSContract;
 class TestRootedOzoneContract extends AbstractOzoneContractTest {
   @Override
   AbstractFSContract createOzoneContract(Configuration conf) {
-    return new RootedOzoneContract(getCluster());
+    return new RootedOzoneContract(getCluster(), conf);
   }
 }
