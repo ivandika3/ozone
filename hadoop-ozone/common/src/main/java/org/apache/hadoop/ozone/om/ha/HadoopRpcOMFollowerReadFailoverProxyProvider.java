@@ -73,6 +73,8 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_FAILOVER_FOLLOWER_PROBE_RETRY_PERIOD_DEFAULT;
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_FAILOVER_FOLLOWER_PROBE_RETRY_PERIOD_KEY;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_ADDRESS_KEY;
 
 /**
@@ -240,11 +242,11 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider<T> extends FailoverPro
     // Create a wrapped proxy containing all the proxies. Since this combined
     // proxy is just redirecting to other proxies, all invocations can share it.
     StringBuilder combinedInfo = new StringBuilder("[");
-    for (int i = 0; i < nameNodeProxies.size(); i++) {
+    for (int i = 0; i < omProxies.size(); i++) {
       if (i > 0) {
         combinedInfo.append(",");
       }
-      combinedInfo.append(nameNodeProxies.get(i).proxyInfo);
+      combinedInfo.append(omProxies.get(i).proxyInfo);
     }
     combinedInfo.append(']');
     T wrappedProxy = (T) Proxy.newProxyInstance(
@@ -257,10 +259,10 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider<T> extends FailoverPro
         OZONE_CLIENT + "." + uri.getHost(),
         AUTO_MSYNC_PERIOD_DEFAULT, TimeUnit.MILLISECONDS);
     followerProbeRetryPeriodMs = conf.getTimeDuration(
-        OBSERVER_PROBE_RETRY_PERIOD_KEY,
-        OBSERVER_PROBE_RETRY_PERIOD_DEFAULT, TimeUnit.MILLISECONDS);
-    omHAStateProbeTimeoutMs = conf.getTimeDuration(NAMENODE_HA_STATE_PROBE_TIMEOUT,
-        NAMENODE_HA_STATE_PROBE_TIMEOUT_DEFAULT, TimeUnit.MILLISECONDS);
+        OZONE_CLIENT_FAILOVER_FOLLOWER_PROBE_RETRY_PERIOD_KEY,
+        OZONE_CLIENT_FAILOVER_FOLLOWER_PROBE_RETRY_PERIOD_DEFAULT, TimeUnit.MILLISECONDS);
+    omHAStateProbeTimeoutMs = conf.getTimeDuration(OM_HA_STATE_PROBE_TIMEOUT,
+        OM_HA_STATE_PROBE_TIMEOUT_DEFAULT, TimeUnit.MILLISECONDS);
 
 
 
@@ -363,7 +365,7 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider<T> extends FailoverPro
   }
 
   @VisibleForTesting
-  void setObserverReadEnabled(boolean flag) {
+  void setFollowerReadEnabled(boolean flag) {
     this.followerReadEnabled = flag;
   }
 
@@ -396,7 +398,7 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider<T> extends FailoverPro
       return currentProxy;
     }
     currentIndex = (currentIndex + 1) % omProxyInfos.size();
-    currentProxy = createProxyIfNeeded(nameNodeProxies.get(currentIndex));
+    currentProxy = createProxyIfNeeded(omProxies.get(currentIndex));
     currentProxy.setCachedState(getHAServiceStateWithTimeout(currentProxy));
     LOG.debug("Changed current proxy from {} to {}",
         initial == null ? "none" : initial.proxyInfo,
