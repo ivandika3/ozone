@@ -225,7 +225,8 @@ public class OzoneManagerProtocolServerSideTranslatorPB implements OzoneManagerP
             ozoneManager.getConfig().getFollowerReadLocalLeaseTimeMs())) {
       ozoneManager.getMetrics().incNumFollowerReadLocalLeaseSuccess();
       return handler.handleReadRequest(request);
-    } 
+    }
+    boolean isDirect = request.getIsDirect();
     // Get current OM's role
     RaftServerStatus raftServerStatus = omRatisServer.getLeaderStatus();
     // === 1. Follower linearizable read ===
@@ -234,7 +235,8 @@ public class OzoneManagerProtocolServerSideTranslatorPB implements OzoneManagerP
       return ozoneManager.getOmExecutionFlow().submit(request, false);
     }
     // === 2. Leader local read (skip ReadIndex if allowed) ===
-    if (raftServerStatus == LEADER_AND_READY || request.getCmdType().equals(PrepareStatus)) {
+    if (raftServerStatus == LEADER_AND_READY || request.getCmdType().equals(PrepareStatus)
+        || request.getCmdType().equals(Msync)) {
       if (ozoneManager.getConfig().isAllowLeaderSkipLinearizableRead()) {
         ozoneManager.getMetrics().incNumLeaderSkipLinearizableRead();
         // leader directly serves local committed data
@@ -247,6 +249,8 @@ public class OzoneManagerProtocolServerSideTranslatorPB implements OzoneManagerP
       }
 
       // fallback to local read
+      return handler.handleReadRequest(request);
+    } else if (raftServerStatus == NOT_LEADER && isDirect) {
       return handler.handleReadRequest(request);
     } else {
       throw createLeaderErrorException(raftServerStatus);
