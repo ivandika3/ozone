@@ -684,6 +684,33 @@ public final class OMConfigKeys {
   public static final String OZONE_OM_SNAPSHOT_LOCAL_DATA_MANAGER_SERVICE_INTERVAL_DEFAULT = "5m";
 
   /**
+   * Configuration properties for OM Follower Reads.
+   * When enabled, read requests can be served by OM followers,
+   * reducing load on the leader and improving read scalability.
+   */
+  public static final String OZONE_OM_FOLLOWER_READ_ENABLED =
+      "ozone.om.follower.read.enabled";
+  public static final boolean OZONE_OM_FOLLOWER_READ_ENABLED_DEFAULT = false;
+
+  /**
+   * When enabled, the client will automatically issue an msync request
+   * before read operations to ensure the follower has caught up to
+   * the client's expected state.
+   */
+  public static final String OZONE_OM_FOLLOWER_READ_AUTO_MSYNC_ENABLED =
+      "ozone.om.follower.read.auto.msync.enabled";
+  public static final boolean OZONE_OM_FOLLOWER_READ_AUTO_MSYNC_ENABLED_DEFAULT = true;
+
+  /**
+   * Maximum staleness threshold in milliseconds for follower reads.
+   * If the follower is more stale than this threshold, the client
+   * will force an msync to refresh the state.
+   */
+  public static final String OZONE_OM_FOLLOWER_READ_STALE_THRESHOLD_MS =
+      "ozone.om.follower.read.stale.threshold.ms";
+  public static final long OZONE_OM_FOLLOWER_READ_STALE_THRESHOLD_MS_DEFAULT = 30000;
+
+  /**
    * Never constructed.
    */
   private OMConfigKeys() {

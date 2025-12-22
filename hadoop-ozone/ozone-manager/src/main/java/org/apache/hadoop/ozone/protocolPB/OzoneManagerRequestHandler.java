@@ -391,6 +391,10 @@ public class OzoneManagerRequestHandler implements RequestHandler {
             getObjectTagging(request.getGetObjectTaggingRequest());
         responseBuilder.setGetObjectTaggingResponse(getObjectTaggingResponse);
         break;
+      case Msync:
+        OzoneManagerProtocolProtos.MsyncResponse msyncResponse = handleMsync();
+        responseBuilder.setMsyncResponse(msyncResponse);
+        break;
       default:
         responseBuilder.setSuccess(false);
         responseBuilder.setMessage("Unrecognized Command Type: " + cmdType);
@@ -1585,6 +1589,25 @@ public class OzoneManagerRequestHandler implements RequestHandler {
 
   private long limitListSize(long requestedSize) {
     return Math.min(requestedSize, impl.getConfig().getMaxListSize());
+  }
+
+  /**
+   * Handle msync request for follower reads.
+   * Returns the current last applied Ratis log index from the OM leader.
+   * This is used by clients to establish a consistent read baseline
+   * when reading from OM followers.
+   *
+   * @return MsyncResponse containing the last applied index
+   */
+  private OzoneManagerProtocolProtos.MsyncResponse handleMsync() {
+    long lastAppliedIndex = 0;
+    if (impl.getOmRatisServer() != null) {
+      lastAppliedIndex = impl.getOmRatisServer()
+          .getLastAppliedTermIndex().getIndex();
+    }
+    return OzoneManagerProtocolProtos.MsyncResponse.newBuilder()
+        .setLastAppliedIndex(lastAppliedIndex)
+        .build();
   }
 
 }

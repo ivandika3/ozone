@@ -239,6 +239,7 @@ import org.apache.hadoop.ozone.om.exceptions.OMNotLeaderException;
 import org.apache.hadoop.ozone.om.execution.OMExecutionFlow;
 import org.apache.hadoop.ozone.om.ha.OMHAMetrics;
 import org.apache.hadoop.ozone.om.ha.OMHANodeDetails;
+import org.apache.hadoop.ozone.om.ha.OMServerAlignmentContext;
 import org.apache.hadoop.ozone.om.helpers.BasicOmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.DBUpdates;
@@ -438,6 +439,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
   private OzoneManagerProtocolServerSideTranslatorPB omServerProtocol;
 
   private OzoneManagerRatisServer omRatisServer;
+  private OMServerAlignmentContext omServerAlignmentContext;
   private OMExecutionFlow omExecutionFlow;
   private OmRatisSnapshotProvider omRatisSnapshotProvider;
   private OMNodeDetails omNodeDetails;
@@ -699,6 +701,9 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
 
     initializeRatisDirs(conf);
     initializeRatisServer(isBootstrapping || isForcedBootstrapping);
+
+    // Initialize OMServerAlignmentContext for follower reads support
+    initializeAlignmentContext();
 
     omClientProtocolMetrics = ProtocolMessageMetrics
         .create("OmClientProtocol", "Ozone Manager RPC endpoint",
@@ -1445,7 +1450,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
     final int readThreads = conf.getInt(OZONE_OM_READ_THREADPOOL_KEY,
         OZONE_OM_READ_THREADPOOL_DEFAULT);
 
-    RPC.Server rpcServer = new RPC.Builder(conf)
+    RPC.Builder rpcBuilder = new RPC.Builder(conf)
         .setProtocol(OzoneManagerProtocolPB.class)
         .setInstance(clientProtocolService)
         .setBindAddress(addr.getHostString())
@@ -1453,8 +1458,15 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
         .setNumHandlers(handlerCount)
         .setNumReaders(readThreads)
         .setVerbose(false)
-        .setSecretManager(delegationTokenMgr)
-        .build();
+        .setSecretManager(delegationTokenMgr);
+
+    // Set AlignmentContext for follower reads support if available
+    if (omServerAlignmentContext != null) {
+      rpcBuilder.setAlignmentContext(omServerAlignmentContext);
+      LOG.info("AlignmentContext configured for OM RPC server");
+    }
+
+    RPC.Server rpcServer = rpcBuilder.build();
 
     HddsServerUtil.addPBProtocol(conf, OMInterServiceProtocolPB.class,
         interOMProtocolService, rpcServer);
@@ -2333,6 +2345,19 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
     }
     LOG.info("OzoneManager Ratis server initialized at port {}",
         omRatisServer.getServerPort());
+  }
+
+  /**
+   * Initializes the OMServerAlignmentContext for follower reads support.
+   * This provides the server-side tracking of last applied Ratis index
+   * used for consistent follower reads.
+   */
+  private void initializeAlignmentContext() {
+    if (omRatisServer != null && omServerAlignmentContext == null) {
+      omServerAlignmentContext = new OMServerAlignmentContext(
+          () -> omRatisServer.getLastAppliedTermIndex().getIndex());
+      LOG.info("OMServerAlignmentContext initialized for follower reads support");
+    }
   }
 
   public long getObjectIdFromTxId(long trxnId) {

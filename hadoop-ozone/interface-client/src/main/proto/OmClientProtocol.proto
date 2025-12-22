@@ -156,6 +156,7 @@ enum Type {
   PutObjectTagging = 140;
   GetObjectTagging = 141;
   DeleteObjectTagging = 142;
+  Msync = 143;
 }
 
 enum SafeMode {
@@ -304,6 +305,7 @@ message OMRequest {
   optional PutObjectTaggingRequest          putObjectTaggingRequest        = 141;
   optional DeleteObjectTaggingRequest       deleteObjectTaggingRequest     = 142;
   repeated SetSnapshotPropertyRequest       SetSnapshotPropertyRequests    = 143;
+  optional MsyncRequest                     msyncRequest                   = 144;
 }
 
 message OMResponse {
@@ -437,6 +439,7 @@ message OMResponse {
   optional GetObjectTaggingResponse          getObjectTaggingResponse      = 140;
   optional PutObjectTaggingResponse          putObjectTaggingResponse      = 141;
   optional DeleteObjectTaggingResponse       deleteObjectTaggingResponse   = 142;
+  optional MsyncResponse                     msyncResponse                 = 143;
 }
 
 enum Status {
@@ -2353,6 +2356,21 @@ message DeleteObjectTaggingRequest {
 }
 
 message DeleteObjectTaggingResponse {
+}
+
+/**
+ * Msync request for syncing client state with OM leader.
+ * Used for follower reads to establish a consistent read baseline.
+ */
+message MsyncRequest {
+}
+
+/**
+ * Msync response containing the current last applied index from OM leader.
+ */
+message MsyncResponse {
+  // The last applied Ratis log index on the OM leader
+  optional int64 lastAppliedIndex = 1;
 }
 
 /**
