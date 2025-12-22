@@ -79,8 +79,8 @@ import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_ADDRESS_KEY;
 
 /**
  * A {@link org.apache.hadoop.io.retry.FailoverProxyProvider} implementation
- * that supports reading from follower OM(s) (i.e. non-leader OMs which also includes
- * OM listener).
+ * that supports reading from follower OM(s) (i.e. non-leader OMs also includes
+ * OM listeners).
  *
  * This constructs a wrapper proxy that sends the request to follower
  * OMs(s), if follower read is enabled. In case there are multiple

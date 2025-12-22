@@ -43,6 +43,17 @@ import org.slf4j.LoggerFactory;
  */
 public class OmAlignmentContext implements AlignmentContext {
 
+  /**
+   * Only OzoneManager client protocol can be a coordinated call.
+   * See OzoneManagerProtocolPB @ProtocolInfo annotation for the protocol name.
+   */
+  private static final String OM_PROTOCOL_NAME = OzoneManagerProtocol.class.getCanonicalName();
+
+  /**
+   * OzoneManager client protocol only supports submitRequest RPC call.
+   */
+  private static final String OM_PROTOCOL_METHOD = "submitRequest";
+
   private static final Logger LOG =
       LoggerFactory.getLogger(OmAlignmentContext.class);
   /**
@@ -169,9 +180,8 @@ public class OmAlignmentContext implements AlignmentContext {
 
   @Override
   public boolean isCoordinatedCall(String protocolName, String methodName, Message payload) {
-    // See OzoneManagerProtocolPB @ProtocolInfo annotation for the protocol name
-    if (!protocolName.equals(OzoneManagerProtocol.class.getCanonicalName()) ||
-        !(methodName.equals("submitRequest")) ||
+    if (!protocolName.equals(OM_PROTOCOL_NAME) ||
+        !(methodName.equals(OM_PROTOCOL_METHOD)) ||
         !(payload instanceof OMRequest)) {
       return false;
     }
