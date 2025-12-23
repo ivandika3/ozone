@@ -123,7 +123,7 @@ public class HadoopRpcOMFailoverProxyProvider<T> extends
    */
   @Override
   public synchronized ProxyInfo<T> getProxy() {
-    ProxyInfo currentProxyInfo = getOMProxyMap().get(getCurrentProxyOMNodeId());
+    ProxyInfo<T> currentProxyInfo = getOMProxyMap().get(getCurrentProxyOMNodeId());
     if (currentProxyInfo == null) {
       currentProxyInfo = createOMProxy(getCurrentProxyOMNodeId());
     }
@@ -133,10 +133,10 @@ public class HadoopRpcOMFailoverProxyProvider<T> extends
   /**
    * Creates proxy object.
    */
-  protected ProxyInfo createOMProxy(String nodeId) {
+  protected ProxyInfo<T> createOMProxy(String nodeId) {
     OMProxyInfo omProxyInfo = omProxyInfos.get(nodeId);
     InetSocketAddress address = omProxyInfo.getAddress();
-    ProxyInfo proxyInfo;
+    ProxyInfo<T> proxyInfo;
     try {
       T proxy = createOMProxy(address);
       // Create proxyInfo here, to make it work with all Hadoop versions.
@@ -194,7 +194,7 @@ public class HadoopRpcOMFailoverProxyProvider<T> extends
 
   @VisibleForTesting
   public List<OMProxyInfo> getOMProxyInfos() {
-    return new ArrayList<OMProxyInfo>(omProxyInfos.values());
+    return new ArrayList<>(omProxyInfos.values());
   }
 
   @VisibleForTesting

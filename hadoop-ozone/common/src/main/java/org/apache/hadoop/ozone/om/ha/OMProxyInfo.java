@@ -28,10 +28,17 @@ import org.slf4j.LoggerFactory;
  * Class to store OM proxy information.
  */
 public class OMProxyInfo {
-  private String nodeId;
-  private String rpcAddrStr;
-  private InetSocketAddress rpcAddr;
-  private Text dtService;
+  private final String nodeId;
+  private final String rpcAddrStr;
+  private final InetSocketAddress rpcAddr;
+  private final Text dtService;
+  /**
+   * The currently known state of the OM represented by this ProxyInfo.
+   * This may be out of date if the OM has changed state since the last
+   * time the state was checked. If the OM could not be contacted, this
+   * will store null to indicate an unknown state.
+   */
+  private String cachedOMRole;
 
   private static final Logger LOG =
       LoggerFactory.getLogger(OMProxyInfo.class);
@@ -59,12 +66,12 @@ public class OMProxyInfo {
 
   @Override
   public String toString() {
-    StringBuilder sb = new StringBuilder()
-        .append("nodeId=")
-        .append(nodeId)
-        .append(",nodeAddress=")
-        .append(rpcAddrStr);
-    return sb.toString();
+    return "nodeId=" +
+        nodeId +
+        ",nodeAddress=" +
+        rpcAddrStr +
+        ",omRole=" +
+        (cachedOMRole != null ? cachedOMRole : "unknown");
   }
 
   public InetSocketAddress getAddress() {
@@ -73,5 +80,17 @@ public class OMProxyInfo {
 
   public Text getDelegationTokenService() {
     return dtService;
+  }
+
+  public void setCachedOMRole(String omRole) {
+    this.cachedOMRole = omRole;
+  }
+
+  public String getCachedOMRole() {
+    return cachedOMRole;
+  }
+
+  public String getNodeId() {
+    return nodeId;
   }
 }

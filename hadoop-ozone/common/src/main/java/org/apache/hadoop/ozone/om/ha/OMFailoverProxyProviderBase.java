@@ -146,6 +146,7 @@ public abstract class OMFailoverProxyProviderBase<T> implements
         NetUtils.getDefaultSocketFactory(hadoopConf),
         (int) OmUtils.getOMClientRpcTimeOut(getConf()),
         connectionRetryPolicy
+        // TODO: Implement and add alignment context here
     ).getProxy();
   }
 
@@ -391,8 +392,8 @@ public abstract class OMFailoverProxyProviderBase<T> implements
     return waitBetweenRetries;
   }
 
-  public List<ProxyInfo> getOMProxies() {
-    return new ArrayList<ProxyInfo>(omProxies.values());
+  public List<ProxyInfo<T>> getOMProxies() {
+    return new ArrayList<>(omProxies.values());
   }
 
   public Map<String, ProxyInfo<T>> getOMProxyMap() {

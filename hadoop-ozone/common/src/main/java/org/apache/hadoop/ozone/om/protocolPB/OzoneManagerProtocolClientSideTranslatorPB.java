@@ -169,6 +169,7 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.LookupF
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.LookupFileResponse;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.LookupKeyRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.LookupKeyResponse;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.MsyncRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.MultipartCommitUploadPartRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.MultipartCommitUploadPartResponse;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.MultipartInfoInitiateRequest;
@@ -2645,6 +2646,18 @@ public final class OzoneManagerProtocolClientSideTranslatorPB
 
     OMRequest omRequest = createOMRequest(Type.DeleteObjectTagging)
         .setDeleteObjectTaggingRequest(req)
+        .build();
+
+    OMResponse omResponse = submitRequest(omRequest);
+    handleError(omResponse);
+  }
+
+  @Override
+  public void msync() throws IOException {
+    MsyncRequest req = MsyncRequest.newBuilder().build();
+
+    OMRequest omRequest = createOMRequest(Type.Msync)
+        .setMsyncRequest(req)
         .build();
 
     OMResponse omResponse = submitRequest(omRequest);
