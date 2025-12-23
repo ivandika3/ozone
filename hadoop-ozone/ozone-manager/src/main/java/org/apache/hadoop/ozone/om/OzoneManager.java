@@ -3302,6 +3302,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
           .build());
     }
 
+    // TODO: Make this to a separate method
     RaftPeerRole selfRole;
     RaftPeerId leaderId = null;
     if (omRatisServer == null) {
@@ -4021,6 +4022,12 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
         getReader(obj)) {
       return rcReader.get().getAcl(obj);
     }
+  }
+
+  @Override
+  public void msync() throws IOException {
+    // No need to do anything for now
+    // In the future we can check the permission
   }
 
   /**

@@ -22,8 +22,10 @@ import com.google.common.base.Preconditions;
 import com.google.protobuf.Message;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.ha.HAServiceProtocol.HAServiceState;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
+import org.apache.hadoop.hdds.utils.LegacyHadoopConfigurationSource;
 import org.apache.hadoop.io.retry.AtMostOnce;
 import org.apache.hadoop.io.retry.FailoverProxyProvider;
 import org.apache.hadoop.io.retry.Idempotent;
@@ -34,9 +36,11 @@ import org.apache.hadoop.ipc_.AlignmentContext;
 import org.apache.hadoop.ipc_.Client.ConnectionId;
 import org.apache.hadoop.ipc_.ObserverRetryOnActiveException;
 import org.apache.hadoop.ipc_.ProtobufHelper;
+import org.apache.hadoop.ipc_.ProtobufRpcEngine;
 import org.apache.hadoop.ipc_.RPC;
 import org.apache.hadoop.ipc_.RemoteException;
 import org.apache.hadoop.ipc_.RpcInvocationHandler;
+import org.apache.hadoop.net.NetUtils;
 import org.apache.hadoop.ozone.ClientVersion;
 import org.apache.hadoop.ozone.OmUtils;
 import org.apache.hadoop.ozone.OzoneConsts;
@@ -45,7 +49,11 @@ import org.apache.hadoop.ozone.om.exceptions.OMNotLeaderException;
 import org.apache.hadoop.ozone.om.protocolPB.OzoneManagerProtocolPB;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.MsyncRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRequest;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMResponse;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRoleInfo;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.ServiceInfo;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.ServiceListRequest;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.ServiceListResponse;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.Type;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.BlockingThreadPoolExecutorService;
@@ -72,10 +80,14 @@ import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_FAILOVER_AUTO_MSYNC_PERIOD_DEFAULT;
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_FAILOVER_AUTO_MSYNC_PERIOD_KEY_PREFIX;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_FAILOVER_FOLLOWER_PROBE_RETRY_PERIOD_DEFAULT;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_FAILOVER_FOLLOWER_PROBE_RETRY_PERIOD_KEY;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_ADDRESS_KEY;
+import static org.apache.hadoop.ozone.om.ha.OMFailoverProxyProviderBase.getNotLeaderException;
 
 /**
  * A {@link org.apache.hadoop.io.retry.FailoverProxyProvider} implementation
@@ -91,7 +103,7 @@ import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_ADDRESS_KEY;
  * Read and write requests will still be sent to leader OM if reading from
  * follower is turned off.
  */
-public class HadoopRpcOMFollowerReadFailoverProxyProvider<T> extends FailoverProxyProvider<T> {
+public class HadoopRpcOMFollowerReadFailoverProxyProvider<T> implements FailoverProxyProvider<T> {
   @VisibleForTesting
   static final Logger LOG = LoggerFactory.getLogger(HadoopRpcOMFollowerReadFailoverProxyProvider.class);
 
@@ -102,8 +114,6 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider<T> extends FailoverPro
 
   private final ConfigurationSource conf;
   private final Class<T> protocolClass;
-  
-  private final String clientID;
 
   /** Client-side context for syncing with the OM server side. */
   private final AlignmentContext alignmentContext;
@@ -256,15 +266,13 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider<T> extends FailoverPro
 
     autoMsyncPeriodMs = configuration.getTimeDuration(
         // The host of the URI is the omservice ID
-        OZONE_CLIENT + "." + uri.getHost(),
-        AUTO_MSYNC_PERIOD_DEFAULT, TimeUnit.MILLISECONDS);
+        OZONE_CLIENT_FAILOVER_AUTO_MSYNC_PERIOD_KEY_PREFIX + "." + omServiceId,
+        OZONE_CLIENT_FAILOVER_AUTO_MSYNC_PERIOD_DEFAULT, TimeUnit.MILLISECONDS);
     followerProbeRetryPeriodMs = conf.getTimeDuration(
         OZONE_CLIENT_FAILOVER_FOLLOWER_PROBE_RETRY_PERIOD_KEY,
         OZONE_CLIENT_FAILOVER_FOLLOWER_PROBE_RETRY_PERIOD_DEFAULT, TimeUnit.MILLISECONDS);
     omHAStateProbeTimeoutMs = conf.getTimeDuration(OM_HA_STATE_PROBE_TIMEOUT,
         OM_HA_STATE_PROBE_TIMEOUT_DEFAULT, TimeUnit.MILLISECONDS);
-
-
 
     if (wrappedProxy instanceof OzoneManagerProtocolPB) {
       this.followerReadEnabled = true;
@@ -282,6 +290,11 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider<T> extends FailoverPro
     omProbingThreadPool =
         BlockingThreadPoolExecutorService.newInstance(4, 128, 10L, TimeUnit.SECONDS,
             "om-ha-state-probing");
+  }
+
+  @Override
+  public Class<T> getInterface() {
+    return protocolClass;
   }
 
   private void loadOMClientConfigs(ConfigurationSource config, String omSvcId)
@@ -340,7 +353,48 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider<T> extends FailoverPro
 
   @Override
   public ProxyInfo<T> getProxy() {
+    // TODO: This is different from the OMFailoverProxyProviderBase
     return combinedProxy;
+  }
+
+  protected ProxyInfo createOMProxy(String nodeId) {
+    OMProxyInfo omProxyInfo = omProxyInfos.get(nodeId);
+    InetSocketAddress address = omProxyInfo.getAddress();
+    ProxyInfo proxyInfo;
+    try {
+      T proxy = createOMProxy(address);
+      // Create proxyInfo here, to make it work with all Hadoop versions.
+      proxyInfo = new ProxyInfo<>(proxy, omProxyInfo.toString());
+      omProxies.put(nodeId, proxyInfo);
+    } catch (IOException ioe) {
+      LOG.error("{} Failed to create RPC proxy to OM at {}",
+          this.getClass().getSimpleName(), address, ioe);
+      throw new RuntimeException(ioe);
+    }
+    return proxyInfo;
+  }
+
+  protected T createOMProxy(InetSocketAddress omAddress) throws IOException {
+    Configuration hadoopConf =
+        LegacyHadoopConfigurationSource.asHadoopConfiguration(conf);
+
+    // TODO: Post upgrade to Protobuf 3.x we need to use ProtobufRpcEngine2
+    RPC.setProtocolEngine(hadoopConf, getInterface(), ProtobufRpcEngine.class);
+
+    // Ensure we do not attempt retry on the same OM in case of exceptions
+    RetryPolicy connectionRetryPolicy = RetryPolicies.failoverOnNetworkException(0);
+
+    return (T) RPC.getProtocolProxy(
+        getInterface(),
+        RPC.getProtocolVersion(protocolClass),
+        omAddress,
+        ugi,
+        hadoopConf,
+        NetUtils.getDefaultSocketFactory(hadoopConf),
+        (int) OmUtils.getOMClientRpcTimeOut(conf),
+        connectionRetryPolicy
+        // TODO: Implement and add alignment context here
+    ).getProxy();
   }
 
   @Override
@@ -408,7 +462,7 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider<T> extends FailoverPro
 
   /**
    * Execute getHAServiceState() call with a timeout, to avoid a long wait when
-   * an NN becomes irresponsive to rpc requests
+   * an OM becomes irresponsive to rpc requests
    * (when a thread/heap dump is being taken, e.g.).
    *
    * For each getHAServiceState() call, a task is created and submitted to a
@@ -464,13 +518,47 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider<T> extends FailoverPro
    * Fetch the service state from a proxy. If it is unable to be fetched,
    * assume it is in standby state, but log the exception.
    */
-  private HAServiceState getHAServiceState(OMProxyInfo<T> proxyInfo) {
+  private HAServiceState getHAServiceState(OMProxyInfo omProxyInfo) {
     IOException ioe;
     try {
-      return getProxyAsClientProtocol(proxyInfo.proxy).getHAServiceState();
+      ProxyInfo<T> proxyInfo = omProxies.get(omProxyInfo.getNodeId());
+      if (proxyInfo == null) {
+        proxyInfo = createOMProxy();
+      }
+      // FIXME: GetServiceList can only be sent to the leader
+      //  either send this to the leader or implement another protocol that sets isDirect to true
+      OzoneManagerProtocolPB clientProtocol = getProxyAsClientProtocol(proxyInfo.proxy);
+
+      ServiceListRequest req = ServiceListRequest.newBuilder().build();
+      OMRequest omRequest = createOMRequest(Type.ServiceList)
+          .setServiceListRequest(req)
+          .build();
+
+      final OMResponse omResponse =
+          clientProtocol.submitRequest(NULL_RPC_CONTROLLER, omRequest);
+
+      if (!omResponse.getSuccess()) {
+        LOG.debug("OM request to {} failed while fetching HAServiceState",
+            proxyInfo.proxyInfo);
+        return null;
+      }
+
+      final ServiceListResponse resp = omResponse.getServiceListResponse();
+      List<ServiceInfo> serviceInfoList = resp.getServiceInfoList();
+
+      ServiceInfo currentServiceInfo = serviceInfoList.stream()
+          .filter(serviceInfo -> proxyInfo.proxyInfo.equals(serviceInfo.getOmRole().getNodeId())).findFirst();
+
+
+    } catch (ServiceException e) {
+      OMNotLeaderException notLeaderException =
+          getNotLeaderException(e);
+      if (notLeaderException != null) {
+        return HAServiceState.STANDBY;
+      }
     } catch (RemoteException re) {
-      // Though a Standby will allow a getHAServiceState call, it won't allow
-      // delegation token lookup, so if DT is used it throws StandbyException
+      // Though a Follower will allow a getHAServiceState call, it won't allow
+      // delegation token lookup, so if DT is used it throws NotLeaderException
       if (re.unwrapRemoteException() instanceof NotLeaderException) {
         LOG.debug("OM {} threw NotLeaderException when fetching HAState",
             proxyInfo.getAddress());
@@ -482,7 +570,7 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider<T> extends FailoverPro
     }
     if (LOG.isDebugEnabled()) {
       LOG.debug("Failed to connect to {} while fetching HAServiceState",
-          proxyInfo.getAddress(), ioe);
+          proxyInfo.proxyInfo, ioe);
     }
     return null;
   }
@@ -522,6 +610,8 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider<T> extends FailoverPro
    */
   private void msync() throws IOException {
     try {
+      // FIXME: Msync can only be sent to the leader, this might be sent to the follower
+      //  but maybe it returns leader since we are using the wrapped failoverProxy
       OzoneManagerProtocolPB clientProtocol = getProxyAsClientProtocol(failoverProxy.getProxy().proxy);
 
       MsyncRequest req = MsyncRequest.newBuilder().build();
@@ -634,11 +724,11 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider<T> extends FailoverPro
         int activeCount = 0;
         int standbyCount = 0;
         int unreachableCount = 0;
-        for (int i = 0; i < nameNodeProxies.size(); i++) {
+        for (int i = 0; i < omProxies.size(); i++) {
           OMProxyInfo current = getCurrentProxy();
-          OMRoleInfo currState = current.getCachedState();
-          if (currState != HAServiceState.OBSERVER) {
-            if (currState == HAServiceState.ACTIVE) {
+          String currState = current.getCachedOMRole();
+          if (!currState.equals("FOLLOWER")) {
+            if (!currState == HAServiceState.ACTIVE) {
               activeCount++;
             } else if (currState == HAServiceState.STANDBY) {
               standbyCount++;
