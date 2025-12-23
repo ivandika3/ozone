@@ -28,10 +28,10 @@ import org.slf4j.LoggerFactory;
  * Class to store OM proxy information.
  */
 public class OMProxyInfo {
-  private String nodeId;
-  private String rpcAddrStr;
-  private InetSocketAddress rpcAddr;
-  private Text dtService;
+  private final String nodeId;
+  private final String rpcAddrStr;
+  private final InetSocketAddress rpcAddr;
+  private final Text dtService;
   /**
    * The currently known state of the OM represented by this ProxyInfo.
    * This may be out of date if the OM has changed state since the last
@@ -88,5 +88,9 @@ public class OMProxyInfo {
 
   public String getCachedOMRole() {
     return cachedOMRole;
+  }
+
+  public String getNodeId() {
+    return nodeId;
   }
 }

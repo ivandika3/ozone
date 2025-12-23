@@ -34,12 +34,6 @@ import org.slf4j.LoggerFactory;
 /**
  * This is the server side implementation responsible for passing
  * state alignment info to clients.
- * <p>
- * Unlike HDFS's ClientNamenodeProtocol that has a RPC method for each
- * distinct call, OM (OzoneManagerService) only contains a single RPC method
- * (i.e. submitRequest(OMRequest)). Therefore, we need to query the OMRequest
- * to get the OMRequest parameter from the RPC method get the corresponding cmdType
- * to check whether we can the request to be run on non-leader OMs.
  */
 public class OmAlignmentContext implements AlignmentContext {
 
@@ -57,10 +51,11 @@ public class OmAlignmentContext implements AlignmentContext {
   private static final Logger LOG =
       LoggerFactory.getLogger(OmAlignmentContext.class);
   /**
-   * Estimated number of journal transactions a typical OM can execute
+   * Estimated number of transactions a typical OM can execute
    * per second. The number is used to estimate how long a client's
    * RPC request will wait in the call queue before the Observer catches up
    * with its state id.
+   * TODO: We might need to change this to fit OM or implement timestamp based ones.
    */
   private static final long ESTIMATED_TRANSACTIONS_PER_SECOND = 10000L;
 
@@ -146,7 +141,7 @@ public class OmAlignmentContext implements AlignmentContext {
       // stateId is 0 if not set).
       throw new IOException("Node received request without "
           + "stateId. This mostly likely is because client is not configured "
-          + "with ObserverReadProxyProvider");
+          + "with FollowerReadProxyProvider");
     }
     long serverStateId = getLastSeenStateId();
     long clientStateId = header.getStateId();
@@ -161,6 +156,9 @@ public class OmAlignmentContext implements AlignmentContext {
           clientStateId, serverStateId);
       return serverStateId;
     }
+    // TODO: Instead of using transactions difference we can implement
+    //  a timestamp-based difference between the current leader and the follower
+    //  this requires adding the leader's timestamp in the Raft log and using
     if ((RaftPeerRole.FOLLOWER.equals(selfRole) || RaftPeerRole.LISTENER.equals(selfRole)) &&
         clientStateId - serverStateId >
             ESTIMATED_TRANSACTIONS_PER_SECOND
@@ -185,6 +183,11 @@ public class OmAlignmentContext implements AlignmentContext {
         !(payload instanceof OMRequest)) {
       return false;
     }
+    // Unlike HDFS's ClientNamenodeProtocol that has an RPC method for each
+    // distinct call, OM (OzoneManagerService) only contains a single RPC method
+    // (i.e. submitRequest(OMRequest)). Therefore, we need to query the OMRequest
+    // to get the OMRequest parameter from the RPC method get the corresponding cmdType
+    // to check whether we can the request to be run on non-leader OMs.
 
     OMRequest omRequest = (OMRequest) payload;
 
