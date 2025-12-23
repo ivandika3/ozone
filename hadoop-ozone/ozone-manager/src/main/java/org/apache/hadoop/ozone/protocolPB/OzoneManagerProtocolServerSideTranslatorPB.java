@@ -238,6 +238,7 @@ public class OzoneManagerProtocolServerSideTranslatorPB implements OzoneManagerP
     if (raftServerStatus == LEADER_AND_READY || request.getCmdType().equals(PrepareStatus)
         || request.getCmdType().equals(Msync)) {
       if (request.getCmdType().equals(Msync)) {
+        // TODO: Check how to handle when Msync is sent to a leader that is not ready.
         return handler.handleReadRequest(request);
       }
       if (ozoneManager.getConfig().isAllowLeaderSkipLinearizableRead()) {
