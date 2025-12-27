@@ -114,6 +114,10 @@ abstract class StreamDataChannelBase
       // close and then delete the file.
       try {
         cleanupInternal();
+        boolean deleted = file.delete();
+        if (!deleted) {
+          LOG.debug("Unable to deleted file in {}", this);
+        }
       } catch (IOException e) {
         LOG.warn("Failed to close " + this, e);
       }
