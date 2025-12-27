@@ -67,7 +67,7 @@ public final class OzoneConfigKeys {
 
   public static final String HDDS_CONTAINER_CHUNK_WRITE_SYNC_KEY =
       "hdds.container.chunk.write.sync";
-  public static final boolean HDDS_CONTAINER_CHUNK_WRITE_SYNC_DEFAULT = false;
+  public static final boolean HDDS_CONTAINER_CHUNK_WRITE_SYNC_DEFAULT = true;
   /**
    * Ratis Port where containers listen to.
    */
