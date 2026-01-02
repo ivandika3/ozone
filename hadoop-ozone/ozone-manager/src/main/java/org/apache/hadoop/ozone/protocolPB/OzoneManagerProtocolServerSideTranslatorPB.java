@@ -20,6 +20,7 @@ package org.apache.hadoop.ozone.protocolPB;
 import static org.apache.hadoop.ozone.om.ratis.OzoneManagerRatisServer.RaftServerStatus.LEADER_AND_READY;
 import static org.apache.hadoop.ozone.om.ratis.OzoneManagerRatisServer.RaftServerStatus.NOT_LEADER;
 import static org.apache.hadoop.ozone.om.ratis.utils.OzoneManagerRatisUtils.createErrorResponse;
+import static org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.Type.Msync;
 import static org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.Type.PrepareStatus;
 import static org.apache.hadoop.ozone.util.MetricUtil.captureLatencyNs;
 
@@ -224,7 +225,8 @@ public class OzoneManagerProtocolServerSideTranslatorPB implements OzoneManagerP
             ozoneManager.getConfig().getFollowerReadLocalLeaseTimeMs())) {
       ozoneManager.getMetrics().incNumFollowerReadLocalLeaseSuccess();
       return handler.handleReadRequest(request);
-    } 
+    }
+    boolean isDirect = request.getIsDirect();
     // Get current OM's role
     RaftServerStatus raftServerStatus = omRatisServer.getLeaderStatus();
     // === 1. Follower linearizable read ===
@@ -233,7 +235,12 @@ public class OzoneManagerProtocolServerSideTranslatorPB implements OzoneManagerP
       return ozoneManager.getOmExecutionFlow().submit(request, false);
     }
     // === 2. Leader local read (skip ReadIndex if allowed) ===
-    if (raftServerStatus == LEADER_AND_READY || request.getCmdType().equals(PrepareStatus)) {
+    if (raftServerStatus == LEADER_AND_READY || request.getCmdType().equals(PrepareStatus)
+        || request.getCmdType().equals(Msync)) {
+      if (request.getCmdType().equals(Msync)) {
+        // TODO: Check how to handle when Msync is sent to a leader that is not ready.
+        return handler.handleReadRequest(request);
+      }
       if (ozoneManager.getConfig().isAllowLeaderSkipLinearizableRead()) {
         ozoneManager.getMetrics().incNumLeaderSkipLinearizableRead();
         // leader directly serves local committed data
@@ -246,6 +253,8 @@ public class OzoneManagerProtocolServerSideTranslatorPB implements OzoneManagerP
       }
 
       // fallback to local read
+      return handler.handleReadRequest(request);
+    } else if (raftServerStatus == NOT_LEADER && isDirect) {
       return handler.handleReadRequest(request);
     } else {
       throw createLeaderErrorException(raftServerStatus);
