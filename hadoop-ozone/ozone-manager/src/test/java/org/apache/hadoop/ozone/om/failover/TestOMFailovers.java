@@ -23,7 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
@@ -122,10 +121,9 @@ public class TestOMFailovers {
     }
 
     @Override
-    protected void loadOMClientConfigs(ConfigurationSource config,
+    protected void initOmProxiesFromConfigs(ConfigurationSource config,
         String omSvcId) {
-      HashMap<String, ProxyInfo<OzoneManagerProtocolPB>> omProxyInfos = new HashMap<>();
-      HashMap<String, InetSocketAddress> omNodeAddressMap = new HashMap<>();
+      HashMap<String, OMProxyInfo<OzoneManagerProtocolPB>> omProxyInfos = new HashMap<>();
       ArrayList<String> omNodeIDList = new ArrayList<>();
 
       for (int i = 1; i <= 3; i++) {
@@ -134,9 +132,9 @@ public class TestOMFailovers {
             "127.0.0.1:9862");
         omProxyInfos.put(nodeId, omProxyInfo);
         omNodeIDList.add(nodeId);
-        omNodeAddressMap.put(nodeId, null);
       }
-      setProxiesForTesting(omProxyInfos, omNodeIDList, omNodeAddressMap);
+      setOmProxies(omProxyInfos);
+      setOmNodesInOrder(omNodeIDList);
     }
 
     @Override
