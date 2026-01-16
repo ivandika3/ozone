@@ -21,6 +21,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.protobuf.ServiceException;
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -182,6 +183,9 @@ public abstract class OMFailoverProxyProviderBase<T> implements
         return !accessControlExceptionOMs.containsAll(omNodesInOrder);
       }
     } else if (HddsUtils.shouldNotFailoverOnRpcException(unwrappedException)) {
+      return false;
+    } else if (unwrappedException instanceof InterruptedIOException ||
+        unwrappedException instanceof InterruptedException) {
       return false;
     } else if (ex instanceof StateMachineException) {
       StateMachineException smEx = (StateMachineException) ex;
@@ -414,6 +418,10 @@ public abstract class OMFailoverProxyProviderBase<T> implements
 
   public Map<String, OMProxyInfo<T>> getOMProxyMap() {
     return omProxies;
+  }
+
+  protected synchronized OMProxyInfo<T> getOmProxy(String nodeId) {
+    return omProxies.get(nodeId);
   }
 
   /**
