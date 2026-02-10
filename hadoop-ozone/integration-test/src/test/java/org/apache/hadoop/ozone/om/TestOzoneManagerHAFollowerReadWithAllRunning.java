@@ -26,8 +26,10 @@ import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.PART
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -68,6 +70,7 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRespo
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.Type;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.VolumeInfo;
 import org.apache.hadoop.ozone.protocolPB.OzoneManagerProtocolServerSideTranslatorPB;
+import org.apache.ozone.test.GenericTestUtils;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -469,5 +472,85 @@ public class TestOzoneManagerHAFollowerReadWithAllRunning extends TestOzoneManag
     assertEquals(leaderOMNodeId, omResponse.getLeaderOMNodeId());
     // There should not be any change in the leader proxy's next proxy OM node ID
     assertEquals(initialNextProxyOmNodeId, omFailoverProxyProvider.getNextProxyOMNodeId());
+  }
+
+  @Test
+  void testClientWithFollowerReadDisabled() throws Exception {
+    // Setup a client with follower read disabled
+    OzoneConfiguration clientConf = OzoneConfiguration.of(getConf());
+    clientConf.setBoolean(OZONE_CLIENT_FOLLOWER_READ_ENABLED_KEY, false);
+    OzoneClient leaderOnlyClient = null;
+    try {
+      // This will trigger getServiceId so the client should point to the leader
+      leaderOnlyClient = OzoneClientFactory.getRpcClient(getOmServiceId(), clientConf);
+      ObjectStore leaderOnlyObjectStore = leaderOnlyClient.getObjectStore();
+      assertNull(OmTestUtil.getFollowerReadFailoverProxyProvider(leaderOnlyObjectStore));
+      HadoopRpcOMFailoverProxyProvider<OzoneManagerProtocolPB> leaderProxyProvider =
+          OmTestUtil.getFailoverProxyProvider(leaderOnlyObjectStore);
+
+      // The OMFailoverProxyProvider will point to the current leader OM node.
+      OzoneManager currentLeader = null;
+      String leaderOMNodeId = null;
+      for (OzoneManager om: getCluster().getOzoneManagersList()) {
+        if (om.isLeaderReady()) {
+          currentLeader = om;
+          leaderOMNodeId = om.getOMNodeId();
+          break;
+        }
+      }
+      assertNotNull(leaderOMNodeId);
+      assertEquals(leaderOMNodeId, leaderProxyProvider.getCurrentProxyOMNodeId());
+
+      // Try to transfer leadership
+      OzoneManager newLeader = transferLeadershipToAnotherNode(currentLeader);
+      assertNotEquals(currentLeader.getOMNodeId(), newLeader.getOMNodeId());
+
+      // Do some reads and ensure that the client will failover to the new leader
+      leaderOnlyObjectStore.getS3Volume();
+      assertEquals(newLeader.getOMNodeId(), leaderProxyProvider.getCurrentProxyOMNodeId());
+    } finally {
+      IOUtils.closeQuietly(leaderOnlyClient);
+    }
+
+  }
+
+  /**
+   * Transfers leadership from current leader to another OM node.
+   *
+   * @param currentLeader the current leader OM
+   * @return the new leader OM after transfer
+   */
+  private OzoneManager transferLeadershipToAnotherNode(OzoneManager currentLeader) throws Exception {
+    // Get list of all OMs
+    List<OzoneManager> omList = new ArrayList<>(getCluster().getOzoneManagersList());
+
+    // Remove current leader from list
+    omList.remove(currentLeader);
+
+    // Select the first alternative OM as target
+    OzoneManager targetOM = omList.get(0);
+    String targetNodeId = targetOM.getOMNodeId();
+
+    // Transfer leadership
+    currentLeader.transferLeadership(targetNodeId);
+
+    // Wait for leadership transfer to complete
+    GenericTestUtils.waitFor(() -> {
+      try {
+        OzoneManager currentLeaderCheck = getCluster().getOMLeader();
+        return !currentLeaderCheck.getOMNodeId().equals(currentLeader.getOMNodeId());
+      } catch (Exception e) {
+        return false;
+      }
+    }, 1000, 30000);
+
+    // Verify leadership change
+    getCluster().waitForLeaderOM();
+    OzoneManager newLeader = getCluster().getOMLeader();
+
+    assertEquals(targetNodeId, newLeader.getOMNodeId(),
+        "Leadership should have transferred to target OM");
+
+    return newLeader;
   }
 }

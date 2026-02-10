@@ -48,6 +48,7 @@ public class TestOzoneShellHAWithFollowerRead extends TestOzoneShellHA {
     conf.setBoolean("ozone.client.hbase.enhancements.allowed", true);
     conf.setBoolean("ozone.om.ha.raft.server.read.leader.lease.enabled", true);
     conf.setBoolean("ozone.om.allow.leader.skip.linearizable.read", true);
+    conf.setBoolean("ozone.client.follower.read.enabled", true);
     conf.setBoolean(OzoneConfigKeys.OZONE_FS_HSYNC_ENABLED, true);
     startKMS();
     startCluster(conf);

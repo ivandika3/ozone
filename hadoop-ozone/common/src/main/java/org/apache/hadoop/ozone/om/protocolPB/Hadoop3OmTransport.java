@@ -31,6 +31,7 @@ import org.apache.hadoop.ozone.OzoneConfigKeys;
 import org.apache.hadoop.ozone.om.exceptions.OMNotLeaderException;
 import org.apache.hadoop.ozone.om.ha.HadoopRpcOMFailoverProxyProvider;
 import org.apache.hadoop.ozone.om.ha.HadoopRpcOMFollowerReadFailoverProxyProvider;
+import org.apache.hadoop.ozone.om.helpers.ReadConsistency;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMResponse;
 import org.apache.hadoop.security.UserGroupInformation;
@@ -74,8 +75,13 @@ public class Hadoop3OmTransport implements OmTransport {
     //  So instead of enabling using follower read configuration, we can simply let user to configure the
     //  failover proxy provider instead (similar to dfs.client.failover.proxy.provider.<nameservice>)
     if (followerReadEnabled) {
+      String defaultFollowerReadConsistencyType = conf.get(
+          OzoneConfigKeys.OZONE_CLIENT_FOLLOWER_READ_DEFAULT_CONSISTENCY_TYPE_KEY,
+          OzoneConfigKeys.OZONE_CLIENT_FOLLOWER_READ_DEFAULT_CONSISTENCY_TYPE_DEFAULT
+      );
+      ReadConsistency readConsistency = ReadConsistency.valueOf(defaultFollowerReadConsistencyType, true);
       this.followerReadFailoverProxyProvider =
-          new HadoopRpcOMFollowerReadFailoverProxyProvider(omFailoverProxyProvider);
+          new HadoopRpcOMFollowerReadFailoverProxyProvider(omFailoverProxyProvider, readConsistency.toProto());
       this.rpcProxy = OzoneManagerProtocolPB.newProxy(followerReadFailoverProxyProvider, maxFailovers);
     } else {
       // TODO: It should be possible to simply instantiate HadoopRpcOMFollowerReadFailoverProxyProvider

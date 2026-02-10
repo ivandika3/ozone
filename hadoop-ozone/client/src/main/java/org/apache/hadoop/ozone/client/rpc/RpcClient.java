@@ -22,6 +22,8 @@ import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_ELASTIC_BYTE_
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_ELASTIC_BYTE_BUFFER_POOL_MAX_SIZE_DEFAULT;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_KEY_PROVIDER_CACHE_EXPIRY;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_KEY_PROVIDER_CACHE_EXPIRY_DEFAULT;
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_LEADER_READ_DEFAULT_CONSISTENCY_TYPE_DEFAULT;
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_LEADER_READ_DEFAULT_CONSISTENCY_TYPE_KEY;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_REQUIRED_OM_VERSION_MIN_KEY;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_SERVER_DEFAULTS_VALIDITY_PERIOD_MS;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_CLIENT_SERVER_DEFAULTS_VALIDITY_PERIOD_MS_DEFAULT;
@@ -155,6 +157,7 @@ import org.apache.hadoop.ozone.om.helpers.OpenKeySession;
 import org.apache.hadoop.ozone.om.helpers.OzoneFSUtils;
 import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
 import org.apache.hadoop.ozone.om.helpers.OzoneFileStatusLight;
+import org.apache.hadoop.ozone.om.helpers.ReadConsistency;
 import org.apache.hadoop.ozone.om.helpers.S3SecretValue;
 import org.apache.hadoop.ozone.om.helpers.S3VolumeContext;
 import org.apache.hadoop.ozone.om.helpers.ServiceInfo;
@@ -250,10 +253,16 @@ public class RpcClient implements ClientProtocol {
         WRITE_POOL_MIN_SIZE, Integer.MAX_VALUE, "client-write-TID-%d"));
 
     OmTransport omTransport = createOmTransport(omServiceId);
+
+    String defaultLeaderReadConsistencyType = conf.get(OZONE_CLIENT_LEADER_READ_DEFAULT_CONSISTENCY_TYPE_KEY,
+        OZONE_CLIENT_LEADER_READ_DEFAULT_CONSISTENCY_TYPE_DEFAULT);
+    ReadConsistency defaultLeaderReadConsistency =
+        ReadConsistency.valueOf(defaultLeaderReadConsistencyType, false);
+
     OzoneManagerProtocolClientSideTranslatorPB
         ozoneManagerProtocolClientSideTranslatorPB =
         new OzoneManagerProtocolClientSideTranslatorPB(omTransport,
-        clientId.toString());
+        clientId.toString(), defaultLeaderReadConsistency.toProto());
     this.ozoneManagerClient = TracingUtil.createProxy(
         ozoneManagerProtocolClientSideTranslatorPB,
         OzoneManagerClientProtocol.class, conf);

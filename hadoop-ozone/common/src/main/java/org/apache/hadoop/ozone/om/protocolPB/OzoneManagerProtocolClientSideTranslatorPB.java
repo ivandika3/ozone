@@ -191,6 +191,8 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.Prepare
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.PutObjectTaggingRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.RangerBGSyncRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.RangerBGSyncResponse;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.ReadConsistencyHint;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.ReadConsistencyType;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.RecoverLeaseRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.RecoverLeaseResponse;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.RefetchSecretKeyRequest;
@@ -263,14 +265,22 @@ public final class OzoneManagerProtocolClientSideTranslatorPB
       = new ThreadLocal<>();
   private boolean s3AuthCheck;
 
+  private final ReadConsistencyType defaultReadConsistencyType;
+
   public static final int BLOCK_ALLOCATION_RETRY_COUNT = 90;
   public static final int BLOCK_ALLOCATION_RETRY_WAIT_TIME_MS = 1000;
 
   public OzoneManagerProtocolClientSideTranslatorPB(OmTransport omTransport,
       String clientId) {
+    this(omTransport, clientId, ReadConsistencyType.DEFAULT);
+  }
+
+  public OzoneManagerProtocolClientSideTranslatorPB(OmTransport omTransport,
+      String clientId, ReadConsistencyType defaultReadConsistencyType) {
     this.clientID = clientId;
     this.transport = omTransport;
     this.s3AuthCheck = false;
+    this.defaultReadConsistencyType = defaultReadConsistencyType;
   }
 
   /**
@@ -297,10 +307,18 @@ public final class OzoneManagerProtocolClientSideTranslatorPB
    * @param cmdType type of the request
    */
   private OMRequest.Builder createOMRequest(Type cmdType) {
-    return OMRequest.newBuilder()
+    OMRequest.Builder builder = OMRequest.newBuilder()
         .setCmdType(cmdType)
         .setVersion(ClientVersion.CURRENT_VERSION)
         .setClientId(clientID);
+    if (defaultReadConsistencyType != null) {
+      builder.setReadConsistencyHint(
+          ReadConsistencyHint.newBuilder()
+              .setConsistencyType(defaultReadConsistencyType)
+              .build()
+      );
+    }
+    return builder;
   }
 
   /**
@@ -311,7 +329,7 @@ public final class OzoneManagerProtocolClientSideTranslatorPB
    */
   private OMResponse submitRequest(OMRequest omRequest)
       throws IOException {
-    OMRequest.Builder  builder = OMRequest.newBuilder(omRequest);
+    OMRequest.Builder builder = OMRequest.newBuilder(omRequest);
     // Insert S3 Authentication information for each request.
     if (getThreadLocalS3Auth() != null) {
       builder.setS3Authentication(
@@ -337,10 +355,8 @@ public final class OzoneManagerProtocolClientSideTranslatorPB
         CallerContext.setCurrent(callerContext);
       }
     }
-    OMResponse response =
-        transport.submitRequest(
-            builder.setTraceID(TracingUtil.exportCurrentSpan()).build());
-    return response;
+    return transport.submitRequest(
+        builder.setTraceID(TracingUtil.exportCurrentSpan()).build());
   }
 
   /**

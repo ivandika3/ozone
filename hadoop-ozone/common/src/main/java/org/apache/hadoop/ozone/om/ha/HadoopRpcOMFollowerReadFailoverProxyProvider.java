@@ -40,6 +40,8 @@ import org.apache.hadoop.ozone.om.exceptions.OMLeaderNotReadyException;
 import org.apache.hadoop.ozone.om.exceptions.OMNotLeaderException;
 import org.apache.hadoop.ozone.om.protocolPB.OzoneManagerProtocolPB;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRequest;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.ReadConsistencyHint;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.ReadConsistencyType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -84,8 +86,17 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider implements FailoverPro
   /** The last proxy that has been used. Only used for testing. */
   private volatile OMProxyInfo<OzoneManagerProtocolPB> lastProxy = null;
 
+  private final ReadConsistencyType defaultReadConsistencyType;
+
   public HadoopRpcOMFollowerReadFailoverProxyProvider(
-      HadoopRpcOMFailoverProxyProvider<OzoneManagerProtocolPB> failoverProxy) {
+      HadoopRpcOMFailoverProxyProvider<OzoneManagerProtocolPB> failoverProxy
+  ) {
+    this(failoverProxy, ReadConsistencyType.LINEARIZABLE_FOLLOWER_READ);
+  }
+
+  public HadoopRpcOMFollowerReadFailoverProxyProvider(
+      HadoopRpcOMFailoverProxyProvider<OzoneManagerProtocolPB> failoverProxy,
+      ReadConsistencyType defaultReadConsistencyType) {
     this.failoverProxy = failoverProxy;
     // Create a wrapped proxy containing all the proxies. Since this combined
     // proxy is just redirecting to other proxies, all invocations can share it.
@@ -97,6 +108,7 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider implements FailoverPro
         new Class<?>[] {OzoneManagerProtocolPB.class}, new FollowerReadInvocationHandler());
     combinedProxy = new ProxyInfo<>(wrappedProxy, combinedInfo);
     this.useFollowerRead = true;
+    this.defaultReadConsistencyType = defaultReadConsistencyType;
   }
 
   @Override
@@ -220,6 +232,16 @@ public class HadoopRpcOMFollowerReadFailoverProxyProvider implements FailoverPro
           LOG.debug("Attempting to service {} with cmdType {} using proxy {}",
               method.getName(), omRequest.getCmdType(), current.proxyInfo);
           try {
+            if (defaultReadConsistencyType != null) {
+              omRequest = omRequest.toBuilder()
+                  .setReadConsistencyHint(
+                      ReadConsistencyHint
+                          .newBuilder()
+                          .setConsistencyType(defaultReadConsistencyType)
+                          .build()
+                  ).build();
+            }
+            args[1] = omRequest;
             final Object retVal = method.invoke(current.getProxy(), args);
             lastProxy = current;
             LOG.debug("Invocation of {} with cmdType {} using {} was successful",
