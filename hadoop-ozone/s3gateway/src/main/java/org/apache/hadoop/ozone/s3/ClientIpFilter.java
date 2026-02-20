@@ -19,17 +19,19 @@ package org.apache.hadoop.ozone.s3;
 
 import jakarta.annotation.Priority;
 import java.io.IOException;
-import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.container.ContainerRequestContext;
 import javax.ws.rs.container.ContainerRequestFilter;
 import javax.ws.rs.container.PreMatching;
-import javax.ws.rs.core.Context;
 import javax.ws.rs.ext.Provider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Filter used to get ClientIP from HttpServletRequest.
+ * Filter used to get ClientIP from request headers.
+ *
+ * Works with both servlet and non-servlet (Netty) containers by
+ * extracting client IP from standard proxy headers rather than
+ * depending on {@code HttpServletRequest}.
  */
 
 @Provider
@@ -45,25 +47,21 @@ public class ClientIpFilter implements ContainerRequestFilter {
   private static final Logger LOG = LoggerFactory.getLogger(
       ClientIpFilter.class);
 
-  @Context
-  private HttpServletRequest httpServletRequest;
-
   @Override
   public void filter(ContainerRequestContext request) throws IOException {
-    String clientIp = httpServletRequest.getHeader("x-real-ip");
+    String clientIp = request.getHeaderString("x-real-ip");
 
     if (clientIp == null || clientIp.isEmpty()) {
-      // extract from forward ips
-      String ipForwarded = httpServletRequest.getHeader("x-forwarded-for");
+      String ipForwarded = request.getHeaderString("x-forwarded-for");
       String[] ips = ipForwarded == null ? null : ipForwarded.split(",");
-      clientIp = (ips == null || ips.length == 0) ? null : ips[0];
-
-      // extract from remote addr
-      clientIp = (clientIp == null || clientIp.isEmpty()) ?
-          httpServletRequest.getRemoteAddr() : clientIp;
+      clientIp = (ips == null || ips.length == 0) ? null : ips[0].trim();
     }
+
+    if (clientIp == null || clientIp.isEmpty()) {
+      clientIp = "unknown";
+    }
+
     LOG.trace("Real Ip[{}]", clientIp);
     request.getHeaders().putSingle(CLIENT_IP_HEADER, clientIp);
   }
-
 }

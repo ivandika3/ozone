@@ -46,6 +46,7 @@ import org.apache.ratis.util.JvmPauseMonitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Option;
 
 /**
  * This class is used to start/stop S3 compatible rest server.
@@ -58,7 +59,13 @@ public class Gateway extends GenericCli implements Callable<Void> {
 
   private static final Logger LOG = LoggerFactory.getLogger(Gateway.class);
 
-  private S3GatewayHttpServer httpServer;
+  @Option(names = "--use-jetty",
+      description = "Use legacy Jetty server instead of Netty",
+      hidden = true)
+  private boolean useJetty;
+
+  private NettyS3GatewayServer nettyServer;
+  private S3GatewayHttpServer jettyServer;
   /** Servlets and static content on separate port. */
   private BaseHttpServer contentServer;
   private S3GatewayMetrics metrics;
@@ -80,7 +87,11 @@ public class Gateway extends GenericCli implements Callable<Void> {
     UserGroupInformation.setConfiguration(OzoneConfigurationHolder.configuration());
     loginS3GUser(OzoneConfigurationHolder.configuration());
     setHttpBaseDir(OzoneConfigurationHolder.configuration());
-    httpServer = new S3GatewayHttpServer(OzoneConfigurationHolder.configuration(), "s3gateway");
+    if (useJetty) {
+      jettyServer = new S3GatewayHttpServer(OzoneConfigurationHolder.configuration(), "s3gateway");
+    } else {
+      nettyServer = new NettyS3GatewayServer(OzoneConfigurationHolder.configuration());
+    }
     contentServer = new S3GatewayWebAdminServer(OzoneConfigurationHolder.configuration(), "s3g-web");
     metrics = S3GatewayMetrics.create(OzoneConfigurationHolder.configuration());
     nettyMetrics = NettyMetrics.create();
@@ -102,16 +113,26 @@ public class Gateway extends GenericCli implements Callable<Void> {
     HddsServerUtil.startupShutdownMessage(OzoneVersionInfo.OZONE_VERSION_INFO,
         Gateway.class, originalArgs, LOG, OzoneConfigurationHolder.configuration());
 
-    LOG.info("Starting Ozone S3 gateway");
+    LOG.info("Starting Ozone S3 gateway (transport={})", useJetty ? "Jetty" : "Netty");
     HddsServerUtil.initializeMetrics(OzoneConfigurationHolder.configuration(), "S3Gateway");
     jvmPauseMonitor.start();
-    httpServer.start();
+    if (jettyServer != null) {
+      jettyServer.start();
+    }
+    if (nettyServer != null) {
+      nettyServer.start();
+    }
     contentServer.start();
   }
 
   public void stop() throws Exception {
     LOG.info("Stopping Ozone S3 gateway");
-    httpServer.stop();
+    if (jettyServer != null) {
+      jettyServer.stop();
+    }
+    if (nettyServer != null) {
+      nettyServer.stop();
+    }
     contentServer.stop();
     jvmPauseMonitor.stop();
     S3GatewayMetrics.unRegister();
@@ -145,12 +166,18 @@ public class Gateway extends GenericCli implements Callable<Void> {
 
   @VisibleForTesting
   public InetSocketAddress getHttpAddress() {
-    return this.httpServer.getHttpAddress();
+    if (nettyServer != null) {
+      return nettyServer.getHttpAddress();
+    }
+    return jettyServer != null ? jettyServer.getHttpAddress() : null;
   }
 
   @VisibleForTesting
   public InetSocketAddress getHttpsAddress() {
-    return this.httpServer.getHttpsAddress();
+    if (nettyServer != null) {
+      return nettyServer.getHttpsAddress();
+    }
+    return jettyServer != null ? jettyServer.getHttpsAddress() : null;
   }
 
 }

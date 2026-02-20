@@ -19,10 +19,14 @@ package org.apache.hadoop.ozone.s3;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-import java.util.Vector;
-import org.apache.hadoop.ozone.s3.EmptyContentTypeFilter.EnumerationWrapper;
+import javax.ws.rs.container.ContainerRequestContext;
+import javax.ws.rs.core.MultivaluedHashMap;
+import javax.ws.rs.core.MultivaluedMap;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -31,32 +35,41 @@ import org.junit.jupiter.api.Test;
 public class TestEmptyContentTypeFilter {
 
   @Test
-  public void enumerationWithContentType() {
-    Vector<String> values = new Vector<>();
-    values.add("Content-Type");
-    values.add("1");
-    values.add("2");
-    values.add("Content-Type");
+  public void emptyContentTypeIsRemoved() throws Exception {
+    EmptyContentTypeFilter filter = new EmptyContentTypeFilter();
+    ContainerRequestContext ctx = mock(ContainerRequestContext.class);
+    MultivaluedMap<String, String> headers = new MultivaluedHashMap<>();
+    headers.putSingle("Content-Type", "");
+    when(ctx.getHeaders()).thenReturn(headers);
 
-    final EnumerationWrapper enumerationWrapper =
-        new EnumerationWrapper(values.elements());
+    filter.filter(ctx);
 
-    assertTrue(enumerationWrapper.hasMoreElements());
-    assertEquals("1", enumerationWrapper.nextElement());
-    assertTrue(enumerationWrapper.hasMoreElements());
-    assertEquals("2", enumerationWrapper.nextElement());
-    assertFalse(enumerationWrapper.hasMoreElements());
+    assertFalse(headers.containsKey("Content-Type"));
   }
 
   @Test
-  public void enumerationWithOneContentType() {
-    Vector<String> values = new Vector<>();
-    values.add("Content-Type");
+  public void nonEmptyContentTypeIsKept() throws Exception {
+    EmptyContentTypeFilter filter = new EmptyContentTypeFilter();
+    ContainerRequestContext ctx = mock(ContainerRequestContext.class);
+    MultivaluedMap<String, String> headers = new MultivaluedHashMap<>();
+    headers.putSingle("Content-Type", "application/xml");
+    when(ctx.getHeaders()).thenReturn(headers);
 
-    final EnumerationWrapper enumerationWrapper =
-        new EnumerationWrapper(values.elements());
+    filter.filter(ctx);
 
-    assertFalse(enumerationWrapper.hasMoreElements());
+    assertTrue(headers.containsKey("Content-Type"));
+    assertEquals("application/xml", headers.getFirst("Content-Type"));
   }
 
+  @Test
+  public void noContentTypeHeader() throws Exception {
+    EmptyContentTypeFilter filter = new EmptyContentTypeFilter();
+    ContainerRequestContext ctx = mock(ContainerRequestContext.class);
+    MultivaluedMap<String, String> headers = new MultivaluedHashMap<>();
+    when(ctx.getHeaders()).thenReturn(headers);
+
+    filter.filter(ctx);
+
+    assertNull(headers.getFirst("Content-Type"));
+  }
 }
