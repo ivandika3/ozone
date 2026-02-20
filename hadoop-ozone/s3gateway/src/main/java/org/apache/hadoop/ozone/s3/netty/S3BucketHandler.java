@@ -21,16 +21,14 @@ import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
 import static io.netty.handler.codec.http.HttpResponseStatus.NO_CONTENT;
 import static io.netty.handler.codec.http.HttpResponseStatus.OK;
 
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.util.Iterator;
-import java.util.List;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.QueryStringDecoder;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.Iterator;
+import java.util.List;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.ozone.client.OzoneBucket;
 import org.apache.hadoop.ozone.client.OzoneClient;
@@ -148,7 +146,7 @@ public class S3BucketHandler {
       ozoneClient.getObjectStore().createS3Bucket(bucketName);
     } catch (OMException ex) {
       if (ex.getResult() == OMException.ResultCodes.BUCKET_ALREADY_EXISTS) {
-        // S3 returns 200 OK for idempotent create
+        LOG.debug("Bucket {} already exists, returning 200 OK", bucketName);
       } else {
         throw ex;
       }

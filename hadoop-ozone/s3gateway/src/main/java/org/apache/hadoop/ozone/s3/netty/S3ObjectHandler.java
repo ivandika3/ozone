@@ -20,24 +20,20 @@ package org.apache.hadoop.ozone.s3.netty;
 import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
 import static io.netty.handler.codec.http.HttpResponseStatus.NO_CONTENT;
 import static io.netty.handler.codec.http.HttpResponseStatus.OK;
-import static io.netty.handler.codec.http.HttpResponseStatus.PARTIAL_CONTENT;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.security.MessageDigest;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import javax.xml.bind.DatatypeConverter;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
+import java.io.ByteArrayOutputStream;
+import java.security.MessageDigest;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import javax.xml.bind.DatatypeConverter;
 import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.ozone.OzoneConsts;
@@ -197,7 +193,7 @@ public class S3ObjectHandler {
           bucketName, keyPath, false);
     } catch (OMException ex) {
       if (ex.getResult() == OMException.ResultCodes.KEY_NOT_FOUND) {
-        // S3 returns 204 even for missing keys
+        LOG.debug("Key {} not found in bucket {}, returning 204", keyPath, bucketName);
       } else if (ex.getResult() == OMException.ResultCodes.BUCKET_NOT_FOUND) {
         S3ResponseHelper.sendError(ctx, NOT_FOUND,
             "NoSuchBucket", "The specified bucket does not exist", bucketName);
