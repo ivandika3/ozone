@@ -20,6 +20,7 @@ package org.apache.hadoop.ozone.s3;
 import static org.apache.hadoop.hdds.HddsUtils.getHostNameFromConfigKeys;
 import static org.apache.hadoop.hdds.HddsUtils.getPortNumberFromConfigKeys;
 
+import io.netty.channel.Channel;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -27,7 +28,6 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import javax.enterprise.inject.se.SeContainer;
 import javax.enterprise.inject.se.SeContainerInitializer;
-import io.netty.channel.Channel;
 import org.apache.hadoop.hdds.conf.MutableConfigurationSource;
 import org.apache.hadoop.net.NetUtils;
 import org.glassfish.jersey.netty.httpserver.NettyHttpContainerProvider;
