@@ -119,12 +119,39 @@ class TestWritableRatisContainerProvider {
     verifyPipelineCreated();
   }
 
+  @Test
+  void passesRequestedStorageTierToPipelineAndContainerSelection()
+      throws Exception {
+    Pipeline pipeline = MockPipeline.createPipeline(3);
+    ContainerInfo container = new ContainerInfo.Builder()
+        .setContainerID(containerID.getAndIncrement())
+        .setPipelineID(pipeline.getId())
+        .build();
+
+    when(pipelineManager.getPipelines(REPLICATION_CONFIG, OPEN,
+        emptySet(), emptySet(), StorageTier.ARCHIVE))
+        .thenReturn(new ArrayList<>(singletonList(pipeline)));
+    when(containerManager.getMatchingContainer(CONTAINER_SIZE, OWNER,
+        pipeline, emptySet(), StorageTier.ARCHIVE))
+        .thenReturn(container);
+
+    ContainerInfo result = createSubject().getContainer(CONTAINER_SIZE,
+        REPLICATION_CONFIG, OWNER, NO_EXCLUSION, StorageTier.ARCHIVE);
+
+    assertSame(container, result);
+    verify(pipelineManager).getPipelines(REPLICATION_CONFIG, OPEN,
+        emptySet(), emptySet(), StorageTier.ARCHIVE);
+    verify(containerManager).getMatchingContainer(CONTAINER_SIZE, OWNER,
+        pipeline, emptySet(), StorageTier.ARCHIVE);
+  }
+
   private void existingPipelines(Pipeline... pipelines) {
     existingPipelines(new ArrayList<>(asList(pipelines)));
   }
 
   private void existingPipelines(List<Pipeline> pipelines) {
-    when(pipelineManager.getPipelines(REPLICATION_CONFIG, OPEN, emptySet(), emptySet()))
+    when(pipelineManager.getPipelines(REPLICATION_CONFIG, OPEN, emptySet(),
+        emptySet(), StorageTier.getDefaultTier()))
         .thenReturn(pipelines);
   }
 
@@ -134,7 +161,8 @@ class TestWritableRatisContainerProvider {
         .setPipelineID(pipeline.getId())
         .build();
 
-    when(containerManager.getMatchingContainer(CONTAINER_SIZE, OWNER, pipeline, emptySet()))
+    when(containerManager.getMatchingContainer(CONTAINER_SIZE, OWNER, pipeline,
+        emptySet(), StorageTier.getDefaultTier()))
         .thenReturn(container);
 
     return container;
@@ -142,10 +170,12 @@ class TestWritableRatisContainerProvider {
 
   private ContainerInfo createNewContainerOnDemand() throws IOException {
     Pipeline newPipeline = MockPipeline.createPipeline(3);
-    when(pipelineManager.createPipeline(REPLICATION_CONFIG))
+    when(pipelineManager.createPipeline(REPLICATION_CONFIG,
+        StorageTier.getDefaultTier()))
         .thenReturn(newPipeline);
 
-    when(pipelineManager.getPipelines(REPLICATION_CONFIG, OPEN, emptySet(), emptySet()))
+    when(pipelineManager.getPipelines(REPLICATION_CONFIG, OPEN, emptySet(),
+        emptySet(), StorageTier.getDefaultTier()))
         .thenReturn(emptyList())
         .thenReturn(new ArrayList<>(singletonList(newPipeline)));
 
@@ -153,7 +183,8 @@ class TestWritableRatisContainerProvider {
   }
 
   private void throwWhenCreatePipeline() throws IOException {
-    when(pipelineManager.createPipeline(REPLICATION_CONFIG))
+    when(pipelineManager.createPipeline(REPLICATION_CONFIG,
+        StorageTier.getDefaultTier()))
         .thenThrow(new SCMException(SCMException.ResultCodes.FAILED_TO_FIND_SUITABLE_NODE));
   }
 
@@ -164,16 +195,18 @@ class TestWritableRatisContainerProvider {
 
   private void verifyPipelineCreated() throws IOException {
     verify(pipelineManager, times(2))
-        .getPipelines(REPLICATION_CONFIG, OPEN, emptySet(), emptySet());
+        .getPipelines(REPLICATION_CONFIG, OPEN, emptySet(), emptySet(),
+            StorageTier.getDefaultTier());
     verify(pipelineManager)
-        .createPipeline(REPLICATION_CONFIG);
+        .createPipeline(REPLICATION_CONFIG, StorageTier.getDefaultTier());
   }
 
   private void verifyPipelineNotCreated() throws IOException {
     verify(pipelineManager, times(1))
-        .getPipelines(REPLICATION_CONFIG, OPEN, emptySet(), emptySet());
+        .getPipelines(REPLICATION_CONFIG, OPEN, emptySet(), emptySet(),
+            StorageTier.getDefaultTier());
     verify(pipelineManager, never())
-        .createPipeline(REPLICATION_CONFIG);
+        .createPipeline(REPLICATION_CONFIG, StorageTier.getDefaultTier());
   }
 
 }

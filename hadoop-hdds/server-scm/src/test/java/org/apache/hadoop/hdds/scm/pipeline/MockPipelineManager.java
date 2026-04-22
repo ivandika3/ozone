@@ -100,6 +100,19 @@ public class MockPipelineManager implements PipelineManager {
               MockDatanodeDetails.randomDatanodeDetails(),
               MockDatanodeDetails.randomDatanodeDetails()));
     }
+    Pipeline.Builder pipelineBuilder = Pipeline.newBuilder()
+        .setId(pipeline.getId())
+        .setReplicationConfig(pipeline.getReplicationConfig())
+        .setState(pipeline.getPipelineState())
+        .setNodes(pipeline.getNodes())
+        .setNodesInOrder(pipeline.getNodesInOrder())
+        .setLeaderId(pipeline.getLeaderId())
+        .setCreateTimestamp(pipeline.getCreationTimestamp())
+        .setSuggestedLeaderId(pipeline.getSuggestedLeaderId())
+        .setReplicaIndexes(pipeline.getReplicaIndexes())
+        .setSupportedStorageTier(Collections.singletonList(
+            storageTier == null ? StorageTier.getDefaultTier() : storageTier));
+    pipeline = pipelineBuilder.build();
 
     stateManager.addPipeline(pipeline.getProtobufMessage(
         ClientVersion.CURRENT_VERSION));

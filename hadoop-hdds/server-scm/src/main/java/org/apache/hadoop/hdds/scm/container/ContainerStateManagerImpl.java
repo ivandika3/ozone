@@ -46,6 +46,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.StorageUnit;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.ContainerInfoProto;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.LifeCycleEvent;
@@ -483,6 +484,14 @@ public final class ContainerStateManagerImpl
   @Override
   public ContainerInfo getMatchingContainer(final long size, String owner,
       PipelineID pipelineID, NavigableSet<ContainerID> containerIDs) {
+    return getMatchingContainer(size, owner, pipelineID, containerIDs,
+        StorageTier.getDefaultTier());
+  }
+
+  @Override
+  public ContainerInfo getMatchingContainer(final long size, String owner,
+      PipelineID pipelineID, NavigableSet<ContainerID> containerIDs,
+      StorageTier storageTier) {
     if (containerIDs.isEmpty()) {
       return null;
     }
@@ -500,7 +509,8 @@ public final class ContainerStateManagerImpl
     if (resultSet.isEmpty()) {
       resultSet = containerIDs;
     }
-    ContainerInfo selectedContainer = findContainerWithSpace(size, resultSet);
+    ContainerInfo selectedContainer = findContainerWithSpace(size, resultSet,
+        storageTier);
     if (selectedContainer == null) {
 
       // If we did not find any space in the tailSet, we need to look for
@@ -512,7 +522,7 @@ public final class ContainerStateManagerImpl
       // last element in the sorted set.
 
       resultSet = containerIDs.headSet(lastID, true);
-      selectedContainer = findContainerWithSpace(size, resultSet);
+      selectedContainer = findContainerWithSpace(size, resultSet, storageTier);
     }
 
     // TODO: cleanup entries in lastUsedMap
@@ -524,12 +534,17 @@ public final class ContainerStateManagerImpl
 
   private ContainerInfo findContainerWithSpace(final long size,
                                                final NavigableSet<ContainerID>
-                                                   searchSet) {
+                                                   searchSet,
+                                               final StorageTier storageTier) {
       // Get the container with space to meet our request.
     for (ContainerID id : searchSet) {
       try (AutoCloseableLock ignored = readLock(id)) {
         final ContainerInfo containerInfo = containers.getContainerInfo(id);
-        if (containerInfo.getUsedBytes() + size <= this.containerSize) {
+        StorageTier containerTier = containerInfo.getStorageTier() == null
+            ? StorageTier.getDefaultTier() : containerInfo.getStorageTier();
+        if (containerTier == (storageTier == null
+            ? StorageTier.getDefaultTier() : storageTier)
+            && containerInfo.getUsedBytes() + size <= this.containerSize) {
           containerInfo.updateLastUsedTime();
           return containerInfo;
         }

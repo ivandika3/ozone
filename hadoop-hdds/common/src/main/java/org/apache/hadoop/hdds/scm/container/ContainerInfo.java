@@ -29,6 +29,7 @@ import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.scm.pipeline.PipelineID;
 import org.apache.hadoop.hdds.utils.db.Codec;
@@ -86,6 +87,7 @@ public final class ContainerInfo implements Comparable<ContainerInfo> {
   // The sequenceId of a close container cannot change, and all the
   // container replica should have the same sequenceId.
   private long sequenceId;
+  private final StorageTier storageTier;
   // Health state of the container (determined by ReplicationManager)
   private ContainerHealthState healthState;
   private boolean suppressed;
@@ -103,6 +105,7 @@ public final class ContainerInfo implements Comparable<ContainerInfo> {
     sequenceId = b.sequenceId;
     replicationConfig = b.replicationConfig;
     clock = b.clock;
+    storageTier = b.storageTier;
     healthState = b.healthState != null ? b.healthState : ContainerHealthState.HEALTHY;
     suppressed = b.suppressed;
   }
@@ -124,7 +127,10 @@ public final class ContainerInfo implements Comparable<ContainerInfo> {
         .setContainerID(info.getContainerID())
         .setDeleteTransactionId(info.getDeleteTransactionId())
         .setReplicationConfig(config)
-        .setSequenceId(info.getSequenceId());
+        .setSequenceId(info.getSequenceId())
+        .setStorageTier(info.hasStorageTier()
+            ? StorageTier.fromProto(info.getStorageTier())
+            : StorageTier.getDefaultTier());
 
     if (info.hasSuppressed()) {
       builder.setSuppressed(info.getSuppressed());
@@ -226,6 +232,10 @@ public final class ContainerInfo implements Comparable<ContainerInfo> {
     return sequenceId;
   }
 
+  public StorageTier getStorageTier() {
+    return storageTier;
+  }
+
   public void updateDeleteTransactionId(long transactionId) {
     deleteTransactionId = max(transactionId, deleteTransactionId);
   }
@@ -303,6 +313,10 @@ public final class ContainerInfo implements Comparable<ContainerInfo> {
         .setSequenceId(getSequenceId())
         .setReplicationType(getReplicationType());
 
+    if (storageTier != null) {
+      builder.setStorageTier(storageTier.toProto());
+    }
+
     if (replicationConfig instanceof ECReplicationConfig) {
       builder.setEcReplicationConfig(((ECReplicationConfig) replicationConfig)
           .toProto());
@@ -337,6 +351,7 @@ public final class ContainerInfo implements Comparable<ContainerInfo> {
         + ", state=" + state
         + ", stateEnterTime=" + stateEnterTime
         + ", pipelineID=" + pipelineID
+        + ", storageTier=" + storageTier
         + ", owner=" + owner
         + '}';
   }
@@ -420,6 +435,7 @@ public final class ContainerInfo implements Comparable<ContainerInfo> {
     private long sequenceId;
     private PipelineID pipelineID;
     private ReplicationConfig replicationConfig;
+    private StorageTier storageTier = StorageTier.getDefaultTier();
     private ContainerHealthState healthState;
     private boolean suppressed;
 
@@ -471,6 +487,11 @@ public final class ContainerInfo implements Comparable<ContainerInfo> {
 
     public Builder setSequenceId(long sequenceID) {
       this.sequenceId = sequenceID;
+      return this;
+    }
+
+    public Builder setStorageTier(StorageTier tier) {
+      this.storageTier = tier == null ? StorageTier.getDefaultTier() : tier;
       return this;
     }
 

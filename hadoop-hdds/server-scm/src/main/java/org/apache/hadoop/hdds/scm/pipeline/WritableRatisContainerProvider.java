@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.scm.PipelineChoosePolicy;
 import org.apache.hadoop.hdds.scm.PipelineRequestInformation;
 import org.apache.hadoop.hdds.scm.container.ContainerInfo;
@@ -55,7 +56,8 @@ public class WritableRatisContainerProvider
 
   @Override
   public ContainerInfo getContainer(final long size,
-      ReplicationConfig repConfig, String owner, ExcludeList excludeList)
+      ReplicationConfig repConfig, String owner, ExcludeList excludeList,
+      StorageTier storageTier)
       throws IOException {
     /*
       Here is the high level logic.
@@ -80,7 +82,7 @@ public class WritableRatisContainerProvider
         PipelineRequestInformation.Builder.getBuilder().setSize(size).build();
 
     ContainerInfo containerInfo =
-        getContainer(repConfig, owner, excludeList, req);
+        getContainer(repConfig, owner, excludeList, req, storageTier);
     if (containerInfo != null) {
       return containerInfo;
     }
@@ -88,7 +90,8 @@ public class WritableRatisContainerProvider
     try {
       // TODO: #CLUTIL Remove creation logic when all replication types
       //  and factors are handled by pipeline creator
-      Pipeline pipeline = pipelineManager.createPipeline(repConfig);
+      Pipeline pipeline = pipelineManager.createPipeline(repConfig,
+          storageTier == null ? StorageTier.getDefaultTier() : storageTier);
 
       // wait until pipeline is ready
       pipelineManager.waitPipelineReady(pipeline.getId(), 0);
@@ -100,7 +103,7 @@ public class WritableRatisContainerProvider
               repConfig, se);
       List<Pipeline> allocatedPipelines = findPipelinesByState(repConfig,
               excludeList,
-              Pipeline.PipelineState.ALLOCATED);
+              Pipeline.PipelineState.ALLOCATED, storageTier);
       if (!allocatedPipelines.isEmpty()) {
         List<PipelineID> allocatedPipelineIDs =
                 allocatedPipelines.stream()
@@ -126,7 +129,8 @@ public class WritableRatisContainerProvider
 
     // If Exception occurred or successful creation of pipeline do one
     // final try to fetch pipelines.
-    containerInfo = getContainer(repConfig, owner, excludeList, req);
+    containerInfo = getContainer(repConfig, owner, excludeList, req,
+        storageTier);
     if (containerInfo != null) {
       return containerInfo;
     }
@@ -143,15 +147,17 @@ public class WritableRatisContainerProvider
 
   @Nullable
   private ContainerInfo getContainer(ReplicationConfig repConfig, String owner,
-      ExcludeList excludeList, PipelineRequestInformation req) {
+      ExcludeList excludeList, PipelineRequestInformation req,
+      StorageTier storageTier) {
     // Acquire pipeline manager lock, to avoid any updates to pipeline
     // while allocate container happens. This is to avoid scenario like
     // mentioned in HDDS-5655.
     pipelineManager.acquireReadLock();
     try {
       List<Pipeline> availablePipelines = findPipelinesByState(repConfig,
-          excludeList, Pipeline.PipelineState.OPEN);
-      return selectContainer(availablePipelines, req, owner, excludeList);
+          excludeList, Pipeline.PipelineState.OPEN, storageTier);
+      return selectContainer(availablePipelines, req, owner, excludeList,
+          storageTier);
     } finally {
       pipelineManager.releaseReadLock();
     }
@@ -160,21 +166,24 @@ public class WritableRatisContainerProvider
   private List<Pipeline> findPipelinesByState(
           final ReplicationConfig repConfig,
           final ExcludeList excludeList,
-          final Pipeline.PipelineState pipelineState) {
+          final Pipeline.PipelineState pipelineState,
+          final StorageTier storageTier) {
     List<Pipeline> pipelines = pipelineManager.getPipelines(repConfig,
             pipelineState, excludeList.getDatanodes(),
-            excludeList.getPipelineIds());
+            excludeList.getPipelineIds(),
+        storageTier == null ? StorageTier.getDefaultTier() : storageTier);
     if (pipelines.isEmpty() && !excludeList.isEmpty()) {
       // if no pipelines can be found, try finding pipeline without
       // exclusion
-      pipelines = pipelineManager.getPipelines(repConfig, pipelineState);
+      pipelines = pipelineManager.getPipelines(repConfig, pipelineState,
+          storageTier == null ? StorageTier.getDefaultTier() : storageTier);
     }
     return pipelines;
   }
 
   private @Nullable ContainerInfo selectContainer(
       List<Pipeline> availablePipelines, PipelineRequestInformation req,
-      String owner, ExcludeList excludeList) {
+      String owner, ExcludeList excludeList, StorageTier storageTier) {
 
     while (!availablePipelines.isEmpty()) {
       Pipeline pipeline = pipelineChoosePolicy.choosePipeline(
@@ -182,7 +191,8 @@ public class WritableRatisContainerProvider
 
       // look for OPEN containers that match the criteria.
       final ContainerInfo containerInfo = containerManager.getMatchingContainer(
-          req.getSize(), owner, pipeline, excludeList.getContainerIds());
+          req.getSize(), owner, pipeline, excludeList.getContainerIds(),
+          storageTier == null ? StorageTier.getDefaultTier() : storageTier);
 
       if (containerInfo != null) {
         return containerInfo;

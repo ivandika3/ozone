@@ -52,6 +52,7 @@ import java.util.stream.IntStream;
 import org.apache.hadoop.hdds.HddsConfigKeys;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.MockDatanodeDetails;
@@ -78,6 +79,7 @@ import org.apache.hadoop.hdds.utils.db.DBStore;
 import org.apache.hadoop.hdds.utils.db.DBStoreBuilder;
 import org.apache.hadoop.hdds.utils.db.RocksDatabaseException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -144,7 +146,8 @@ public class TestWritableECContainerProvider {
       containers.put(container.containerID(), container);
       return container;
     }).when(containerManager).getMatchingContainer(anyLong(),
-        anyString(), any(Pipeline.class));
+        anyString(), any(Pipeline.class),
+        org.mockito.ArgumentMatchers.anySet(), any(StorageTier.class));
 
     doAnswer(call ->
         containers.get((ContainerID)call.getArguments()[0]))
@@ -318,6 +321,19 @@ public class TestWritableECContainerProvider {
         1, repConfig, OWNER, exclude));
   }
 
+  @Test
+  void passesRequestedStorageTierToPipelineCreation() throws Exception {
+    PipelineManager pipelineManagerSpy = spy(pipelineManager);
+    provider = createSubject(pipelineManagerSpy, new RandomPipelineChoosePolicy());
+
+    ContainerInfo container = provider.getContainer(1, repConfig, OWNER,
+        new ExcludeList(), StorageTier.SSD);
+
+    assertNotNull(container);
+    verify(pipelineManagerSpy).createPipeline(repConfig, Collections.emptyList(),
+        Collections.emptyList(), StorageTier.SSD);
+  }
+
   @ParameterizedTest
   @MethodSource("policies")
   public void testUnableToCreateAnyPipelinesThrowsException(
@@ -327,7 +343,8 @@ public class TestWritableECContainerProvider {
       @Override
       public Pipeline createPipeline(ReplicationConfig repConf,
           List<DatanodeDetails> excludedNodes,
-          List<DatanodeDetails> favoredNodes) throws IOException {
+          List<DatanodeDetails> favoredNodes,
+          StorageTier storageTier) throws IOException {
         throw new IOException("Cannot create pipelines");
       }
     };
@@ -351,13 +368,14 @@ public class TestWritableECContainerProvider {
       @Override
       public Pipeline createPipeline(ReplicationConfig repConf,
           List<DatanodeDetails> excludedNodes,
-          List<DatanodeDetails> favoredNodes)
+          List<DatanodeDetails> favoredNodes,
+          StorageTier storageTier)
           throws IOException {
         if (throwError) {
           throw new RocksDatabaseException("Cannot create pipelines");
         }
         throwError = true;
-        return super.createPipeline(repConfig);
+        return super.createPipeline(repConfig, storageTier);
       }
     };
     provider = createSubject(policy);
@@ -540,7 +558,8 @@ public class TestWritableECContainerProvider {
     assertNotNull(container);
 
     verify(pipelineManagerSpy).createPipeline(repConfig,
-        Collections.emptyList(), Collections.emptyList());
+        Collections.emptyList(), Collections.emptyList(),
+        StorageTier.getDefaultTier());
 
     // If nodes are excluded then the excluded nodes should be passed through to
     // the create pipeline call.
@@ -552,7 +571,7 @@ public class TestWritableECContainerProvider {
         1, repConfig, OWNER, excludeList);
     assertNotNull(container);
     verify(pipelineManagerSpy).createPipeline(repConfig, excludedNodes,
-        Collections.emptyList());
+        Collections.emptyList(), StorageTier.getDefaultTier());
   }
 
   private ContainerInfo createContainer(Pipeline pipeline,

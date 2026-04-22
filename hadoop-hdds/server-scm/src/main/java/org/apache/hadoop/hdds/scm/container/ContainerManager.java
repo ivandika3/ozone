@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.ContainerInfoProto;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.LifeCycleEvent;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.LifeCycleState;
@@ -140,6 +141,11 @@ public interface ContainerManager {
                                   String owner)
       throws IOException;
 
+  default ContainerInfo allocateContainer(ReplicationConfig replicationConfig,
+      String owner, StorageTier storageTier) throws IOException {
+    return allocateContainer(replicationConfig, owner);
+  }
+
   /**
    * Update container state.
    * @param containerID - Container ID
@@ -200,6 +206,12 @@ public interface ContainerManager {
   default ContainerInfo getMatchingContainer(long size, String owner,
                                      Pipeline pipeline) {
     return getMatchingContainer(size, owner, pipeline, Collections.emptySet());
+  }
+
+  default ContainerInfo getMatchingContainer(long size, String owner,
+      Pipeline pipeline, Set<ContainerID> excludedContainerIDS,
+      StorageTier storageTier) {
+    return getMatchingContainer(size, owner, pipeline, excludedContainerIDS);
   }
 
   /**

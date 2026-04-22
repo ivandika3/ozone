@@ -34,6 +34,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.StorageUnit;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.ContainerInfoProto;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.LifeCycleEvent;
@@ -179,6 +180,14 @@ public class ContainerManagerImpl implements ContainerManager {
   public ContainerInfo allocateContainer(
       final ReplicationConfig replicationConfig, final String owner)
       throws IOException {
+    return allocateContainer(replicationConfig, owner,
+        StorageTier.getDefaultTier());
+  }
+
+  @Override
+  public ContainerInfo allocateContainer(
+      final ReplicationConfig replicationConfig, final String owner,
+      final StorageTier storageTier) throws IOException {
     // Acquire pipeline manager lock, to avoid any updates to pipeline
     // while allocate container happens. This is to avoid scenario like
     // mentioned in HDDS-5655.
@@ -189,10 +198,12 @@ public class ContainerManagerImpl implements ContainerManager {
     ContainerInfo containerInfo = null;
     try {
       pipelines = pipelineManager
-          .getPipelines(replicationConfig, Pipeline.PipelineState.OPEN);
+          .getPipelines(replicationConfig, Pipeline.PipelineState.OPEN,
+              normalizeStorageTier(storageTier));
       if (!pipelines.isEmpty()) {
         pipeline = pipelines.get(random.nextInt(pipelines.size()));
-        containerInfo = createContainer(pipeline, owner);
+        containerInfo = createContainer(pipeline, owner,
+            normalizeStorageTier(storageTier));
       }
     } finally {
       lock.unlock();
@@ -201,7 +212,8 @@ public class ContainerManagerImpl implements ContainerManager {
 
     if (pipelines.isEmpty()) {
       try {
-        pipeline = pipelineManager.createPipeline(replicationConfig);
+        pipeline = pipelineManager.createPipeline(replicationConfig,
+            normalizeStorageTier(storageTier));
         if (replicationConfig.getReplicationType() == HddsProtos.ReplicationType.EC) {
           pipelineManager.openPipeline(pipeline.getId());
         }
@@ -216,10 +228,12 @@ public class ContainerManagerImpl implements ContainerManager {
       lock.lock();
       try {
         pipelines = pipelineManager
-            .getPipelines(replicationConfig, Pipeline.PipelineState.OPEN);
+            .getPipelines(replicationConfig, Pipeline.PipelineState.OPEN,
+                normalizeStorageTier(storageTier));
         if (!pipelines.isEmpty()) {
           pipeline = pipelines.get(random.nextInt(pipelines.size()));
-          containerInfo = createContainer(pipeline, owner);
+          containerInfo = createContainer(pipeline, owner,
+              normalizeStorageTier(storageTier));
         } else {
           throw new IOException("Could not allocate container. Cannot get any" +
               " matching pipeline for replicationConfig: " + replicationConfig
@@ -235,7 +249,13 @@ public class ContainerManagerImpl implements ContainerManager {
 
   private ContainerInfo createContainer(Pipeline pipeline, String owner)
       throws IOException {
-    final ContainerInfo containerInfo = allocateContainer(pipeline, owner);
+    return createContainer(pipeline, owner, StorageTier.getDefaultTier());
+  }
+
+  private ContainerInfo createContainer(Pipeline pipeline, String owner,
+      StorageTier storageTier) throws IOException {
+    final ContainerInfo containerInfo = allocateContainer(pipeline, owner,
+        storageTier);
     if (LOG.isTraceEnabled()) {
       LOG.trace("New container allocated: {}", containerInfo);
     }
@@ -244,6 +264,13 @@ public class ContainerManagerImpl implements ContainerManager {
 
   private ContainerInfo allocateContainer(final Pipeline pipeline,
                                           final String owner)
+      throws IOException {
+    return allocateContainer(pipeline, owner, StorageTier.getDefaultTier());
+  }
+
+  private ContainerInfo allocateContainer(final Pipeline pipeline,
+                                          final String owner,
+                                          final StorageTier storageTier)
       throws IOException {
     if (!pipelineManager.hasEnoughSpace(pipeline, maxContainerSize)) {
       LOG.debug("Cannot allocate a new container because pipeline {} does not have the required space {}.",
@@ -266,7 +293,8 @@ public class ContainerManagerImpl implements ContainerManager {
         .setOwner(owner)
         .setContainerID(containerID.getId())
         .setDeleteTransactionId(0)
-        .setReplicationType(pipeline.getType());
+        .setReplicationType(pipeline.getType())
+        .setStorageTier(normalizeStorageTier(storageTier).toProto());
 
     if (pipeline.getReplicationConfig() instanceof ECReplicationConfig) {
       containerInfoBuilder.setEcReplicationConfig(
@@ -374,13 +402,22 @@ public class ContainerManagerImpl implements ContainerManager {
   @Override
   public ContainerInfo getMatchingContainer(final long size, final String owner,
       final Pipeline pipeline, final Set<ContainerID> excludedContainerIDs) {
+    return getMatchingContainer(size, owner, pipeline, excludedContainerIDs,
+        StorageTier.getDefaultTier());
+  }
+
+  @Override
+  public ContainerInfo getMatchingContainer(final long size, final String owner,
+      final Pipeline pipeline, final Set<ContainerID> excludedContainerIDs,
+      final StorageTier storageTier) {
     NavigableSet<ContainerID> containerIDs;
     ContainerInfo containerInfo;
     try {
       synchronized (pipeline.getId()) {
         containerIDs = getContainersForOwner(pipeline, owner);
         if (containerIDs.size() < pipelineManager.openContainerLimit(pipeline.getNodes())) {
-          ContainerInfo allocated = allocateContainer(pipeline, owner);
+          ContainerInfo allocated = allocateContainer(pipeline, owner,
+              normalizeStorageTier(storageTier));
           if (allocated != null) {
             // New container was created, refresh IDs so it becomes eligible.
             containerIDs = getContainersForOwner(pipeline, owner);
@@ -388,9 +425,11 @@ public class ContainerManagerImpl implements ContainerManager {
         }
         containerIDs.removeAll(excludedContainerIDs);
         containerInfo = containerStateManager.getMatchingContainer(
-            size, owner, pipeline.getId(), containerIDs);
+            size, owner, pipeline.getId(), containerIDs,
+            normalizeStorageTier(storageTier));
         if (containerInfo == null) {
-          containerInfo = allocateContainer(pipeline, owner);
+          containerInfo = allocateContainer(pipeline, owner,
+              normalizeStorageTier(storageTier));
         }
         return containerInfo;
       }
@@ -482,5 +521,9 @@ public class ContainerManagerImpl implements ContainerManager {
   @VisibleForTesting
   public SCMHAManager getSCMHAManager() {
     return haManager;
+  }
+
+  private StorageTier normalizeStorageTier(StorageTier storageTier) {
+    return storageTier == null ? StorageTier.getDefaultTier() : storageTier;
   }
 }

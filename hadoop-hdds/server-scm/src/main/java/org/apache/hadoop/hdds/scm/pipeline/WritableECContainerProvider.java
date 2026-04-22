@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.NavigableSet;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.conf.Config;
 import org.apache.hadoop.hdds.conf.ConfigGroup;
 import org.apache.hadoop.hdds.conf.ConfigTag;
@@ -91,7 +92,8 @@ public class WritableECContainerProvider
    */
   @Override
   public ContainerInfo getContainer(final long size,
-      ECReplicationConfig repConfig, String owner, ExcludeList excludeList)
+      ECReplicationConfig repConfig, String owner, ExcludeList excludeList,
+      StorageTier storageTier)
       throws IOException {
     int maximumPipelines = getMaximumPipelines(repConfig);
     int openPipelineCount;
@@ -100,7 +102,8 @@ public class WritableECContainerProvider
           Pipeline.PipelineState.OPEN);
       if (openPipelineCount < maximumPipelines) {
         try {
-          return allocateContainer(repConfig, size, owner, excludeList);
+          return allocateContainer(repConfig, size, owner, excludeList,
+              storageTier);
         } catch (IOException e) {
           LOG.warn("Unable to allocate a container with {} existing ones; "
               + "requested size={}, replication={}, owner={}, {}",
@@ -114,7 +117,8 @@ public class WritableECContainerProvider
       }
     }
     List<Pipeline> existingPipelines = pipelineManager.getPipelines(
-        repConfig, Pipeline.PipelineState.OPEN);
+        repConfig, Pipeline.PipelineState.OPEN,
+        storageTier == null ? StorageTier.getDefaultTier() : storageTier);
     final int pipelineCount = existingPipelines.size();
     LOG.debug("Checking existing pipelines: {}", existingPipelines);
 
@@ -169,7 +173,8 @@ public class WritableECContainerProvider
       }
       if (openPipelineCount < maximumPipelines) {
         synchronized (this) {
-          return allocateContainer(repConfig, size, owner, excludeList);
+          return allocateContainer(repConfig, size, owner, excludeList,
+              storageTier);
         }
       }
       throw new IOException("Pipeline limit (" + maximumPipelines
@@ -193,7 +198,8 @@ public class WritableECContainerProvider
   }
 
   private ContainerInfo allocateContainer(ReplicationConfig repConfig,
-      long size, String owner, ExcludeList excludeList)
+      long size, String owner, ExcludeList excludeList,
+      StorageTier storageTier)
       throws IOException {
 
     List<DatanodeDetails> excludedNodes = Collections.emptyList();
@@ -202,11 +208,14 @@ public class WritableECContainerProvider
     }
 
     Pipeline newPipeline = pipelineManager.createPipeline(repConfig,
-        excludedNodes, Collections.emptyList());
+        excludedNodes, Collections.emptyList(),
+        storageTier == null ? StorageTier.getDefaultTier() : storageTier);
     // the returned ContainerInfo should not be null (due to not enough space in the Datanodes specifically) because
     // this is a new pipeline and pipeline creation checks for sufficient space in the Datanodes
     ContainerInfo container =
-        containerManager.getMatchingContainer(size, owner, newPipeline);
+        containerManager.getMatchingContainer(size, owner, newPipeline,
+            Collections.emptySet(),
+            storageTier == null ? StorageTier.getDefaultTier() : storageTier);
     if (container == null) {
       // defensive null handling
       throw new IOException("Could not allocate a new container");
