@@ -74,7 +74,8 @@ public class TestContainerDataYaml {
    */
   private File createContainerFile(long containerID, int replicaIndex, StorageType storageType)
       throws IOException {
-    assertTrue(new File(testRoot).mkdirs());
+    File root = new File(testRoot);
+    assertTrue(root.mkdirs() || root.exists());
 
     String containerPath = containerID + ".container";
 
@@ -265,7 +266,7 @@ public class TestContainerDataYaml {
     setLayoutVersion(layout);
     long containerID = testContainerID++;
 
-    File containerFile = createContainerFile(containerID, 0);
+    File containerFile = createContainerFile(containerID, 0, null);
 
     // Read from .container file. The kvData object should not have a data hash because it was not persisted in this
     // file.
@@ -331,6 +332,7 @@ public class TestContainerDataYaml {
 
   @Test
   public void testCreateContainerFileWithoutStorageType() throws IOException {
+    setLayoutVersion(FILE_PER_CHUNK);
     long containerID = testContainerID++;
 
     File containerFile = createContainerFile(containerID, 0, null);
@@ -338,8 +340,8 @@ public class TestContainerDataYaml {
     final String content =
         FileUtils.readFileToString(containerFile, Charset.defaultCharset());
 
-    assertFalse("StorageType shouldn't be persisted if it is null",
-        content.contains(CONTAINER_STORAGE_TYPE));
+    assertFalse(content.contains(CONTAINER_STORAGE_TYPE),
+        "StorageType shouldn't be persisted if it is null");
     cleanup();
   }
 }

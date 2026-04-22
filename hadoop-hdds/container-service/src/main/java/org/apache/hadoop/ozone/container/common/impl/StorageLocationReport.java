@@ -20,6 +20,7 @@ package org.apache.hadoop.ozone.container.common.impl;
 import java.io.IOException;
 import net.jcip.annotations.Immutable;
 import org.apache.hadoop.fs.StorageType;
+import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.StorageTypeProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.MetadataStorageReportProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.StorageReportProto;
@@ -292,15 +293,6 @@ public final class StorageLocationReport implements StorageLocationReportMXBean 
     }
     if (report.hasFailed()) {
       builder.setFailed(report.getFailed());
-    }
-    if (report.hasReserved()) {
-      builder.setReserved(report.getReserved());
-    }
-    if (report.hasFsCapacity()) {
-      builder.setFsCapacity(report.getFsCapacity());
-    }
-    if (report.hasFsAvailable()) {
-      builder.setFsAvailable(report.getFsAvailable());
     }
     return builder.build();
   }
