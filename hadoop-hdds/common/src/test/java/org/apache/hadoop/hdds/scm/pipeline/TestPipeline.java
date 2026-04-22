@@ -32,7 +32,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collections;
 import org.apache.hadoop.hdds.client.StandaloneReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.junit.jupiter.api.Test;
@@ -87,6 +89,19 @@ public class TestPipeline {
       assertEquals(pipeline.getReplicaIndex(dn),
           reloadedPipeline.getReplicaIndex(dn));
     }
+  }
+
+  @Test
+  public void testSupportedStorageTierSerialisedCorrectly() {
+    Pipeline pipeline = MockPipeline.createRatisPipeline().toBuilder()
+        .setSupportedStorageTier(Collections.singletonList(StorageTier.SSD))
+        .build();
+
+    Pipeline reloadedPipeline =
+        Pipeline.getFromProtobuf(pipeline.getProtobufMessage(1));
+
+    assertEquals(Collections.singletonList(StorageTier.SSD),
+        reloadedPipeline.getSupportedStorageTier());
   }
 
   @Test

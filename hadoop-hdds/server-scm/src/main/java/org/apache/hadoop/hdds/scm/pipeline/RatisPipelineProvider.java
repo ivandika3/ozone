@@ -203,6 +203,7 @@ public class RatisPipelineProvider
         .setState(PipelineState.ALLOCATED)
         .setReplicationConfig(RatisReplicationConfig.getInstance(factor))
         .setNodes(dns)
+        .setSupportedStorageTier(Collections.singletonList(storageTier))
         .setSuggestedLeaderId(
             suggestedLeader != null ? suggestedLeader.getID() : null)
         .build();

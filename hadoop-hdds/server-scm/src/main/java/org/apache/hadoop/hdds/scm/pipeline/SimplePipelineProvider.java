@@ -83,6 +83,7 @@ public class SimplePipelineProvider
         .setId(PipelineID.randomId())
         .setState(PipelineState.OPEN)
         .setReplicationConfig(replicationConfig)
+        .setSupportedStorageTier(Collections.singletonList(storageTier))
         .setNodes(dns.subList(0,
             replicationConfig.getReplicationFactor().getNumber()))
         .build();

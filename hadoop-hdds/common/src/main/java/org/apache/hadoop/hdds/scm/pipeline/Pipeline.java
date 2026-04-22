@@ -42,6 +42,7 @@ import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicatedReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.StandaloneReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.DatanodeID;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
@@ -80,6 +81,7 @@ public final class Pipeline {
   private final Map<DatanodeDetails, Integer> replicaIndexes;
   // nodes with ordered distance to client
   private final ImmutableList<DatanodeDetails> nodesInOrder;
+  private final ImmutableList<StorageTier> supportedStorageTier;
   // Current reported Leader for the pipeline
   private DatanodeID leaderId;
   // Timestamp for pipeline upon creation
@@ -112,6 +114,10 @@ public final class Pipeline {
     nodeStatus = b.nodeStatus;
     nodesInOrder = b.nodesInOrder != null ? ImmutableList.copyOf(b.nodesInOrder) : ImmutableList.of();
     replicaIndexes = b.replicaIndexes;
+    supportedStorageTier =
+        b.supportedStorageTier != null
+            ? ImmutableList.copyOf(b.supportedStorageTier)
+            : ImmutableList.of();
     creationTimestamp = b.creationTimestamp != null ? b.creationTimestamp : Instant.now();
     stateEnterTime = Instant.now();
   }
@@ -328,6 +334,10 @@ public final class Pipeline {
     return nodesInOrder;
   }
 
+  public List<StorageTier> getSupportedStorageTier() {
+    return supportedStorageTier;
+  }
+
   void reportDatanode(DatanodeDetails dn) throws IOException {
     //This is a workaround for the case a datanode restarted with reinitializing it's dnId but it still reports the
     // same set of pipelines it was part of. The pipeline report should be accepted for this anomalous condition.
@@ -397,6 +407,11 @@ public final class Pipeline {
 
     if (suggestedLeaderId != null) {
       builder.setSuggestedLeaderDatanodeID(suggestedLeaderId.toProto());
+    }
+
+    if (!supportedStorageTier.isEmpty()) {
+      supportedStorageTier.forEach(
+          storageTier -> builder.addSupportedStorageTier(storageTier.toProto()));
     }
 
     // To save the message size on wire, only transfer the node order based on
@@ -492,6 +507,10 @@ public final class Pipeline {
     final ReplicationConfig config = ReplicationConfig
         .fromProto(pipeline.getType(), pipeline.getFactor(),
             pipeline.getEcReplicationConfig());
+    List<StorageTier> supportedStorageTiers = pipeline.getSupportedStorageTierList()
+        .stream()
+        .map(StorageTier::fromProto)
+        .collect(Collectors.toList());
     return newBuilder()
         .setId(PipelineID.getFromProtobuf(pipeline.getId()))
         .setReplicationConfig(config)
@@ -500,6 +519,7 @@ public final class Pipeline {
         .setReplicaIndexes(nodes)
         .setLeaderId(leaderId)
         .setSuggestedLeaderId(suggestedLeaderId)
+        .setSupportedStorageTier(supportedStorageTiers)
         .setNodeOrder(pipeline.getMemberOrdersList())
         .setCreateTimestamp(pipeline.getCreationTimeStamp());
   }
@@ -548,6 +568,7 @@ public final class Pipeline {
     b.append(']')
         .append(", ReplicationConfig: ").append(replicationConfig)
         .append(", State:").append(getPipelineState())
+        .append(", SupportedStorageTier:").append(supportedStorageTier)
         .append(", leaderId:").append(leaderId != null ? leaderId.toString() : "")
         .append(", CreationTimestamp").append(getCreationTimestamp().atZone(ZoneId.systemDefault()))
         .append('}');
@@ -572,6 +593,7 @@ public final class Pipeline {
     private Instant creationTimestamp = null;
     private DatanodeID suggestedLeaderId = null;
     private Map<DatanodeDetails, Integer> replicaIndexes = ImmutableMap.of();
+    private List<StorageTier> supportedStorageTier = Collections.emptyList();
 
     private Builder() { }
 
@@ -584,6 +606,7 @@ public final class Pipeline {
       this.leaderId = pipeline.getLeaderId();
       this.creationTimestamp = pipeline.getCreationTimestamp();
       this.suggestedLeaderId = pipeline.getSuggestedLeaderId();
+      this.supportedStorageTier = pipeline.getSupportedStorageTier();
       if (nodeStatus != null) {
         final ImmutableMap.Builder<DatanodeDetails, Integer> b = ImmutableMap.builder();
         for (DatanodeDetails dn : nodeStatus.keySet()) {
@@ -673,6 +696,15 @@ public final class Pipeline {
 
     public Builder setReplicaIndexes(Map<DatanodeDetails, Integer> indexes) {
       this.replicaIndexes = indexes == null ? ImmutableMap.of() : ImmutableMap.copyOf(indexes);
+      return this;
+    }
+
+    public Builder setSupportedStorageTier(
+        List<StorageTier> supportedStorageTiers) {
+      this.supportedStorageTier =
+          supportedStorageTiers == null
+              ? Collections.emptyList()
+              : ImmutableList.copyOf(supportedStorageTiers);
       return this;
     }
 

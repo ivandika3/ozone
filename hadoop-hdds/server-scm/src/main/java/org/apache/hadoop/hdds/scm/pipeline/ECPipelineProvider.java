@@ -105,21 +105,15 @@ public class ECPipelineProvider extends PipelineProvider<ECReplicationConfig> {
     List<DatanodeDetails> dns = placementPolicy
         .chooseDatanodes(excludedNodes, favoredNodes,
             replicationConfig.getRequiredNodes(), 0, this.containerSizeBytes);
-    return create(replicationConfig, dns);
+    return createPipelineInternal(replicationConfig, dns, createIndexes(dns),
+        storageTier);
   }
 
   @Override
   protected Pipeline create(ECReplicationConfig replicationConfig,
       List<DatanodeDetails> nodes) {
-
-    Map<DatanodeDetails, Integer> dnIndexes = new HashMap<>();
-    int ecIndex = 1;
-    for (DatanodeDetails dn : nodes) {
-      dnIndexes.put(dn, ecIndex);
-      ecIndex++;
-    }
-
-    return createPipelineInternal(replicationConfig, nodes, dnIndexes);
+    return createPipelineInternal(replicationConfig, nodes, createIndexes(nodes),
+        StorageTier.getDefaultTier());
   }
 
   @Override
@@ -146,18 +140,31 @@ public class ECPipelineProvider extends PipelineProvider<ECReplicationConfig> {
 
     dns.sort(Comparator.comparing(nodeStatusMap::get, CREATE_FOR_READ_COMPARATOR));
 
-    return createPipelineInternal(replicationConfig, dns, map);
+    return createPipelineInternal(replicationConfig, dns, map,
+        StorageTier.getDefaultTier());
   }
 
   private Pipeline createPipelineInternal(ECReplicationConfig repConfig,
-      List<DatanodeDetails> dns, Map<DatanodeDetails, Integer> indexes) {
+      List<DatanodeDetails> dns, Map<DatanodeDetails, Integer> indexes,
+      StorageTier storageTier) {
     return Pipeline.newBuilder()
         .setId(PipelineID.randomId())
         .setState(Pipeline.PipelineState.ALLOCATED)
         .setReplicationConfig(repConfig)
         .setNodes(dns)
         .setReplicaIndexes(indexes)
+        .setSupportedStorageTier(Collections.singletonList(storageTier))
         .build();
+  }
+
+  private Map<DatanodeDetails, Integer> createIndexes(List<DatanodeDetails> nodes) {
+    Map<DatanodeDetails, Integer> dnIndexes = new HashMap<>();
+    int ecIndex = 1;
+    for (DatanodeDetails dn : nodes) {
+      dnIndexes.put(dn, ecIndex);
+      ecIndex++;
+    }
+    return dnIndexes;
   }
 
   @Override
