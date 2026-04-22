@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Set;
 import org.apache.commons.collections4.map.DefaultedMap;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.scm.container.ContainerReplica;
 import org.apache.hadoop.hdds.scm.pipeline.Pipeline;
@@ -51,6 +52,11 @@ public class ReconPipelineFactory extends PipelineFactory {
     }
 
     @Override
+    public Pipeline create(ReplicationConfig config, StorageTier storageTier) {
+      return create(config);
+    }
+
+    @Override
     public Pipeline create(ReplicationConfig config,
         List<DatanodeDetails> excludedNodes,
         List<DatanodeDetails> favoredNodes) {
@@ -62,11 +68,18 @@ public class ReconPipelineFactory extends PipelineFactory {
 
     @Override
     public Pipeline create(ReplicationConfig config,
+        List<DatanodeDetails> excludedNodes,
+        List<DatanodeDetails> favoredNodes, StorageTier storageTier) {
+      return create(config, excludedNodes, favoredNodes);
+    }
+
+    @Override
+    public Pipeline create(ReplicationConfig config,
                            List<DatanodeDetails> nodes) {
       throw new UnsupportedOperationException(
           "Trying to create pipeline in Recon, which is prohibited!");
     }
-    
+
     @Override
     public Pipeline createForRead(ReplicationConfig config,
         Set<ContainerReplica> replicas) {

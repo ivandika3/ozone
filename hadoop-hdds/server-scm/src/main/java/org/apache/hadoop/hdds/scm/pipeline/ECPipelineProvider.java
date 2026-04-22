@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.StorageUnit;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
@@ -78,13 +79,28 @@ public class ECPipelineProvider extends PipelineProvider<ECReplicationConfig> {
   @Override
   public synchronized Pipeline create(ECReplicationConfig replicationConfig)
       throws IOException {
+    return create(replicationConfig, StorageTier.getDefaultTier());
+  }
+
+  @Override
+  public synchronized Pipeline create(ECReplicationConfig replicationConfig,
+      StorageTier storageTier) throws IOException {
     return create(replicationConfig, Collections.emptyList(),
-        Collections.emptyList());
+        Collections.emptyList(), storageTier);
   }
 
   @Override
   protected Pipeline create(ECReplicationConfig replicationConfig,
       List<DatanodeDetails> excludedNodes, List<DatanodeDetails> favoredNodes)
+      throws IOException {
+    return create(replicationConfig, excludedNodes, favoredNodes,
+        StorageTier.getDefaultTier());
+  }
+
+  @Override
+  protected Pipeline create(ECReplicationConfig replicationConfig,
+      List<DatanodeDetails> excludedNodes, List<DatanodeDetails> favoredNodes,
+      StorageTier storageTier)
       throws IOException {
     List<DatanodeDetails> dns = placementPolicy
         .chooseDatanodes(excludedNodes, favoredNodes,

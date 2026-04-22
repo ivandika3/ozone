@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.StorageUnit;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
@@ -136,14 +137,28 @@ public class RatisPipelineProvider
   @Override
   public synchronized Pipeline create(RatisReplicationConfig replicationConfig)
       throws IOException {
+    return create(replicationConfig, StorageTier.getDefaultTier());
+  }
+
+  @Override
+  public synchronized Pipeline create(RatisReplicationConfig replicationConfig,
+      StorageTier storageTier) throws IOException {
     return create(replicationConfig, Collections.emptyList(),
-        Collections.emptyList());
+        Collections.emptyList(), storageTier);
   }
 
   @Override
   public synchronized Pipeline create(RatisReplicationConfig replicationConfig,
       List<DatanodeDetails> excludedNodes, List<DatanodeDetails> favoredNodes)
       throws IOException {
+    return create(replicationConfig, excludedNodes, favoredNodes,
+        StorageTier.getDefaultTier());
+  }
+
+  @Override
+  public synchronized Pipeline create(RatisReplicationConfig replicationConfig,
+      List<DatanodeDetails> excludedNodes, List<DatanodeDetails> favoredNodes,
+      StorageTier storageTier) throws IOException {
     if (exceedPipelineNumberLimit(replicationConfig)) {
       String limitInfo = (datanodePipelineLimit > 0)
           ? String.format("per datanode: %d", datanodePipelineLimit)
@@ -161,7 +176,8 @@ public class RatisPipelineProvider
         replicationConfig.getReplicationFactor();
     switch (factor) {
     case ONE:
-      dns = pickNodesNotUsed(replicationConfig, minRatisVolumeSizeBytes, containerSizeBytes);
+      dns = pickNodesNotUsed(replicationConfig, minRatisVolumeSizeBytes,
+          containerSizeBytes, storageTier);
       break;
     case THREE:
       List<DatanodeDetails> excludeDueToEngagement = filterPipelineEngagement();

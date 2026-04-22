@@ -42,6 +42,7 @@ public enum StorageTier {
   private final String tierName;
   private final List<StorageType> storageTypes;
   private final boolean uniformStorageType;
+  private static final StorageTier DEFAULT_TIER = DISK;
   private static final Map<StorageTier, Map<ReplicationConfig, List<StorageType>>>
       CACHE = new EnumMap<>(StorageTier.class);
 
@@ -115,6 +116,10 @@ public enum StorageTier {
       throw new IllegalStateException(
           "Illegal StorageTierProto: " + tier);
     }
+  }
+
+  public static StorageTier getDefaultTier() {
+    return DEFAULT_TIER;
   }
 
   public String getTierName() {

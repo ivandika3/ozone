@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.hadoop.hdds.client.StandaloneReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.scm.container.ContainerReplica;
 import org.apache.hadoop.hdds.scm.node.NodeManager;
@@ -42,15 +43,32 @@ public class SimplePipelineProvider
   @Override
   public Pipeline create(StandaloneReplicationConfig replicationConfig)
       throws IOException {
+    return create(replicationConfig, StorageTier.getDefaultTier());
+  }
+
+  @Override
+  public Pipeline create(StandaloneReplicationConfig replicationConfig,
+      StorageTier storageTier)
+      throws IOException {
     return create(replicationConfig, Collections.emptyList(),
-        Collections.emptyList());
+        Collections.emptyList(), storageTier);
   }
 
   @Override
   public Pipeline create(StandaloneReplicationConfig replicationConfig,
       List<DatanodeDetails> excludedNodes, List<DatanodeDetails> favoredNodes)
       throws IOException {
-    List<DatanodeDetails> dns = pickNodesNotUsed(replicationConfig);
+    return create(replicationConfig, excludedNodes, favoredNodes,
+        StorageTier.getDefaultTier());
+  }
+
+  @Override
+  public Pipeline create(StandaloneReplicationConfig replicationConfig,
+      List<DatanodeDetails> excludedNodes, List<DatanodeDetails> favoredNodes,
+      StorageTier storageTier)
+      throws IOException {
+    List<DatanodeDetails> dns = pickNodesNotUsed(replicationConfig, 0, 0,
+        storageTier);
     int available = dns.size();
     int required = replicationConfig.getRequiredNodes();
     if (available < required) {

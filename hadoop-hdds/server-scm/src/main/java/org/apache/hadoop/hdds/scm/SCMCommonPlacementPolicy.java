@@ -34,6 +34,8 @@ import java.util.Random;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.apache.hadoop.fs.StorageType;
+import org.apache.hadoop.hdds.client.StorageTypeUtils;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.MetadataStorageReportProto;
@@ -47,6 +49,7 @@ import org.apache.hadoop.hdds.scm.node.DatanodeInfo;
 import org.apache.hadoop.hdds.scm.node.NodeManager;
 import org.apache.hadoop.hdds.scm.node.NodeStatus;
 import org.apache.hadoop.hdds.scm.node.states.NodeNotFoundException;
+import org.apache.hadoop.ozone.container.common.impl.StorageLocationReport;
 import org.apache.hadoop.ozone.container.common.volume.VolumeUsage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -339,6 +342,67 @@ public abstract class SCMCommonPlacementPolicy implements
               "bytes for metadata.", datanodeDetails, metadataSizeRequired);
     }
     return enoughForMeta;
+  }
+
+  public static boolean hasEnoughSpace(DatanodeDetails datanodeDetails,
+      long metadataSizeRequired, long dataSizeRequired,
+      StorageType storageType) {
+    Preconditions.checkArgument(datanodeDetails instanceof DatanodeInfo);
+    if (storageType == null) {
+      return hasEnoughSpace(datanodeDetails, metadataSizeRequired,
+          dataSizeRequired);
+    }
+
+    boolean enoughForData = false;
+    boolean enoughForMeta = false;
+
+    DatanodeInfo datanodeInfo = (DatanodeInfo) datanodeDetails;
+
+    for (StorageReportProto reportProto : datanodeInfo.getStorageReports()) {
+      if (!matchesStorageType(reportProto, storageType)) {
+        continue;
+      }
+      if (dataSizeRequired <= 0
+          || VolumeUsage.getUsableSpace(reportProto) > dataSizeRequired) {
+        enoughForData = true;
+        break;
+      }
+    }
+
+    if (!enoughForData) {
+      LOG.debug("Datanode {} has no {} volumes with enough space to allocate "
+              + "{} bytes for data.", datanodeDetails, storageType,
+          dataSizeRequired);
+      return false;
+    }
+
+    if (metadataSizeRequired > 0) {
+      for (MetadataStorageReportProto reportProto
+          : datanodeInfo.getMetadataStorageReports()) {
+        if (reportProto.getRemaining() > metadataSizeRequired) {
+          enoughForMeta = true;
+          break;
+        }
+      }
+    } else {
+      enoughForMeta = true;
+    }
+
+    if (!enoughForMeta) {
+      LOG.debug("Datanode {} has no volumes with enough space to allocate {} "
+              + "bytes for metadata.", datanodeDetails, metadataSizeRequired);
+    }
+    return enoughForMeta;
+  }
+
+  private static boolean matchesStorageType(StorageReportProto reportProto,
+      StorageType storageType) {
+    if (reportProto.hasStorageTypeProto()) {
+      return StorageTypeUtils.getFromProtobuf(reportProto.getStorageTypeProto())
+          == storageType;
+    }
+    return StorageLocationReport.getStorageType(reportProto.getStorageType())
+        == storageType;
   }
 
   /**

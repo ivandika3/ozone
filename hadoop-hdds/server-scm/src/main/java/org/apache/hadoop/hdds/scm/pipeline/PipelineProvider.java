@@ -22,7 +22,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
+import org.apache.hadoop.hdds.client.StorageTierUtil;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.scm.SCMCommonPlacementPolicy;
 import org.apache.hadoop.hdds.scm.container.ContainerReplica;
@@ -65,7 +68,15 @@ public abstract class PipelineProvider<REPLICATION_CONFIG
       throws IOException;
 
   protected abstract Pipeline create(REPLICATION_CONFIG replicationConfig,
+      StorageTier storageTier) throws IOException;
+
+  protected abstract Pipeline create(REPLICATION_CONFIG replicationConfig,
       List<DatanodeDetails> excludedNodes, List<DatanodeDetails> favoredNodes)
+      throws IOException;
+
+  protected abstract Pipeline create(REPLICATION_CONFIG replicationConfig,
+      List<DatanodeDetails> excludedNodes, List<DatanodeDetails> favoredNodes,
+      StorageTier storageTier)
       throws IOException;
 
   protected abstract Pipeline create(
@@ -88,6 +99,35 @@ public abstract class PipelineProvider<REPLICATION_CONFIG
     List<DatanodeDetails> healthyDNs = pickAllNodesNotUsed(replicationConfig);
     List<DatanodeDetails> healthyDNsWithSpace = healthyDNs.stream()
         .filter(dn -> SCMCommonPlacementPolicy.hasEnoughSpace(dn, metadataSizeRequired, dataSizeRequired))
+        .limit(nodesRequired)
+        .collect(Collectors.toList());
+
+    if (healthyDNsWithSpace.size() < nodesRequired) {
+      String msg = String.format("Unable to find enough nodes that meet the " +
+              "space requirement of %d bytes for metadata and %d bytes for " +
+              "data in healthy node set. Nodes required: %d Found: %d",
+          metadataSizeRequired, dataSizeRequired, nodesRequired,
+          healthyDNsWithSpace.size());
+      LOG.warn(msg);
+      throw new SCMException(msg,
+          SCMException.ResultCodes.FAILED_TO_FIND_NODES_WITH_SPACE);
+    }
+
+    return healthyDNsWithSpace;
+  }
+
+  List<DatanodeDetails> pickNodesNotUsed(REPLICATION_CONFIG replicationConfig,
+      long metadataSizeRequired, long dataSizeRequired,
+      StorageTier storageTier) throws SCMException {
+    StorageTierUtil.validateNotEmpty(storageTier);
+    StorageType storageType =
+        StorageTierUtil.getStorageTypeForUniformStorageTier(storageTier,
+            replicationConfig);
+    int nodesRequired = replicationConfig.getRequiredNodes();
+    List<DatanodeDetails> healthyDNs = pickAllNodesNotUsed(replicationConfig);
+    List<DatanodeDetails> healthyDNsWithSpace = healthyDNs.stream()
+        .filter(dn -> SCMCommonPlacementPolicy.hasEnoughSpace(dn,
+            metadataSizeRequired, dataSizeRequired, storageType))
         .limit(nodesRequired)
         .collect(Collectors.toList());
 
