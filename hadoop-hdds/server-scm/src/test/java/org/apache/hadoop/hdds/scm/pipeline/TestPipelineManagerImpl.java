@@ -67,6 +67,7 @@ import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationType;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.DatanodeID;
@@ -105,6 +106,7 @@ import org.apache.hadoop.hdds.utils.db.DBStore;
 import org.apache.hadoop.hdds.utils.db.DBStoreBuilder;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.metrics2.MetricsRecordBuilder;
+import org.apache.hadoop.metrics2.lib.DefaultMetricsSystem;
 import org.apache.hadoop.ozone.container.common.SCMTestUtils;
 import org.apache.ozone.test.GenericTestUtils;
 import org.apache.ozone.test.GenericTestUtils.LogCapturer;
@@ -136,6 +138,8 @@ public class TestPipelineManagerImpl {
   void init(@TempDir File testDir, @TempDir File dbDir) throws Exception {
     testClock = new TestClock(Instant.now(), ZoneOffset.UTC);
     conf = SCMTestUtils.getConf(dbDir);
+    DefaultMetricsSystem.shutdown();
+    DefaultMetricsSystem.initialize("TestPipelineManagerImpl");
     scm = HddsTestUtils.getScm(SCMTestUtils.getConf(testDir));
 
     // Mock Node Manager is not able to correctly set up things for the EC
@@ -159,9 +163,13 @@ public class TestPipelineManagerImpl {
 
   @AfterEach
   public void cleanup() throws Exception {
+    if (scm != null) {
+      scm.stop();
+    }
     if (dbStore != null) {
       dbStore.close();
     }
+    DefaultMetricsSystem.shutdown();
   }
 
   private PipelineManagerImpl createPipelineManager(boolean isLeader)
@@ -239,6 +247,30 @@ public class TestPipelineManagerImpl {
       assertTrue(pipelineManager.getPipelines().isEmpty());
       assertFailsNotLeader(() -> pipelineManager.createPipeline(
               RatisReplicationConfig.getInstance(ReplicationFactor.THREE)));
+    }
+  }
+
+  @Test
+  public void testGetPipelinesByStorageTier() throws Exception {
+    try (PipelineManager pipelineManager = createPipelineManager(true)) {
+      Pipeline ssdPipeline = pipelineManager.createPipeline(
+          RatisReplicationConfig.getInstance(ReplicationFactor.ONE),
+          StorageTier.SSD);
+      Pipeline diskPipeline = pipelineManager.createPipeline(
+          RatisReplicationConfig.getInstance(ReplicationFactor.ONE),
+          StorageTier.DISK);
+
+      List<Pipeline> ssdPipelines = pipelineManager.getPipelines(
+          RatisReplicationConfig.getInstance(ReplicationFactor.ONE),
+          Pipeline.PipelineState.ALLOCATED, StorageTier.SSD);
+      List<Pipeline> diskPipelines = pipelineManager.getPipelines(
+          RatisReplicationConfig.getInstance(ReplicationFactor.ONE),
+          Pipeline.PipelineState.ALLOCATED, StorageTier.DISK);
+
+      assertEquals(Collections.singletonList(ssdPipeline.getId()),
+          ssdPipelines.stream().map(Pipeline::getId).collect(Collectors.toList()));
+      assertEquals(Collections.singletonList(diskPipeline.getId()),
+          diskPipelines.stream().map(Pipeline::getId).collect(Collectors.toList()));
     }
   }
 

@@ -30,6 +30,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.MockDatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
@@ -64,13 +65,29 @@ public class MockPipelineManager implements PipelineManager {
   @Override
   public Pipeline createPipeline(ReplicationConfig replicationConfig)
       throws IOException {
+    return createPipeline(replicationConfig, StorageTier.getDefaultTier());
+  }
+
+  @Override
+  public Pipeline createPipeline(ReplicationConfig replicationConfig,
+      StorageTier storageTier)
+      throws IOException {
     return createPipeline(replicationConfig, Collections.emptyList(),
-        Collections.emptyList());
+        Collections.emptyList(), storageTier);
   }
 
   @Override
   public Pipeline createPipeline(ReplicationConfig replicationConfig,
       List<DatanodeDetails> excludedNodes, List<DatanodeDetails> favoredNodes)
+      throws IOException {
+    return createPipeline(replicationConfig, excludedNodes, favoredNodes,
+        StorageTier.getDefaultTier());
+  }
+
+  @Override
+  public Pipeline createPipeline(ReplicationConfig replicationConfig,
+      List<DatanodeDetails> excludedNodes, List<DatanodeDetails> favoredNodes,
+      StorageTier storageTier)
       throws IOException {
     Pipeline pipeline;
     if (replicationConfig.getReplicationType()
@@ -177,11 +194,25 @@ public class MockPipelineManager implements PipelineManager {
 
   @Override
   public List<Pipeline> getPipelines(ReplicationConfig replicationConfig,
+      Pipeline.PipelineState state, StorageTier storageTier) {
+    return stateManager.getPipelines(replicationConfig, state, storageTier);
+  }
+
+  @Override
+  public List<Pipeline> getPipelines(ReplicationConfig replicationConfig,
       final Pipeline.PipelineState state,
       final Collection<DatanodeDetails> excludeDns,
       final Collection<PipelineID> excludePipelines) {
     return stateManager.getPipelines(replicationConfig, state,
         excludeDns, excludePipelines);
+  }
+
+  @Override
+  public List<Pipeline> getPipelines(ReplicationConfig replicationConfig,
+      Pipeline.PipelineState state, Collection<DatanodeDetails> excludeDns,
+      Collection<PipelineID> excludePipelines, StorageTier storageTier) {
+    return stateManager.getPipelines(replicationConfig, state, excludeDns,
+        excludePipelines, storageTier);
   }
 
   @Override

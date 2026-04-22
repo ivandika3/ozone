@@ -32,7 +32,9 @@ import java.util.NavigableSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.scm.container.ContainerID;
 import org.apache.hadoop.hdds.scm.pipeline.Pipeline.PipelineState;
@@ -210,6 +212,14 @@ class PipelineStateMap {
     return pipelines;
   }
 
+  List<Pipeline> getPipelines(ReplicationConfig replicationConfig,
+      PipelineState state, StorageTier storageTier) {
+    Objects.requireNonNull(storageTier, "StorageTier cannot be null");
+    return getPipelines(replicationConfig, state).stream()
+        .filter(pipeline -> supportsStorageTier(pipeline, storageTier))
+        .collect(Collectors.toList());
+  }
+
   /**
    * Get a count of pipelines with the given replicationConfig and state.
    * This method is most efficient when getting a count for OPEN pipeline
@@ -287,6 +297,24 @@ class PipelineStateMap {
     }
 
     return pipelines;
+  }
+
+  List<Pipeline> getPipelines(ReplicationConfig replicationConfig,
+      PipelineState state, Collection<DatanodeDetails> excludeDns,
+      Collection<PipelineID> excludePipelines, StorageTier storageTier) {
+    Objects.requireNonNull(storageTier, "StorageTier cannot be null");
+    return getPipelines(replicationConfig, state, excludeDns, excludePipelines)
+        .stream()
+        .filter(pipeline -> supportsStorageTier(pipeline, storageTier))
+        .collect(Collectors.toList());
+  }
+
+  private boolean supportsStorageTier(Pipeline pipeline, StorageTier storageTier) {
+    List<StorageTier> supportedStorageTiers = pipeline.getSupportedStorageTier();
+    if (supportedStorageTiers.isEmpty()) {
+      return storageTier == StorageTier.getDefaultTier();
+    }
+    return supportedStorageTiers.contains(storageTier);
   }
 
   /**
