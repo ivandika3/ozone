@@ -29,6 +29,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.DeletedBlocksTransactionInfo;
@@ -251,6 +252,33 @@ public interface StorageContainerLocationProtocol extends Closeable {
       HddsProtos.ReplicationType replicationType,
       ReplicationConfig replicationConfig,
       Boolean suppressed) throws IOException;
+
+  /**
+   * Ask SCM for a list of containers with a range of container ID, state,
+   * replication config, suppression state, and storage tier.
+   * The returned list is limited to count entries.
+   *
+   * @param startContainerID start container ID.
+   * @param count count, if count {@literal <} 0, the max size is unlimited.(
+   *              Usually the count will be replace with a very big
+   *              value instead of being unlimited in case the db is very big)
+   * @param state Container with this state will be returned.
+   * @param replicationConfig Replication config for the containers
+   * @param suppressed container to be suppressed/unsuppressed from report
+   * @param storageTier Container with this storage tier will be returned.
+   * @param includeNullStorageTier Container with null storage tier will be returned.
+   * @return a list of containers capped by max count allowed
+   * in "ozone.scm.container.list.max.count" and total number of containers.
+   * @throws IOException
+   */
+  @SuppressWarnings("checkstyle:parameternumber")
+  ContainerListResult listContainer(long startContainerID,
+      int count, HddsProtos.LifeCycleState state,
+      HddsProtos.ReplicationType replicationType,
+      ReplicationConfig replicationConfig,
+      Boolean suppressed,
+      StorageTier storageTier,
+      boolean includeNullStorageTier) throws IOException;
 
   /**
    * Deletes a container in SCM.

@@ -317,6 +317,8 @@ message SCMListContainerRequestProto {
   optional ReplicationType type = 6;
   optional ECReplicationConfig ecReplicationConfig = 7;
   optional bool suppressed = 8;
+  optional StorageTierProto storageTier = 9;
+  optional bool includeNullStorageTier = 10;
 }
 
 message SCMListContainerResponseProto {

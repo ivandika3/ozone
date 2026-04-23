@@ -32,6 +32,7 @@ import java.util.UUID;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.conf.StorageUnit;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
@@ -403,6 +404,25 @@ public class ContainerOperationClient implements ScmClient {
     }
     return storageContainerLocationClient.listContainer(
         startContainerID, count, state, repType, replicationConfig, suppressed);
+  }
+
+  @Override
+  public ContainerListResult listContainer(long startContainerID,
+      int count, HddsProtos.LifeCycleState state,
+      HddsProtos.ReplicationType repType,
+      ReplicationConfig replicationConfig,
+      Boolean suppressed,
+      StorageTier storageTier,
+      boolean includeNullStorageTier) throws IOException {
+    if (count > maxCountOfContainerList) {
+      LOG.warn("Attempting to list {} containers. However, this exceeds" +
+          " the cluster's current limit of {}. The results will be capped at the" +
+          " maximum allowed count.", count, maxCountOfContainerList);
+      count = maxCountOfContainerList;
+    }
+    return storageContainerLocationClient.listContainer(
+        startContainerID, count, state, repType, replicationConfig, suppressed,
+        storageTier, includeNullStorageTier);
   }
 
   @Override

@@ -42,6 +42,7 @@ import org.apache.hadoop.hdds.annotation.InterfaceAudience;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicatedReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.DeletedBlocksTransactionInfo;
@@ -447,7 +448,8 @@ public final class StorageContainerLocationProtocolClientSideTranslatorPB
       HddsProtos.ReplicationType replicationType,
       ReplicationConfig replicationConfig)
       throws IOException {
-    return listContainer(startContainerID, count, state, replicationType, replicationConfig, null);
+    return listContainer(startContainerID, count, state, replicationType,
+        replicationConfig, null, null, false);
   }
 
   @Override
@@ -457,10 +459,28 @@ public final class StorageContainerLocationProtocolClientSideTranslatorPB
       ReplicationConfig replicationConfig,
       Boolean suppressed)
       throws IOException {
+    return listContainer(startContainerID, count, state, replicationType,
+        replicationConfig, suppressed, null, false);
+  }
+
+  @Override
+  public ContainerListResult listContainer(long startContainerID, int count,
+      HddsProtos.LifeCycleState state,
+      HddsProtos.ReplicationType replicationType,
+      ReplicationConfig replicationConfig,
+      Boolean suppressed,
+      StorageTier storageTier,
+      boolean includeNullStorageTier)
+      throws IOException {
     Preconditions.checkState(startContainerID >= 0,
         "Container ID cannot be negative.");
     Preconditions.checkState(count > 0,
         "Container count must be greater than 0.");
+    if (storageTier != null && includeNullStorageTier) {
+      throw new IllegalArgumentException(
+          "Parameters 'storageTier' and 'includeNullStorageTier' "
+              + "cannot be specified together.");
+    }
     SCMListContainerRequestProto.Builder builder = SCMListContainerRequestProto
         .newBuilder();
     builder.setStartContainerID(startContainerID);
@@ -484,6 +504,12 @@ public final class StorageContainerLocationProtocolClientSideTranslatorPB
       }
     } else if (replicationType != null) {
       builder.setType(replicationType);
+    }
+    if (storageTier != null) {
+      builder.setStorageTier(storageTier.toProto());
+    }
+    if (includeNullStorageTier) {
+      builder.setIncludeNullStorageTier(true);
     }
 
     SCMListContainerRequestProto request = builder.build();

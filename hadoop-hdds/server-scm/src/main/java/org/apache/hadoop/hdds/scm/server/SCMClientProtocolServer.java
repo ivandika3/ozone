@@ -52,6 +52,7 @@ import java.util.stream.Stream;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.conf.ReconfigurationHandler;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
@@ -469,7 +470,8 @@ public class SCMClientProtocolServer implements
   @Override
   public ContainerListResult listContainer(long startContainerID,
       int count, HddsProtos.LifeCycleState state) throws IOException {
-    return listContainer(startContainerID, count, state, null, null, null);
+    return listContainer(startContainerID, count, state, null, null, null,
+        null, false);
   }
 
   /**
@@ -488,18 +490,28 @@ public class SCMClientProtocolServer implements
   public ContainerListResult listContainer(long startContainerID,
       int count, HddsProtos.LifeCycleState state,
       HddsProtos.ReplicationFactor factor) throws IOException {
-    return listContainerInternal(startContainerID, count, state, factor, null, null, null);
+    return listContainerInternal(startContainerID, count, state, factor, null,
+        null, null, null, false);
   }
 
-  private ContainerListResult listContainerInternal(long startContainerID, int count,
+  @SuppressWarnings("checkstyle:parameternumber")
+  private ContainerListResult listContainerInternal(long startContainerID,
+      int count,
       HddsProtos.LifeCycleState state,
       HddsProtos.ReplicationFactor factor,
       HddsProtos.ReplicationType replicationType,
       ReplicationConfig repConfig,
-      Boolean suppressed) throws IOException {
+      Boolean suppressed,
+      StorageTier storageTier,
+      boolean includeNullStorageTier) throws IOException {
+    if (storageTier != null && includeNullStorageTier) {
+      throw new IllegalArgumentException("Parameters 'storageTier' and "
+          + "'includeNullStorageTier' cannot be specified together.");
+    }
     boolean auditSuccess = true;
     Map<String, String> auditMap = buildAuditMap(startContainerID, count, state, factor, 
-        replicationType, repConfig, suppressed);
+        replicationType, repConfig, suppressed, storageTier,
+        includeNullStorageTier);
 
     try {
       Stream<ContainerInfo> containerStream =
@@ -508,6 +520,13 @@ public class SCMClientProtocolServer implements
       // Filter by suppressed flag only if explicitly specified
       if (suppressed != null) {
         containerStream = containerStream.filter(info -> info.isSuppressed() == suppressed);
+      }
+      if (storageTier != null) {
+        containerStream = containerStream.filter(info ->
+            storageTier.equals(info.getStorageTier()));
+      } else if (includeNullStorageTier) {
+        containerStream = containerStream.filter(
+            info -> info.getStorageTier() == null);
       }
       
       List<ContainerInfo> containerInfos =
@@ -557,12 +576,15 @@ public class SCMClientProtocolServer implements
     }
   }
 
+  @SuppressWarnings("checkstyle:parameternumber")
   private Map<String, String> buildAuditMap(long startContainerID, int count,
       HddsProtos.LifeCycleState state,
       HddsProtos.ReplicationFactor factor,
       HddsProtos.ReplicationType replicationType,
       ReplicationConfig repConfig,
-      Boolean suppressed) {
+      Boolean suppressed,
+      StorageTier storageTier,
+      boolean includeNullStorageTier) {
     Map<String, String> auditMap = new HashMap<>();
     auditMap.put("startContainerID", String.valueOf(startContainerID));
     auditMap.put("count", String.valueOf(count));
@@ -580,6 +602,12 @@ public class SCMClientProtocolServer implements
     }
     if (suppressed != null) {
       auditMap.put("suppressed", suppressed.toString());
+    }
+    if (storageTier != null) {
+      auditMap.put("storageTier", storageTier.toString());
+    }
+    if (includeNullStorageTier) {
+      auditMap.put("includeNullStorageTier", Boolean.TRUE.toString());
     }
 
     return auditMap;
@@ -601,7 +629,8 @@ public class SCMClientProtocolServer implements
       int count, HddsProtos.LifeCycleState state,
       HddsProtos.ReplicationType replicationType,
       ReplicationConfig repConfig) throws IOException {
-    return listContainerInternal(startContainerID, count, state, null, replicationType, repConfig, null);
+    return listContainerInternal(startContainerID, count, state, null,
+        replicationType, repConfig, null, null, false);
   }
 
   /**
@@ -622,7 +651,21 @@ public class SCMClientProtocolServer implements
       HddsProtos.ReplicationType replicationType,
       ReplicationConfig repConfig,
       Boolean suppressed) throws IOException {
-    return listContainerInternal(startContainerID, count, state, null, replicationType, repConfig, suppressed);
+    return listContainerInternal(startContainerID, count, state, null,
+        replicationType, repConfig, suppressed, null, false);
+  }
+
+  @Override
+  public ContainerListResult listContainer(long startContainerID,
+      int count, HddsProtos.LifeCycleState state,
+      HddsProtos.ReplicationType replicationType,
+      ReplicationConfig repConfig,
+      Boolean suppressed,
+      StorageTier storageTier,
+      boolean includeNullStorageTier) throws IOException {
+    return listContainerInternal(startContainerID, count, state, null,
+        replicationType, repConfig, suppressed, storageTier,
+        includeNullStorageTier);
   }
 
   @Override

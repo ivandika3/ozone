@@ -30,6 +30,7 @@ import java.util.List;
 import org.apache.hadoop.hdds.cli.HddsVersionProvider;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationType;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.scm.ScmConfigKeys;
@@ -91,6 +92,12 @@ public class ListSubcommand extends ScmSubcommand {
           "or 'false' to list only those that are not suppressed.")
   private Boolean suppressed;
 
+  @Option(names = {"--storageTier", "-st"},
+      description = "Storage tier to filter containers (SSD, DISK, ARCHIVE, or null)")
+  private String storageTierStr;
+
+  private static final String NULL_STORAGE_TIER = "null";
+
   private static final ObjectWriter WRITER;
 
   static {
@@ -116,6 +123,14 @@ public class ListSubcommand extends ScmSubcommand {
           ReplicationType.fromProto(type),
           replication, new OzoneConfiguration());
     }
+    boolean includeNullStorageTier = false;
+    StorageTier storageTier = null;
+    if (!Strings.isNullOrEmpty(storageTierStr)) {
+      includeNullStorageTier = isIncludeNullStorageTier();
+      if (!includeNullStorageTier) {
+        storageTier = getStorageTier();
+      }
+    }
 
     int maxCountAllowed = getOzoneConf()
         .getInt(ScmConfigKeys.OZONE_SCM_CONTAINER_LIST_MAX_COUNT,
@@ -134,7 +149,8 @@ public class ListSubcommand extends ScmSubcommand {
       }
 
       ContainerListResult containerListResult =
-          scmClient.listContainer(startId, count, state, type, repConfig, suppressed);
+          scmClient.listContainer(startId, count, state, type, repConfig,
+              suppressed, storageTier, includeNullStorageTier);
 
       writeContainers(sequenceWriter, containerListResult.getContainerInfoList());
 
@@ -147,7 +163,8 @@ public class ListSubcommand extends ScmSubcommand {
     } else {
       // List all containers by fetching in batches
       int batchSize = (count > 0) ? count : maxCountAllowed;
-      listAllContainers(scmClient, sequenceWriter, batchSize, repConfig);
+      listAllContainers(scmClient, sequenceWriter, batchSize, repConfig,
+          storageTier, includeNullStorageTier);
       closeStream(sequenceWriter);
     }
   }
@@ -167,14 +184,17 @@ public class ListSubcommand extends ScmSubcommand {
   }
 
   private void listAllContainers(ScmClient scmClient, SequenceWriter writer,
-                                 int batchSize, ReplicationConfig repConfig)
+                                 int batchSize, ReplicationConfig repConfig,
+                                 StorageTier storageTier,
+                                 boolean includeNullStorageTier)
       throws IOException {
     long currentStartId = startId;
     int fetchedCount;
 
     do {
       ContainerListResult result =
-          scmClient.listContainer(currentStartId, batchSize, state, type, repConfig, suppressed);
+          scmClient.listContainer(currentStartId, batchSize, state, type,
+              repConfig, suppressed, storageTier, includeNullStorageTier);
       fetchedCount = result.getContainerInfoList().size();
 
       writeContainers(writer, result.getContainerInfoList());
@@ -184,5 +204,23 @@ public class ListSubcommand extends ScmSubcommand {
             result.getContainerInfoList().get(fetchedCount - 1).getContainerID() + 1;
       }
     } while (fetchedCount > 0);
+  }
+
+  private boolean isIncludeNullStorageTier() {
+    return NULL_STORAGE_TIER.equalsIgnoreCase(storageTierStr.trim());
+  }
+
+  private StorageTier getStorageTier() {
+    try {
+      StorageTier storageTier =
+          StorageTier.valueOf(storageTierStr.trim().toUpperCase());
+      if (storageTier == StorageTier.EMPTY) {
+        throw new IllegalArgumentException("EMPTY storage tier is not allowed");
+      }
+      return storageTier;
+    } catch (IllegalArgumentException e) {
+      throw new IllegalArgumentException("Invalid storage tier: "
+          + storageTierStr + ". Allowed values are: SSD, DISK, ARCHIVE, or null.");
+    }
   }
 }

@@ -26,6 +26,7 @@ import java.util.UUID;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.annotation.InterfaceStability;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.ContainerDataProto;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
@@ -162,6 +163,30 @@ public interface ScmClient extends Closeable {
       HddsProtos.ReplicationType replicationType,
       ReplicationConfig replicationConfig,
       Boolean suppressed)
+      throws IOException;
+
+  /**
+   * Lists a range of containers and get their info.
+   *
+   * @param startContainerID start containerID.
+   * @param count count must be {@literal >} 0.
+   * @param state Container of this state will be returned.
+   * @param replicationConfig container replication Config.
+   * @param suppressed container to be suppressed/unsuppressed from report
+   * @param storageTier Container with this storage tier will be returned.
+   * @param includeNullStorageTier Container with null storage tier will be returned.
+   * @return a list of containers capped by max count allowed
+   * in "ozone.scm.container.list.max.count" and total number of containers.
+   * @throws IOException
+   */
+  @SuppressWarnings("checkstyle:parameternumber")
+  ContainerListResult listContainer(long startContainerID, int count,
+      HddsProtos.LifeCycleState state,
+      HddsProtos.ReplicationType replicationType,
+      ReplicationConfig replicationConfig,
+      Boolean suppressed,
+      StorageTier storageTier,
+      boolean includeNullStorageTier)
       throws IOException;
 
   /**

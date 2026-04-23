@@ -42,6 +42,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.annotation.InterfaceAudience;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.TransferLeadershipRequestProto;
@@ -875,11 +876,15 @@ public final class StorageContainerLocationProtocolServerSideTranslatorPB
     HddsProtos.ReplicationFactor factor = null;
     HddsProtos.ReplicationType replicationType = null;
     ReplicationConfig repConfig = null;
+    StorageTier storageTier = null;
     if (request.hasState()) {
       state = request.getState();
     }
     if (request.hasType()) {
       replicationType = request.getType();
+    }
+    if (request.hasStorageTier()) {
+      storageTier = StorageTier.fromProto(request.getStorageTier());
     }
     if (replicationType != null) {
       // This must come from an upgraded client as the older version never
@@ -899,6 +904,8 @@ public final class StorageContainerLocationProtocolServerSideTranslatorPB
     }
     // Filter by suppressed: true (suppressed only), false (unsuppressed only) or null (display all).
     Boolean suppressed = request.hasSuppressed() ? request.getSuppressed() : null;
+    boolean includeNullStorageTier = request.hasIncludeNullStorageTier()
+        && request.getIncludeNullStorageTier();
 
     ContainerListResult containerListAndTotalCount;
     if (factor != null) {
@@ -907,7 +914,8 @@ public final class StorageContainerLocationProtocolServerSideTranslatorPB
           impl.listContainer(startContainerID, count, state, factor);
     } else {
       containerListAndTotalCount =
-          impl.listContainer(startContainerID, count, state, replicationType, repConfig, suppressed);
+          impl.listContainer(startContainerID, count, state, replicationType,
+              repConfig, suppressed, storageTier, includeNullStorageTier);
     }
     SCMListContainerResponseProto.Builder builder =
         SCMListContainerResponseProto.newBuilder();
