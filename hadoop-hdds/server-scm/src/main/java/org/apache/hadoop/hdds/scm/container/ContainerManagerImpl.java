@@ -248,11 +248,6 @@ public class ContainerManagerImpl implements ContainerManager {
     return containerInfo;
   }
 
-  private ContainerInfo createContainer(Pipeline pipeline, String owner)
-      throws IOException {
-    return createContainer(pipeline, owner, StorageTier.getDefaultTier());
-  }
-
   private ContainerInfo createContainer(Pipeline pipeline, String owner,
       StorageTier storageTier) throws IOException {
     final ContainerInfo containerInfo = allocateContainer(pipeline, owner,
@@ -261,12 +256,6 @@ public class ContainerManagerImpl implements ContainerManager {
       LOG.trace("New container allocated: {}", containerInfo);
     }
     return containerInfo;
-  }
-
-  private ContainerInfo allocateContainer(final Pipeline pipeline,
-                                          final String owner)
-      throws IOException {
-    return allocateContainer(pipeline, owner, StorageTier.getDefaultTier());
   }
 
   private ContainerInfo allocateContainer(final Pipeline pipeline,

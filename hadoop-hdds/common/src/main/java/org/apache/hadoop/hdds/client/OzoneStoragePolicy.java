@@ -18,6 +18,7 @@
 package org.apache.hadoop.hdds.client;
 
 import java.util.Locale;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.StoragePolicyProto;
 
 /**
@@ -97,7 +98,7 @@ public enum OzoneStoragePolicy implements StoragePolicy {
   }
 
   public static OzoneStoragePolicy fromName(String value) {
-    if (value == null || value.trim().isEmpty()) {
+    if (StringUtils.isBlank(value)) {
       return WARM;
     }
     return OzoneStoragePolicy.valueOf(value.trim().toUpperCase(Locale.ROOT));

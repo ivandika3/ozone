@@ -442,16 +442,12 @@ public class TestHddsDispatcher {
   public void testCreateContainerWithWriteChunkWithStorageType() throws IOException {
     int volumeNum = 2;
     // Create two volume one is SSD volume another is DISK volume
-    StringBuilder hddsDirs = new StringBuilder();
-    hddsDirs.append("[SSD]");
     File ssdVolume = Files.createDirectory(tempDir.resolve("ssd")).toFile();
-    hddsDirs.append(ssdVolume).append(",");
-    hddsDirs.append("[DISK]");
     File diskVolume = Files.createDirectory(tempDir.resolve("disk")).toFile();
-    hddsDirs.append(diskVolume);
+    String hddsDirs = "[SSD]" + ssdVolume + ",[DISK]" + diskVolume;
     UUID scmId = UUID.randomUUID();
     OzoneConfiguration conf = new OzoneConfiguration();
-    conf.set(ScmConfigKeys.HDDS_DATANODE_DIR_KEY, hddsDirs.toString());
+    conf.set(ScmConfigKeys.HDDS_DATANODE_DIR_KEY, hddsDirs);
     DatanodeDetails dd = randomDatanodeDetails();
     HddsDispatcher dispatcher = createDispatcher(dd, scmId, conf);
     long containerID = 1L;

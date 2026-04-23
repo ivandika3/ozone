@@ -22,6 +22,7 @@ import static org.apache.hadoop.ozone.OzoneConsts.GB;
 import static org.apache.hadoop.ozone.OzoneConsts.MB;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -202,7 +203,7 @@ public class TestBlockManager {
         replicationConfig, OzoneConsts.OZONE, new ExcludeList());
     assertNotNull(block);
     assertEquals(StorageTier.getDefaultTier(), block.getStorageTier());
-    assertTrue(!block.isFallBack());
+    assertFalse(block.isFallBack());
   }
 
   @Test
@@ -216,7 +217,7 @@ public class TestBlockManager {
         OzoneStoragePolicy.WARM, false);
     assertNotNull(block);
     assertEquals(StorageTier.getDefaultTier(), block.getStorageTier());
-    assertTrue(!block.isFallBack());
+    assertFalse(block.isFallBack());
   }
 
   @Test
