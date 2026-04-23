@@ -251,10 +251,10 @@ public final class ScmBlockLocationProtocolClientSideTranslatorPB
           .setContainerBlockID(
               ContainerBlockID.getFromProtobuf(resp.getContainerBlockID()))
           .setPipeline(Pipeline.getFromProtobuf(resp.getPipeline()))
-          .setStorageTier(resp.hasStorageTier()
-              ? StorageTier.fromProto(resp.getStorageTier())
-              : StorageTier.getDefaultTier())
           .setIsFallBack(resp.getIsFallBack());
+      if (resp.hasStorageTier()) {
+        builder.setStorageTier(StorageTier.fromProto(resp.getStorageTier()));
+      }
       blocks.add(builder.build());
     }
 

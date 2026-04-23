@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.ozone.om.helpers;
 
+import jakarta.annotation.Nullable;
 import org.apache.hadoop.hdds.client.BlockID;
 import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.scm.pipeline.Pipeline;
@@ -84,7 +85,7 @@ public final class OmKeyLocationInfo extends BlockLocationInfo {
     }
 
     @Override
-    public Builder setStorageTier(StorageTier storageTier) {
+    public Builder setStorageTier(@Nullable StorageTier storageTier) {
       super.setStorageTier(storageTier);
       return this;
     }

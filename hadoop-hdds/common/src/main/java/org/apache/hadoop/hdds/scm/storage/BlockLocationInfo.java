@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.hdds.scm.storage;
 
+import jakarta.annotation.Nullable;
 import java.util.Objects;
 import org.apache.hadoop.hdds.client.BlockID;
 import org.apache.hadoop.hdds.client.StorageTier;
@@ -41,7 +42,7 @@ public class BlockLocationInfo {
 
   // PartNumber is set for Multipart upload Keys.
   private int partNumber;
-  private StorageTier storageTier;
+  private @Nullable StorageTier storageTier;
   private boolean fallBack;
   // The block is under construction. Apply to hsynced file last block.
   private boolean underConstruction;
@@ -118,12 +119,12 @@ public class BlockLocationInfo {
     return partNumber;
   }
 
-  public StorageTier getStorageTier() {
+  public @Nullable StorageTier getStorageTier() {
     return storageTier;
   }
 
-  public void setStorageTier(StorageTier tier) {
-    this.storageTier = tier == null ? StorageTier.getDefaultTier() : tier;
+  public void setStorageTier(@Nullable StorageTier tier) {
+    this.storageTier = tier;
   }
 
   public boolean isFallBack() {
@@ -157,7 +158,7 @@ public class BlockLocationInfo {
     private Pipeline pipeline;
     private int partNumber;
     private long createVersion;
-    private StorageTier storageTier = StorageTier.getDefaultTier();
+    private @Nullable StorageTier storageTier;
     private boolean fallBack;
 
     public Builder setBlockID(BlockID blockId) {
@@ -195,8 +196,8 @@ public class BlockLocationInfo {
       return this;
     }
 
-    public Builder setStorageTier(StorageTier tier) {
-      this.storageTier = tier == null ? StorageTier.getDefaultTier() : tier;
+    public Builder setStorageTier(@Nullable StorageTier tier) {
+      this.storageTier = tier;
       return this;
     }
 
