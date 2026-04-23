@@ -26,6 +26,7 @@ import org.apache.hadoop.crypto.key.KeyProvider;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationFactor;
 import org.apache.hadoop.hdds.client.ReplicationType;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.StorageType;
 import org.apache.hadoop.io.Text;
@@ -276,6 +277,15 @@ public interface ClientProtocol {
                             StorageType storageType)
       throws IOException;
 
+  void setBucketStoragePolicy(String volumeName, String bucketName,
+                              StoragePolicy storagePolicy)
+      throws IOException;
+
+  void setBucketStoragePolicy(String volumeName, String bucketName,
+                              StoragePolicy storagePolicy,
+                              Boolean allowFallbackStoragePolicy)
+      throws IOException;
+
   /**
    * Deletes a bucket if it is empty.
    * @param volumeName Name of the Volume
@@ -397,6 +407,13 @@ public interface ClientProtocol {
       Map<String, String> metadata, Map<String, String> tags)
       throws IOException;
 
+  @SuppressWarnings("checkstyle:parameternumber")
+  OzoneOutputStream createKeyIfNotExists(String volumeName, String bucketName,
+      String keyName, long size, ReplicationConfig replicationConfig,
+      Map<String, String> metadata, Map<String, String> tags,
+      StoragePolicy storagePolicy)
+      throws IOException;
+
   /**
    * Rewrites a key only if its ETag matches (S3 If-Match semantics).
    *
@@ -433,6 +450,13 @@ public interface ClientProtocol {
       Map<String, String> metadata, Map<String, String> tags)
       throws IOException;
 
+  @SuppressWarnings("checkstyle:parameternumber")
+  OzoneOutputStream createKey(String volumeName, String bucketName,
+      String keyName, long size, ReplicationConfig replicationConfig,
+      Map<String, String> metadata, Map<String, String> tags,
+      StoragePolicy storagePolicy)
+      throws IOException;
+
   /**
    * Writes a key in an existing bucket.
    * @param volumeName Name of the Volume
@@ -464,6 +488,13 @@ public interface ClientProtocol {
       Map<String, String> metadata, Map<String, String> tags)
       throws IOException;
 
+  @SuppressWarnings("checkstyle:parameternumber")
+  OzoneDataStreamOutput createStreamKey(String volumeName, String bucketName,
+      String keyName, long size, ReplicationConfig replicationConfig,
+      Map<String, String> metadata, Map<String, String> tags,
+      StoragePolicy storagePolicy)
+      throws IOException;
+
   /**
    * Writes a key in an existing bucket only if it does not already exist
    * (S3 If-None-Match: * semantics).
@@ -482,6 +513,13 @@ public interface ClientProtocol {
       String bucketName, String keyName, long size,
       ReplicationConfig replicationConfig, Map<String, String> metadata,
       Map<String, String> tags) throws IOException;
+
+  @SuppressWarnings("checkstyle:parameternumber")
+  OzoneDataStreamOutput createStreamKeyIfNotExists(String volumeName,
+      String bucketName, String keyName, long size,
+      ReplicationConfig replicationConfig, Map<String, String> metadata,
+      Map<String, String> tags, StoragePolicy storagePolicy)
+      throws IOException;
 
   /**
    * Writes a key in an existing bucket only if its ETag matches
@@ -675,6 +713,12 @@ public interface ClientProtocol {
   OmMultipartInfo initiateMultipartUpload(String volumeName, String
       bucketName, String keyName, ReplicationConfig replicationConfig,
       Map<String, String> metadata, Map<String, String> tags)
+      throws IOException;
+
+  OmMultipartInfo initiateMultipartUpload(String volumeName, String
+      bucketName, String keyName, ReplicationConfig replicationConfig,
+      Map<String, String> metadata, Map<String, String> tags,
+      StoragePolicy storagePolicy)
       throws IOException;
 
   /**
@@ -1036,9 +1080,22 @@ public interface ClientProtocol {
       boolean overWrite, boolean recursive) throws IOException;
 
   @SuppressWarnings("checkstyle:parameternumber")
+  OzoneOutputStream createFile(String volumeName, String bucketName,
+      String keyName, long size, ReplicationConfig replicationConfig,
+      boolean overWrite, boolean recursive, StoragePolicy storagePolicy)
+      throws IOException;
+
+  @SuppressWarnings("checkstyle:parameternumber")
   OzoneDataStreamOutput createStreamFile(String volumeName, String bucketName,
       String keyName, long size, ReplicationConfig replicationConfig,
       boolean overWrite, boolean recursive) throws IOException;
+
+  @SuppressWarnings("checkstyle:parameternumber")
+  OzoneDataStreamOutput createStreamFile(String volumeName,
+      String bucketName, String keyName, long size,
+      ReplicationConfig replicationConfig, boolean overWrite,
+      boolean recursive, StoragePolicy storagePolicy)
+      throws IOException;
 
 
   /**

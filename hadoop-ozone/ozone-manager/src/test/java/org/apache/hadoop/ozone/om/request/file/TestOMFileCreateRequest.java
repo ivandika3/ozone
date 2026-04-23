@@ -33,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -730,7 +731,8 @@ public class TestOMFileCreateRequest extends TestOMKeyRequest {
     verify(scmBlockLocationProtocol, atLeastOnce())
         .allocateBlock(anyLong(), anyInt(),
             any(ReplicationConfig.class), anyString(),
-            any(ExcludeList.class), anyString());
+            any(ExcludeList.class), anyString(),
+            any(), anyBoolean());
 
     // Verify key locations are present in the response
     assertTrue(modifiedOmRequest.hasCreateFileRequest());
@@ -764,7 +766,8 @@ public class TestOMFileCreateRequest extends TestOMKeyRequest {
     when(scmBlockLocationProtocol.allocateBlock(
             anyLong(), anyInt(),
             any(ReplicationConfig.class), anyString(),
-            any(ExcludeList.class), anyString()))
+            any(ExcludeList.class), anyString(),
+            any(), anyBoolean()))
         .thenAnswer(invocation -> {
           int num = invocation.getArgument(1);
           List<AllocatedBlock> allocatedBlocks = new ArrayList<>(num);
@@ -802,7 +805,8 @@ public class TestOMFileCreateRequest extends TestOMKeyRequest {
     verify(scmBlockLocationProtocol, atLeastOnce())
         .allocateBlock(anyLong(), anyInt(),
             any(ReplicationConfig.class), anyString(),
-            any(ExcludeList.class), anyString());
+            any(ExcludeList.class), anyString(),
+            any(), anyBoolean());
 
     // Verify key locations are present in the response
     assertTrue(modifiedOmRequest.hasCreateFileRequest());

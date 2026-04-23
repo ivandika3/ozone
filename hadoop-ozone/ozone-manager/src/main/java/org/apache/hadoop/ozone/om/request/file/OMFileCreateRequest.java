@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.scm.container.common.helpers.ExcludeList;
 import org.apache.hadoop.hdds.utils.UniqueId;
@@ -115,6 +116,10 @@ public class OMFileCreateRequest extends OMKeyRequest {
 
     final OmBucketInfo bucketInfo = ozoneManager
         .getBucketInfo(keyArgs.getVolumeName(), keyArgs.getBucketName());
+    StoragePolicy storagePolicy = getStoragePolicy(bucketInfo, keyArgs);
+    boolean allowFallbackStoragePolicy =
+        bucketInfo.getAllowFallbackStoragePolicy() == null
+            || bucketInfo.getAllowFallbackStoragePolicy();
     final ReplicationConfig repConfig = OzoneConfigUtil
         .resolveReplicationConfigPreference(type, factor,
             keyArgs.getEcReplicationConfig(),
@@ -130,7 +135,7 @@ public class OMFileCreateRequest extends OMKeyRequest {
     // the placeholder for the data size. Therefore, we should at least allocate a
     // single block and we cannot simply skip the allocate block call
     List< OmKeyLocationInfo > omKeyLocationInfoList =
-        allocateBlock(ozoneManager, ozoneManager.getScmClient(),
+        allocateBlock(ozoneManager.getScmClient(),
               ozoneManager.getBlockTokenSecretManager(), repConfig,
               new ExcludeList(), requestedSize, scmBlockSize,
               ozoneManager.getPreallocateBlocksMax(),
@@ -138,7 +143,7 @@ public class OMFileCreateRequest extends OMKeyRequest {
               ozoneManager.getOMServiceId(),
               ozoneManager.getMetrics(),
               keyArgs.getSortDatanodes(),
-              userInfo);
+              userInfo, storagePolicy, allowFallbackStoragePolicy);
 
     KeyArgs.Builder newKeyArgs = keyArgs.toBuilder()
         .setModificationTime(Time.now()).setType(type).setFactor(factor)

@@ -73,6 +73,7 @@ import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfigValidator;
 import org.apache.hadoop.hdds.client.ReplicationFactor;
 import org.apache.hadoop.hdds.client.ReplicationType;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.StorageUnit;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
@@ -131,6 +132,7 @@ import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.BasicOmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketEncryptionKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
+import org.apache.hadoop.ozone.om.helpers.BucketStoragePolicyUtil;
 import org.apache.hadoop.ozone.om.helpers.DeleteTenantState;
 import org.apache.hadoop.ozone.om.helpers.ErrorInfo;
 import org.apache.hadoop.ozone.om.helpers.KeyInfoWithVolumeContext;
@@ -637,6 +639,11 @@ public class RpcClient implements ClientProtocol {
     boolean isVersionEnabled = bucketArgs.getVersioning();
     StorageType storageType = bucketArgs.getStorageType() == null ?
         StorageType.DEFAULT : bucketArgs.getStorageType();
+    StoragePolicy storagePolicy = bucketArgs.getStoragePolicy() == null
+        ? BucketStoragePolicyUtil.fromStorageType(storageType)
+        : bucketArgs.getStoragePolicy();
+    Boolean allowFallbackStoragePolicy =
+        bucketArgs.getAllowFallbackStoragePolicy();
     BucketLayout bucketLayout = bucketArgs.getBucketLayout();
     BucketEncryptionKeyInfo bek = null;
     if (bucketArgs.getEncryptionKey() != null) {
@@ -650,6 +657,8 @@ public class RpcClient implements ClientProtocol {
         .setIsVersionEnabled(isVersionEnabled)
         .addAllMetadata(bucketArgs.getMetadata())
         .setStorageType(storageType)
+        .setStoragePolicy(storagePolicy)
+        .setAllowFallbackStoragePolicy(allowFallbackStoragePolicy)
         .setSourceVolume(bucketArgs.getSourceVolume())
         .setSourceBucket(bucketArgs.getSourceBucket())
         .setQuotaInBytes(bucketArgs.getQuotaInBytes())
@@ -685,11 +694,12 @@ public class RpcClient implements ClientProtocol {
         ? "with bucket layout " + bucketLayout
         : "with server-side default bucket layout";
     LOG.info("Creating Bucket: {}/{}, {}, {} as owner, Versioning {}, " +
-            "Storage Type set to {} and Encryption set to {}, " +
+            "Storage Type set to {} and Storage Policy set to {} and " +
+            "Encryption set to {}, " +
             "Replication Type set to {}, Namespace Quota set to {}, " +
             "Space Quota set to {} ",
         volumeName, bucketName, layoutMsg, owner, isVersionEnabled,
-        storageType, bek != null, replicationType,
+        storageType, storagePolicy, bek != null, replicationType,
         bucketArgs.getQuotaInNamespace(), bucketArgs.getQuotaInBytes());
 
     ozoneManagerClient.createBucket(builder.build());
@@ -1194,7 +1204,39 @@ public class RpcClient implements ClientProtocol {
     OmBucketArgs.Builder builder = OmBucketArgs.newBuilder();
     builder.setVolumeName(volumeName)
         .setBucketName(bucketName)
-        .setStorageType(storageType);
+        .setStorageType(storageType)
+        .setStoragePolicy(BucketStoragePolicyUtil.fromStorageType(storageType));
+    ozoneManagerClient.setBucketProperty(builder.build());
+  }
+
+  @Override
+  public void setBucketStoragePolicy(
+      String volumeName, String bucketName, StoragePolicy storagePolicy)
+      throws IOException {
+    setBucketStoragePolicy(volumeName, bucketName, storagePolicy, null);
+  }
+
+  @Override
+  public void setBucketStoragePolicy(
+      String volumeName, String bucketName, StoragePolicy storagePolicy,
+      Boolean allowFallbackStoragePolicy)
+      throws IOException {
+    verifyVolumeName(volumeName);
+    verifyBucketName(bucketName);
+    OmBucketArgs.Builder builder = OmBucketArgs.newBuilder();
+    builder.setVolumeName(volumeName)
+        .setBucketName(bucketName);
+    if (storagePolicy != null) {
+      builder.setStoragePolicy(storagePolicy)
+          .setStorageType(BucketStoragePolicyUtil.toStorageType(storagePolicy));
+    }
+    if (allowFallbackStoragePolicy != null) {
+      builder.setAllowFallbackStoragePolicy(allowFallbackStoragePolicy);
+    }
+    if (storagePolicy == null && allowFallbackStoragePolicy == null) {
+      throw new IllegalArgumentException(
+          "storagePolicy and allowFallbackStoragePolicy cannot both be null");
+    }
     ozoneManagerClient.setBucketProperty(builder.build());
   }
 
@@ -1289,6 +1331,9 @@ public class RpcClient implements ClientProtocol {
         .setVolumeName(bucketInfo.getVolumeName())
         .setName(bucketInfo.getBucketName())
         .setStorageType(bucketInfo.getStorageType())
+        .setStoragePolicy(bucketInfo.getStoragePolicy())
+        .setAllowFallbackStoragePolicy(
+            bucketInfo.getAllowFallbackStoragePolicy())
         .setVersioning(bucketInfo.getIsVersionEnabled())
         .setCreationTime(bucketInfo.getCreationTime())
         .setModificationTime(bucketInfo.getModificationTime())
@@ -1322,6 +1367,9 @@ public class RpcClient implements ClientProtocol {
                 .setVolumeName(bucket.getVolumeName())
                 .setName(bucket.getBucketName())
                 .setStorageType(bucket.getStorageType())
+                .setStoragePolicy(bucket.getStoragePolicy())
+                .setAllowFallbackStoragePolicy(
+                    bucket.getAllowFallbackStoragePolicy())
                 .setVersioning(bucket.getIsVersionEnabled())
                 .setCreationTime(bucket.getCreationTime())
                 .setModificationTime(bucket.getModificationTime())
@@ -1361,7 +1409,7 @@ public class RpcClient implements ClientProtocol {
       Map<String, String> metadata)
       throws IOException {
     return createKey(volumeName, bucketName, keyName, size, replicationConfig,
-        metadata, Collections.emptyMap());
+        metadata, Collections.emptyMap(), null);
   }
 
   @Override
@@ -1369,9 +1417,21 @@ public class RpcClient implements ClientProtocol {
       String volumeName, String bucketName, String keyName, long size,
       ReplicationConfig replicationConfig,
       Map<String, String> metadata, Map<String, String> tags) throws IOException {
+    return createKey(volumeName, bucketName, keyName, size, replicationConfig,
+        metadata, tags, null);
+  }
+
+  @Override
+  @SuppressWarnings("checkstyle:parameternumber")
+  public OzoneOutputStream createKey(
+      String volumeName, String bucketName, String keyName, long size,
+      ReplicationConfig replicationConfig,
+      Map<String, String> metadata, Map<String, String> tags,
+      StoragePolicy storagePolicy) throws IOException {
     String ownerName = getRealUserInfo().getShortUserName();
     OmKeyArgs.Builder builder = createWriteKeyArgsBuilder(volumeName,
-        bucketName, keyName, size, replicationConfig, metadata, tags);
+        bucketName, keyName, size, replicationConfig, metadata, tags,
+        storagePolicy);
     builder.setOwnerName(ownerName);
     return openOutputStream(builder.build(), size);
   }
@@ -1388,7 +1448,7 @@ public class RpcClient implements ClientProtocol {
         existingKeyGeneration);
     OmKeyArgs.Builder builder = createWriteKeyArgsBuilder(volumeName,
         bucketName, keyName, size, replicationConfig, metadata,
-        Collections.emptyMap());
+        Collections.emptyMap(), null);
     builder.setExpectedDataGeneration(existingKeyGeneration);
     return openOutputStream(builder.build(), size);
   }
@@ -1398,12 +1458,23 @@ public class RpcClient implements ClientProtocol {
       String bucketName, String keyName, long size,
       ReplicationConfig replicationConfig, Map<String, String> metadata,
       Map<String, String> tags) throws IOException {
+    return createKeyIfNotExists(volumeName, bucketName, keyName, size,
+        replicationConfig, metadata, tags, null);
+  }
+
+  @Override
+  @SuppressWarnings("checkstyle:parameternumber")
+  public OzoneOutputStream createKeyIfNotExists(String volumeName,
+      String bucketName, String keyName, long size,
+      ReplicationConfig replicationConfig, Map<String, String> metadata,
+      Map<String, String> tags, StoragePolicy storagePolicy)
+      throws IOException {
     if (omVersion.compareTo(OzoneManagerVersion.ATOMIC_REWRITE_KEY) < 0) {
       throw new IOException(
           "OzoneManager does not support atomic key creation.");
     }
     OmKeyArgs.Builder builder = createWriteKeyArgsBuilder(volumeName,
-        bucketName, keyName, size, replicationConfig, metadata, tags);
+        bucketName, keyName, size, replicationConfig, metadata, tags, null);
     builder.setExpectedDataGeneration(
         OzoneConsts.EXPECTED_GEN_CREATE_IF_NOT_EXISTS);
     return openOutputStream(builder.build(), size);
@@ -1420,20 +1491,22 @@ public class RpcClient implements ClientProtocol {
           "OzoneManager does not support conditional key rewrite.");
     }
     OmKeyArgs.Builder builder = createWriteKeyArgsBuilder(volumeName,
-        bucketName, keyName, size, replicationConfig, metadata, tags);
+        bucketName, keyName, size, replicationConfig, metadata, tags, null);
     builder.setExpectedETag(expectedETag);
     return openOutputStream(builder.build(), size);
   }
 
+  @SuppressWarnings("checkstyle:parameternumber")
   private OmKeyArgs.Builder createWriteKeyArgsBuilder(String volumeName,
       String bucketName, String keyName, long size,
       ReplicationConfig replicationConfig, Map<String, String> metadata,
-      Map<String, String> tags)
+      Map<String, String> tags, StoragePolicy storagePolicy)
       throws IOException {
     createKeyPreChecks(volumeName, bucketName, keyName, replicationConfig);
     validateObjectTagsSupport(tags);
     return new OmKeyArgs.Builder(volumeName, bucketName, keyName, size,
-        replicationConfig, metadata, tags, getLatestVersionLocation);
+        replicationConfig, metadata, tags, getLatestVersionLocation)
+        .setStoragePolicy(storagePolicy);
   }
 
   private OzoneOutputStream openOutputStream(OmKeyArgs keyArgs, long size)
@@ -1489,7 +1562,7 @@ public class RpcClient implements ClientProtocol {
       Map<String, String> metadata)
       throws IOException {
     return createStreamKey(volumeName, bucketName, keyName, size, replicationConfig,
-        metadata, Collections.emptyMap());
+        metadata, Collections.emptyMap(), null);
   }
 
   @Override
@@ -1497,9 +1570,19 @@ public class RpcClient implements ClientProtocol {
       String volumeName, String bucketName, String keyName, long size,
       ReplicationConfig replicationConfig,
       Map<String, String> metadata, Map<String, String> tags) throws IOException {
+    return createStreamKey(volumeName, bucketName, keyName, size,
+        replicationConfig, metadata, tags, null);
+  }
+
+  @Override
+  public OzoneDataStreamOutput createStreamKey(
+      String volumeName, String bucketName, String keyName, long size,
+      ReplicationConfig replicationConfig,
+      Map<String, String> metadata, Map<String, String> tags,
+      StoragePolicy storagePolicy) throws IOException {
     OmKeyArgs.Builder builder = createStreamKeyArgsBuilder(
         volumeName, bucketName, keyName, size, replicationConfig, metadata,
-        tags);
+        tags, storagePolicy);
     return openDataStreamOutput(builder.build());
   }
 
@@ -1514,7 +1597,7 @@ public class RpcClient implements ClientProtocol {
     }
     OmKeyArgs.Builder builder = createStreamKeyArgsBuilder(
         volumeName, bucketName, keyName, size, replicationConfig, metadata,
-        tags);
+        tags, null);
     builder.setExpectedDataGeneration(
         OzoneConsts.EXPECTED_GEN_CREATE_IF_NOT_EXISTS);
     return openDataStreamOutput(builder.build());
@@ -1532,19 +1615,20 @@ public class RpcClient implements ClientProtocol {
     }
     OmKeyArgs.Builder builder = createStreamKeyArgsBuilder(
         volumeName, bucketName, keyName, size, replicationConfig, metadata,
-        tags);
+        tags, null);
     builder.setExpectedETag(expectedETag);
     return openDataStreamOutput(builder.build());
   }
 
+  @SuppressWarnings("checkstyle:parameternumber")
   private OmKeyArgs.Builder createStreamKeyArgsBuilder(String volumeName,
       String bucketName, String keyName, long size,
       ReplicationConfig replicationConfig, Map<String, String> metadata,
-      Map<String, String> tags)
+      Map<String, String> tags, StoragePolicy storagePolicy)
       throws IOException {
     OmKeyArgs.Builder builder = createWriteKeyArgsBuilder(
         volumeName, bucketName, keyName, size, replicationConfig, metadata,
-        tags);
+        tags, storagePolicy);
     builder.setOwnerName(getRealUserInfo().getShortUserName());
     return builder;
   }
@@ -1973,6 +2057,19 @@ public class RpcClient implements ClientProtocol {
       Map<String, String> metadata,
       Map<String, String> tags)
       throws IOException {
+    return initiateMultipartUpload(volumeName, bucketName, keyName,
+        replicationConfig, metadata, tags, null);
+  }
+
+  @Override
+  public OmMultipartInfo initiateMultipartUpload(String volumeName,
+      String bucketName,
+      String keyName,
+      ReplicationConfig replicationConfig,
+      Map<String, String> metadata,
+      Map<String, String> tags,
+      StoragePolicy storagePolicy)
+      throws IOException {
     verifyVolumeName(volumeName);
     verifyBucketName(bucketName);
     HddsClientUtils.checkNotNull(keyName);
@@ -2001,6 +2098,7 @@ public class RpcClient implements ClientProtocol {
         .addAllMetadataGdpr(metadata)
         .setOwnerName(ownerName)
         .addAllTags(tags)
+        .setStoragePolicy(storagePolicy)
         .build();
     OmMultipartInfo multipartInfo = ozoneManagerClient
         .initiateMultipartUpload(keyArgs);
@@ -2280,6 +2378,15 @@ public class RpcClient implements ClientProtocol {
   public OzoneOutputStream createFile(String volumeName, String bucketName,
       String keyName, long size, ReplicationConfig replicationConfig,
       boolean overWrite, boolean recursive) throws IOException {
+    return createFile(volumeName, bucketName, keyName, size,
+        replicationConfig, overWrite, recursive, null);
+  }
+
+  @Override
+  public OzoneOutputStream createFile(String volumeName, String bucketName,
+      String keyName, long size, ReplicationConfig replicationConfig,
+      boolean overWrite, boolean recursive, StoragePolicy storagePolicy)
+      throws IOException {
     if (omVersion
         .compareTo(OzoneManagerVersion.ERASURE_CODED_STORAGE_SUPPORT) < 0) {
       if (replicationConfig.getReplicationType()
@@ -2298,6 +2405,7 @@ public class RpcClient implements ClientProtocol {
         .setReplicationConfig(replicationConfig)
         .setLatestVersionLocation(getLatestVersionLocation)
         .setOwnerName(ownerName)
+        .setStoragePolicy(storagePolicy)
         .build();
     OpenKeySession keySession =
         ozoneManagerClient.createFile(keyArgs, overWrite, recursive);
@@ -2320,6 +2428,16 @@ public class RpcClient implements ClientProtocol {
       String bucketName, String keyName, long size,
       ReplicationConfig replicationConfig, boolean overWrite, boolean recursive)
       throws IOException {
+    return createStreamFile(volumeName, bucketName, keyName, size,
+        replicationConfig, overWrite, recursive, null);
+  }
+
+  @Override
+  public OzoneDataStreamOutput createStreamFile(String volumeName,
+      String bucketName, String keyName, long size,
+      ReplicationConfig replicationConfig, boolean overWrite,
+      boolean recursive, StoragePolicy storagePolicy)
+      throws IOException {
     String ownerName = getRealUserInfo().getShortUserName();
     OmKeyArgs keyArgs = new OmKeyArgs.Builder()
         .setVolumeName(volumeName)
@@ -2330,6 +2448,7 @@ public class RpcClient implements ClientProtocol {
         .setLatestVersionLocation(getLatestVersionLocation)
         .setSortDatanodesInPipeline(true)
         .setOwnerName(ownerName)
+        .setStoragePolicy(storagePolicy)
         .build();
     OpenKeySession keySession =
         ozoneManagerClient.createFile(keyArgs, overWrite, recursive);

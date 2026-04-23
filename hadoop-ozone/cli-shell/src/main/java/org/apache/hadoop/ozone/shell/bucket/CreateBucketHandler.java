@@ -21,6 +21,8 @@ import com.google.common.base.Strings;
 import java.io.IOException;
 import org.apache.hadoop.hdds.client.DefaultReplicationConfig;
 import org.apache.hadoop.hdds.client.OzoneQuota;
+import org.apache.hadoop.hdds.client.OzoneStoragePolicy;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.protocol.StorageType;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.client.BucketArgs;
@@ -68,6 +70,14 @@ public class CreateBucketHandler extends BucketHandler {
   @CommandLine.Mixin
   private SetSpaceQuotaOptions quotaOptions;
 
+  @Option(names = {"--storagepolicy", "-sp"},
+      description = "Bucket storage policy (HOT, WARM, COLD)")
+  private String storagePolicyName;
+
+  @Option(names = {"--allowFallBackStoragePolicy", "-asp"},
+      description = "Allow writes to fall back to the policy's backing tier")
+  private Boolean allowFallbackStoragePolicy;
+
   /**
    * Executes create bucket.
    */
@@ -82,6 +92,12 @@ public class CreateBucketHandler extends BucketHandler {
     BucketArgs.Builder bb =
         new BucketArgs.Builder().setStorageType(StorageType.DEFAULT)
             .setVersioning(false).setOwner(ownerName);
+    if (!Strings.isNullOrEmpty(storagePolicyName)) {
+      bb.setStoragePolicy(parseStoragePolicy(storagePolicyName));
+    }
+    if (allowFallbackStoragePolicy != null) {
+      bb.setAllowFallbackStoragePolicy(allowFallbackStoragePolicy);
+    }
     if (allowedBucketLayout != null) {
       bb.setBucketLayout(allowedBucketLayout);
     }
@@ -147,6 +163,16 @@ public class CreateBucketHandler extends BucketHandler {
         }
         throw new IllegalArgumentException("Unknown bucket layout: " + value);
       }
+    }
+  }
+
+  private static StoragePolicy parseStoragePolicy(String value) {
+    try {
+      return OzoneStoragePolicy.fromName(value);
+    } catch (IllegalArgumentException ex) {
+      throw new IllegalArgumentException(
+          "Unknown storage policy: " + value + ". Expected HOT, WARM, or COLD.",
+          ex);
     }
   }
 }

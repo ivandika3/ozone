@@ -101,6 +101,17 @@ public enum OzoneStoragePolicy implements StoragePolicy {
     return OzoneStoragePolicy.valueOf(value.trim().toUpperCase(Locale.ROOT));
   }
 
+  public static StoragePolicyProto toProto(StoragePolicy storagePolicy) {
+    if (storagePolicy == null) {
+      throw new IllegalArgumentException("StoragePolicy cannot be null");
+    }
+    if (!(storagePolicy instanceof OzoneStoragePolicy)) {
+      throw new IllegalArgumentException(
+          "Unsupported StoragePolicy type: " + storagePolicy.getName());
+    }
+    return ((OzoneStoragePolicy) storagePolicy).toProto();
+  }
+
   public static OzoneStoragePolicy getDefaultPolicy() {
     return WARM;
   }

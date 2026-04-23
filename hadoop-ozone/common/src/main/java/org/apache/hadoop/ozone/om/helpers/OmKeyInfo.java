@@ -32,8 +32,10 @@ import org.apache.hadoop.fs.FileChecksum;
 import org.apache.hadoop.fs.FileEncryptionInfo;
 import org.apache.hadoop.hdds.client.ContainerBlockID;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
+import org.apache.hadoop.hdds.client.OzoneStoragePolicy;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationFactor;
 import org.apache.hadoop.hdds.utils.db.Codec;
 import org.apache.hadoop.hdds.utils.db.CopyObject;
@@ -102,6 +104,7 @@ public final class OmKeyInfo extends WithParentObjectId
    * Used for S3 tags.
    */
   private final ImmutableMap<String, String> tags;
+  private final @Nullable StoragePolicy storagePolicy;
 
   // expectedDataGeneration, when used in key creation indicates that a
   // key with the same keyName should exist with the given generation.
@@ -131,6 +134,7 @@ public final class OmKeyInfo extends WithParentObjectId
     this.tags = b.tags.build();
     this.expectedDataGeneration = b.expectedDataGeneration;
     this.expectedETag = b.expectedETag;
+    this.storagePolicy = b.storagePolicy;
   }
 
   private static Codec<OmKeyInfo> newCodec(boolean ignorePipeline) {
@@ -197,6 +201,10 @@ public final class OmKeyInfo extends WithParentObjectId
 
   public String getExpectedETag() {
     return expectedETag;
+  }
+
+  public @Nullable StoragePolicy getStoragePolicy() {
+    return storagePolicy;
   }
 
   public String getOwnerName() {
@@ -503,6 +511,7 @@ public final class OmKeyInfo extends WithParentObjectId
     private final MapBuilder<String, String> tags;
     private Long expectedDataGeneration = null;
     private String expectedETag;
+    private StoragePolicy storagePolicy;
 
     public Builder() {
       this.acls = AclListBuilder.empty();
@@ -526,6 +535,7 @@ public final class OmKeyInfo extends WithParentObjectId
       this.isFile = obj.isFile;
       this.expectedDataGeneration = obj.expectedDataGeneration;
       this.expectedETag = obj.expectedETag;
+      this.storagePolicy = obj.storagePolicy;
       this.tags = MapBuilder.of(obj.tags);
       obj.keyLocationVersions.forEach(keyLocationVersion ->
           this.omKeyLocationInfoGroups.add(
@@ -702,6 +712,11 @@ public final class OmKeyInfo extends WithParentObjectId
       return this;
     }
 
+    public Builder setStoragePolicy(StoragePolicy storagePolicy) {
+      this.storagePolicy = storagePolicy;
+      return this;
+    }
+
     @Override
     protected void validate() {
       super.validate();
@@ -824,6 +839,9 @@ public final class OmKeyInfo extends WithParentObjectId
     if (expectedETag != null) {
       kb.setExpectedETag(expectedETag);
     }
+    if (storagePolicy != null) {
+      kb.setStoragePolicy(OzoneStoragePolicy.toProto(storagePolicy));
+    }
     if (ownerName != null) {
       kb.setOwnerName(ownerName);
     }
@@ -880,6 +898,10 @@ public final class OmKeyInfo extends WithParentObjectId
     if (keyInfo.hasExpectedETag()) {
       builder.setExpectedETag(keyInfo.getExpectedETag());
     }
+    if (keyInfo.hasStoragePolicy()) {
+      builder.setStoragePolicy(
+          OzoneStoragePolicy.fromProto(keyInfo.getStoragePolicy()));
+    }
 
     if (keyInfo.hasOwnerName()) {
       builder.setOwnerName(keyInfo.getOwnerName());
@@ -899,6 +921,7 @@ public final class OmKeyInfo extends WithParentObjectId
         ", bucket='" + bucketName + '\'' +
         ", key='" + keyName + '\'' +
         ", owner='" + ownerName + '\'' +
+        ", storagePolicy='" + storagePolicy + '\'' +
         ", dataSize='" + dataSize + '\'' +
         ", creationTime='" + creationTime + '\'' +
         ", objectID='" + getObjectID() + '\'' +
@@ -918,6 +941,7 @@ public final class OmKeyInfo extends WithParentObjectId
         volumeName.equals(omKeyInfo.volumeName) &&
         bucketName.equals(omKeyInfo.bucketName) &&
         replicationConfig.equals(omKeyInfo.replicationConfig) &&
+        Objects.equals(storagePolicy, omKeyInfo.storagePolicy) &&
         Objects.equals(getMetadata(), omKeyInfo.getMetadata()) &&
         Objects.equals(acls, omKeyInfo.acls) &&
         Objects.equals(getTags(), omKeyInfo.getTags()) &&

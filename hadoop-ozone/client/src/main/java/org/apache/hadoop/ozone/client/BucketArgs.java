@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import net.jcip.annotations.Immutable;
 import org.apache.hadoop.hdds.client.DefaultReplicationConfig;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.protocol.StorageType;
 import org.apache.hadoop.ozone.OzoneAcl;
 import org.apache.hadoop.ozone.OzoneConsts;
@@ -50,6 +51,8 @@ public final class BucketArgs {
    * [RAM_DISK, SSD, DISK, ARCHIVE]
    */
   private final StorageType storageType;
+  private final StoragePolicy storagePolicy;
+  private final Boolean allowFallbackStoragePolicy;
 
   /**
    * Custom key/value metadata.
@@ -78,6 +81,8 @@ public final class BucketArgs {
     acls = b.acls == null ? ImmutableList.of() : ImmutableList.copyOf(b.acls);
     versioning = b.versioning;
     storageType = b.storageType;
+    storagePolicy = b.storagePolicy;
+    allowFallbackStoragePolicy = b.allowFallbackStoragePolicy;
     metadata = b.metadata == null ? ImmutableMap.of() : ImmutableMap.copyOf(b.metadata);
     bucketEncryptionKey = b.bucketEncryptionKey;
     sourceVolume = b.sourceVolume;
@@ -103,6 +108,14 @@ public final class BucketArgs {
    */
   public StorageType getStorageType() {
     return storageType;
+  }
+
+  public StoragePolicy getStoragePolicy() {
+    return storagePolicy;
+  }
+
+  public Boolean getAllowFallbackStoragePolicy() {
+    return allowFallbackStoragePolicy;
   }
 
   /**
@@ -191,6 +204,8 @@ public final class BucketArgs {
   public static class Builder {
     private boolean versioning;
     private StorageType storageType;
+    private StoragePolicy storagePolicy;
+    private Boolean allowFallbackStoragePolicy;
     private List<OzoneAcl> acls;
     private Map<String, String> metadata;
     private String bucketEncryptionKey;
@@ -214,6 +229,17 @@ public final class BucketArgs {
 
     public BucketArgs.Builder setStorageType(StorageType storage) {
       this.storageType = storage;
+      return this;
+    }
+
+    public BucketArgs.Builder setStoragePolicy(StoragePolicy policy) {
+      this.storagePolicy = policy;
+      return this;
+    }
+
+    public BucketArgs.Builder setAllowFallbackStoragePolicy(
+        Boolean allowFallback) {
+      this.allowFallbackStoragePolicy = allowFallback;
       return this;
     }
 

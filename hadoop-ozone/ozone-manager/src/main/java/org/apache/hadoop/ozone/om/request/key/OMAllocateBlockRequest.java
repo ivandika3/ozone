@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.scm.container.common.helpers.ExcludeList;
 import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
 import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
@@ -95,6 +96,12 @@ public class OMAllocateBlockRequest extends OMKeyRequest {
       excludeList =
           ExcludeList.getFromProtoBuf(allocateBlockRequest.getExcludeList());
     }
+    final OmBucketInfo bucketInfo = ozoneManager
+        .getBucketInfo(keyArgs.getVolumeName(), keyArgs.getBucketName());
+    StoragePolicy storagePolicy = getStoragePolicy(bucketInfo, keyArgs);
+    boolean allowFallbackStoragePolicy =
+        bucketInfo.getAllowFallbackStoragePolicy() == null
+            || bucketInfo.getAllowFallbackStoragePolicy();
 
     // TODO: Here we are allocating block with out any check for key exist in
     //  open table or not and also with out any authorization checks.
@@ -111,13 +118,14 @@ public class OMAllocateBlockRequest extends OMKeyRequest {
     // as same value. When allocating block requested size is same as
     // scmBlockSize.
     List<OmKeyLocationInfo> omKeyLocationInfoList =
-        allocateBlock(ozoneManager, ozoneManager.getScmClient(),
+        allocateBlock(ozoneManager.getScmClient(),
             ozoneManager.getBlockTokenSecretManager(), repConfig, excludeList,
             ozoneManager.getScmBlockSize(), ozoneManager.getScmBlockSize(),
             ozoneManager.getPreallocateBlocksMax(),
             ozoneManager.isGrpcBlockTokenEnabled(),
             ozoneManager.getOMServiceId(), ozoneManager.getMetrics(),
-            keyArgs.getSortDatanodes(), userInfo);
+            keyArgs.getSortDatanodes(), userInfo, storagePolicy,
+            allowFallbackStoragePolicy);
 
     // Set modification time and normalize key if required.
     KeyArgs.Builder newKeyArgs =

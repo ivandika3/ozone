@@ -44,6 +44,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.SafeModeAction;
 import org.apache.hadoop.hdds.annotation.InterfaceAudience;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
+import org.apache.hadoop.hdds.client.OzoneStoragePolicy;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.TransferLeadershipRequestProto;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.UpgradeFinalizationStatus;
@@ -747,6 +748,10 @@ public final class OzoneManagerProtocolClientSideTranslatorPB
     if (args.getExpectedETag() != null) {
       keyArgs.setExpectedETag(args.getExpectedETag());
     }
+    if (args.getStoragePolicy() != null) {
+      keyArgs.setStoragePolicy(
+          OzoneStoragePolicy.toProto(args.getStoragePolicy()));
+    }
 
     req.setKeyArgs(keyArgs.build());
 
@@ -788,6 +793,10 @@ public final class OzoneManagerProtocolClientSideTranslatorPB
             ReplicationConfig.getLegacyFactor(args.getReplicationConfig()));
       }
       keyArgs.setType(args.getReplicationConfig().getReplicationType());
+    }
+    if (args.getStoragePolicy() != null) {
+      keyArgs.setStoragePolicy(
+          OzoneStoragePolicy.toProto(args.getStoragePolicy()));
     }
 
     req.setKeyArgs(keyArgs);
@@ -1648,6 +1657,10 @@ public final class OzoneManagerProtocolClientSideTranslatorPB
     }
 
     setReplicationConfig(omKeyArgs.getReplicationConfig(), keyArgs);
+    if (omKeyArgs.getStoragePolicy() != null) {
+      keyArgs.setStoragePolicy(
+          OzoneStoragePolicy.toProto(omKeyArgs.getStoragePolicy()));
+    }
 
     multipartInfoInitiateRequest.setKeyArgs(keyArgs.build());
 
@@ -2315,6 +2328,10 @@ public final class OzoneManagerProtocolClientSideTranslatorPB
             ReplicationConfig.getLegacyFactor(args.getReplicationConfig()));
       }
       keyArgsBuilder.setType(args.getReplicationConfig().getReplicationType());
+    }
+    if (args.getStoragePolicy() != null) {
+      keyArgsBuilder.setStoragePolicy(
+          OzoneStoragePolicy.toProto(args.getStoragePolicy()));
     }
     CreateFileRequest createFileRequest = CreateFileRequest.newBuilder()
             .setKeyArgs(keyArgsBuilder.build())

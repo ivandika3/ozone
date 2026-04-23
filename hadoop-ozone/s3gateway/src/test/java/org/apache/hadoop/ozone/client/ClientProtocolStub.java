@@ -28,6 +28,7 @@ import org.apache.hadoop.crypto.key.KeyProvider;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationFactor;
 import org.apache.hadoop.hdds.client.ReplicationType;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.StorageType;
 import org.apache.hadoop.io.Text;
@@ -186,6 +187,19 @@ public class ClientProtocolStub implements ClientProtocol {
   }
 
   @Override
+  public void setBucketStoragePolicy(String volumeName, String bucketName,
+      StoragePolicy storagePolicy) throws IOException {
+
+  }
+
+  @Override
+  public void setBucketStoragePolicy(String volumeName, String bucketName,
+      StoragePolicy storagePolicy, Boolean allowFallbackStoragePolicy)
+      throws IOException {
+
+  }
+
+  @Override
   public void deleteBucket(String volumeName, String bucketName)
       throws IOException {
 
@@ -239,6 +253,16 @@ public class ClientProtocolStub implements ClientProtocol {
                                      Map<String, String> tags) throws IOException {
     return getBucket(volumeName, bucketName)
         .createKey(keyName, size, replicationConfig, metadata, tags);
+  }
+
+  @Override
+  public OzoneOutputStream createKey(String volumeName, String bucketName,
+      String keyName, long size, ReplicationConfig replicationConfig,
+      Map<String, String> metadata, Map<String, String> tags,
+      StoragePolicy storagePolicy) throws IOException {
+    return getBucket(volumeName, bucketName)
+        .createKey(keyName, size, replicationConfig, metadata, tags,
+            storagePolicy);
   }
 
   @Override
@@ -386,8 +410,18 @@ public class ClientProtocolStub implements ClientProtocol {
   public OmMultipartInfo initiateMultipartUpload(String volumeName,
          String bucketName, String keyName, ReplicationConfig replicationConfig,
          Map<String, String> metadata, Map<String, String> tags) throws IOException {
+    return initiateMultipartUpload(volumeName, bucketName, keyName,
+        replicationConfig, metadata, tags, null);
+  }
+
+  @Override
+  public OmMultipartInfo initiateMultipartUpload(String volumeName,
+         String bucketName, String keyName, ReplicationConfig replicationConfig,
+         Map<String, String> metadata, Map<String, String> tags,
+         StoragePolicy storagePolicy) throws IOException {
     return getBucket(volumeName, bucketName)
-        .initiateMultipartUpload(keyName, replicationConfig, metadata, tags);
+        .initiateMultipartUpload(keyName, replicationConfig, metadata, tags,
+            storagePolicy);
   }
 
   @Override
@@ -592,6 +626,17 @@ public class ClientProtocolStub implements ClientProtocol {
                                       ReplicationConfig replicationConfig,
                                       boolean overWrite, boolean recursive)
       throws IOException {
+    return createFile(volumeName, bucketName, keyName, size, replicationConfig,
+        overWrite, recursive, null);
+  }
+
+  @Override
+  public OzoneOutputStream createFile(String volumeName, String bucketName,
+                                      String keyName, long size,
+                                      ReplicationConfig replicationConfig,
+                                      boolean overWrite, boolean recursive,
+                                      StoragePolicy storagePolicy)
+      throws IOException {
     return null;
   }
 
@@ -722,6 +767,15 @@ public class ClientProtocolStub implements ClientProtocol {
   }
 
   @Override
+  public OzoneDataStreamOutput createStreamKey(
+      String volumeName, String bucketName, String keyName, long size,
+      ReplicationConfig replicationConfig, Map<String, String> metadata,
+      Map<String, String> tags, StoragePolicy storagePolicy)
+      throws IOException {
+    return null;
+  }
+
+  @Override
   public OzoneDataStreamOutput createMultipartStreamKey(
       String volumeName, String bucketName, String keyName, long size,
       int partNumber, String uploadID) throws IOException {
@@ -732,6 +786,16 @@ public class ClientProtocolStub implements ClientProtocol {
   public OzoneDataStreamOutput createStreamFile(
       String volumeName, String bucketName, String keyName, long size,
       ReplicationConfig replicationConf, boolean overWrite, boolean recursive)
+      throws IOException {
+    return createStreamFile(volumeName, bucketName, keyName, size,
+        replicationConf, overWrite, recursive, null);
+  }
+
+  @Override
+  public OzoneDataStreamOutput createStreamFile(
+      String volumeName, String bucketName, String keyName, long size,
+      ReplicationConfig replicationConf, boolean overWrite, boolean recursive,
+      StoragePolicy storagePolicy)
       throws IOException {
     return null;
   }

@@ -56,6 +56,7 @@ import org.apache.hadoop.hdds.client.ContainerBlockID;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.OzoneStoragePolicy;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.scm.container.common.helpers.AllocatedBlock;
 import org.apache.hadoop.hdds.scm.container.common.helpers.ExcludeList;
@@ -181,6 +182,17 @@ public abstract class OMKeyRequest extends OMClientRequest {
     return resolvedArgs;
   }
 
+  protected @Nonnull StoragePolicy getStoragePolicy(OmBucketInfo bucketInfo,
+      KeyArgs keyArgs) {
+    if (keyArgs.hasStoragePolicy()) {
+      return OzoneStoragePolicy.fromProto(keyArgs.getStoragePolicy());
+    }
+    if (bucketInfo != null && bucketInfo.getStoragePolicy() != null) {
+      return bucketInfo.getStoragePolicy();
+    }
+    return OzoneStoragePolicy.getDefaultPolicy();
+  }
+
   /**
    * This methods avoids multiple rpc calls to SCM by allocating multiple blocks
    * in one rpc call.
@@ -195,6 +207,27 @@ public abstract class OMKeyRequest extends OMClientRequest {
       boolean grpcBlockTokenEnabled, String serviceID, OMMetrics omMetrics,
       boolean shouldSortDatanodes, UserInfo userInfo)
       throws IOException {
+    return allocateBlock(scmClient, secretManager, replicationConfig,
+        excludeList, requestedSize, scmBlockSize, preallocateBlocksMax,
+        grpcBlockTokenEnabled, serviceID, omMetrics, shouldSortDatanodes,
+        userInfo,
+        OzoneStoragePolicy.fromName(
+            ozoneManager.getConfiguration().getTrimmed(
+                OzoneConfigKeys.OZONE_DEFAULT_STORAGE_POLICY_KEY,
+                OzoneConfigKeys.OZONE_DEFAULT_STORAGE_POLICY_DEFAULT)),
+        true);
+  }
+
+  @SuppressWarnings("parameternumber")
+  protected List< OmKeyLocationInfo > allocateBlock(ScmClient scmClient,
+      OzoneBlockTokenSecretManager secretManager,
+      ReplicationConfig replicationConfig, ExcludeList excludeList,
+      long requestedSize, long scmBlockSize, int preallocateBlocksMax,
+      boolean grpcBlockTokenEnabled, String serviceID, OMMetrics omMetrics,
+      boolean shouldSortDatanodes, UserInfo userInfo,
+      @Nonnull StoragePolicy storagePolicy,
+      boolean allowFallbackStoragePolicy)
+      throws IOException {
     int dataGroupSize = replicationConfig instanceof ECReplicationConfig
         ? ((ECReplicationConfig) replicationConfig).getData() : 1;
     int numBlocks = (int) Math.min(preallocateBlocksMax,
@@ -208,14 +241,11 @@ public abstract class OMKeyRequest extends OMClientRequest {
     List<OmKeyLocationInfo> locationInfos = new ArrayList<>(numBlocks);
     String remoteUser = getRemoteUser().getShortUserName();
     List<AllocatedBlock> allocatedBlocks;
-    OzoneStoragePolicy storagePolicy = OzoneStoragePolicy.fromName(
-        ozoneManager.getConfiguration().getTrimmed(
-            OzoneConfigKeys.OZONE_DEFAULT_STORAGE_POLICY_KEY,
-            OzoneConfigKeys.OZONE_DEFAULT_STORAGE_POLICY_DEFAULT));
     try {
       allocatedBlocks = scmClient.getBlockClient()
           .allocateBlock(scmBlockSize, numBlocks, replicationConfig, serviceID,
-              excludeList, clientMachine, storagePolicy, true);
+              excludeList, clientMachine, storagePolicy,
+              allowFallbackStoragePolicy);
     } catch (SCMException ex) {
       omMetrics.incNumBlockAllocateCallFails();
       if (ex.getResult()
@@ -994,6 +1024,7 @@ public abstract class OMKeyRequest extends OMClientRequest {
           .setDataSize(newSize)
           .setModificationTime(keyArgs.getModificationTime())
           .setReplicationConfig(replicationConfig)
+          .setStoragePolicy(getStoragePolicy(omBucketInfo, keyArgs))
           .setMetadata(KeyValueUtil.getFromProtobuf(keyArgs.getMetadataList()))
           .setUpdateID(transactionLogIndex)
           .setTags(KeyValueUtil.getFromProtobuf(keyArgs.getTagsList()))
@@ -1042,6 +1073,7 @@ public abstract class OMKeyRequest extends OMClientRequest {
             .setModificationTime(keyArgs.getModificationTime())
             .setDataSize(size)
             .setReplicationConfig(replicationConfig)
+            .setStoragePolicy(getStoragePolicy(omBucketInfo, keyArgs))
             .setFileEncryptionInfo(encInfo)
             .setAcls(getAclsForKey(
                 keyArgs, omBucketInfo, omPathInfo, prefixManager, config))

@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Objects;
 import org.apache.hadoop.crypto.key.KeyProviderCryptoExtension;
 import org.apache.hadoop.hdds.client.DefaultReplicationConfig;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.protocol.StorageType;
 import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
 import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
@@ -38,6 +39,7 @@ import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.execution.flowcontrol.ExecutionContext;
 import org.apache.hadoop.ozone.om.helpers.BucketEncryptionKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketStoragePolicyUtil;
 import org.apache.hadoop.ozone.om.helpers.KeyValueUtil;
 import org.apache.hadoop.ozone.om.helpers.OmBucketArgs;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
@@ -168,8 +170,28 @@ public class OMBucketSetPropertyRequest extends OMClientRequest {
       StorageType storageType = omBucketArgs.getStorageType();
       if (storageType != null) {
         bucketInfoBuilder.setStorageType(storageType);
+        bucketInfoBuilder.setStoragePolicy(
+            BucketStoragePolicyUtil.fromStorageType(storageType));
         LOG.debug("Updating bucket storage type for bucket: {} in volume: {}",
             bucketName, volumeName);
+      }
+
+      StoragePolicy storagePolicy = omBucketArgs.getStoragePolicy();
+      if (storagePolicy != null) {
+        bucketInfoBuilder.setStoragePolicy(storagePolicy);
+        bucketInfoBuilder.setStorageType(
+            BucketStoragePolicyUtil.toStorageType(storagePolicy));
+        LOG.debug("Updating bucket storage policy for bucket: {} in volume: {}",
+            bucketName, volumeName);
+      }
+
+      Boolean allowFallbackStoragePolicy =
+          omBucketArgs.getAllowFallbackStoragePolicy();
+      if (allowFallbackStoragePolicy != null) {
+        bucketInfoBuilder.setAllowFallbackStoragePolicy(
+            allowFallbackStoragePolicy);
+        LOG.debug("Updating allowFallbackStoragePolicy for bucket: {} in "
+                + "volume: {}", bucketName, volumeName);
       }
 
       //Check Versioning to update

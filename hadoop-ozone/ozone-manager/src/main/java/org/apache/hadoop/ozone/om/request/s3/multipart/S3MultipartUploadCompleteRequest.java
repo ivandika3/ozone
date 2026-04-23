@@ -489,6 +489,9 @@ public class S3MultipartUploadCompleteRequest extends OMKeyRequest {
           .addMetadata(OzoneConsts.ETAG,
               multipartUploadedKeyHash(partKeyInfoMap))
           .setOwnerName(keyArgs.getOwnerName());
+      if (dbOpenKeyInfo.getStoragePolicy() != null) {
+        builder.setStoragePolicy(dbOpenKeyInfo.getStoragePolicy());
+      }
     } else {
       OmKeyInfo dbOpenKeyInfo = getOmKeyInfoFromOpenKeyTable(multipartOpenKey,
           keyName, omMetadataManager);
@@ -518,6 +521,9 @@ public class S3MultipartUploadCompleteRequest extends OMKeyRequest {
       builder.addMetadata(OzoneConsts.ETAG, multipartHash);
       if (dbOpenKeyInfo.getTags() != null) {
         builder.setTags(dbOpenKeyInfo.getTags());
+      }
+      if (dbOpenKeyInfo.getStoragePolicy() != null) {
+        builder.setStoragePolicy(dbOpenKeyInfo.getStoragePolicy());
       }
     }
     return builder.setUpdateID(trxnLogIndex).build();

@@ -18,6 +18,8 @@
 package org.apache.hadoop.ozone.shell.bucket;
 
 import java.io.IOException;
+import org.apache.hadoop.hdds.client.OzoneStoragePolicy;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.ozone.client.OzoneBucket;
 import org.apache.hadoop.ozone.client.OzoneClient;
 import org.apache.hadoop.ozone.shell.OzoneAddress;
@@ -34,6 +36,14 @@ public class UpdateBucketHandler extends BucketHandler {
   @Option(names = {"--user", "-u"},
       description = "Owner of the bucket to set")
   private String ownerName;
+
+  @Option(names = {"--storagepolicy", "-sp"},
+      description = "Bucket storage policy (HOT, WARM, COLD)")
+  private String storagePolicyName;
+
+  @Option(names = {"--allowFallBackStoragePolicy", "-asp"},
+      description = "Allow writes to fall back to the policy's backing tier")
+  private Boolean allowFallbackStoragePolicy;
 
   @Override
   protected void execute(OzoneClient client, OzoneAddress address)
@@ -52,8 +62,25 @@ public class UpdateBucketHandler extends BucketHandler {
       }
     }
 
+    if (storagePolicyName != null && !storagePolicyName.isEmpty()) {
+      bucket.setStoragePolicy(parseStoragePolicy(storagePolicyName),
+          allowFallbackStoragePolicy);
+    } else if (allowFallbackStoragePolicy != null) {
+      bucket.setAllowFallbackStoragePolicy(allowFallbackStoragePolicy);
+    }
+
     OzoneBucket updatedBucket = client.getObjectStore().getVolume(volumeName)
         .getBucket(bucketName);
     printObjectAsJson(updatedBucket);
+  }
+
+  private static StoragePolicy parseStoragePolicy(String value) {
+    try {
+      return OzoneStoragePolicy.fromName(value);
+    } catch (IllegalArgumentException ex) {
+      throw new IllegalArgumentException(
+          "Unknown storage policy: " + value + ". Expected HOT, WARM, or COLD.",
+          ex);
+    }
   }
 }

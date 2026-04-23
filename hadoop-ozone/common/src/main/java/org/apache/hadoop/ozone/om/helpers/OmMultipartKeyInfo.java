@@ -27,7 +27,9 @@ import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
+import org.apache.hadoop.hdds.client.OzoneStoragePolicy;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.utils.db.Codec;
 import org.apache.hadoop.hdds.utils.db.CopyObject;
 import org.apache.hadoop.hdds.utils.db.DelegatedCodec;
@@ -58,6 +60,7 @@ public final class OmMultipartKeyInfo extends WithObjectID implements CopyObject
   private final ImmutableList<OzoneAcl> acls;
   private final long creationTime;
   private final ReplicationConfig replicationConfig;
+  private final StoragePolicy storagePolicy;
   private PartKeyInfoMap partKeyInfoMap;
 
   /**
@@ -188,6 +191,7 @@ public final class OmMultipartKeyInfo extends WithObjectID implements CopyObject
     this.acls = b.acls.build();
     this.creationTime = b.creationTime;
     this.replicationConfig = b.replicationConfig;
+    this.storagePolicy = b.storagePolicy;
     this.partKeyInfoMap = new PartKeyInfoMap(b.partKeyInfoList);
     this.parentID = b.parentID;
     this.schemaVersion = b.schemaVersion;
@@ -204,6 +208,7 @@ public final class OmMultipartKeyInfo extends WithObjectID implements CopyObject
     this.acls = b.acls;
     this.creationTime = b.creationTime;
     this.replicationConfig = b.replicationConfig;
+    this.storagePolicy = b.storagePolicy;
     // PartKeyInfoMap is an immutable data structure. Whenever a PartKeyInfo
     // is added, it returns a new shallow copy of the PartKeyInfoMap Object
     // so here we can directly pass in partKeyInfoMap
@@ -273,6 +278,10 @@ public final class OmMultipartKeyInfo extends WithObjectID implements CopyObject
     return replicationConfig;
   }
 
+  public StoragePolicy getStoragePolicy() {
+    return storagePolicy;
+  }
+
   public byte getSchemaVersion() {
     return schemaVersion;
   }
@@ -292,6 +301,7 @@ public final class OmMultipartKeyInfo extends WithObjectID implements CopyObject
     private String ownerName;
     private long creationTime;
     private ReplicationConfig replicationConfig;
+    private StoragePolicy storagePolicy;
     private final AclListBuilder acls;
     private final TreeMap<Integer, PartKeyInfo> partKeyInfoList;
     private long parentID;
@@ -311,6 +321,7 @@ public final class OmMultipartKeyInfo extends WithObjectID implements CopyObject
       this.ownerName = multipartKeyInfo.ownerName;
       this.creationTime = multipartKeyInfo.creationTime;
       this.replicationConfig = multipartKeyInfo.replicationConfig;
+      this.storagePolicy = multipartKeyInfo.storagePolicy;
       this.acls = AclListBuilder.of(multipartKeyInfo.acls);
       this.partKeyInfoList = new TreeMap<>();
 
@@ -356,6 +367,11 @@ public final class OmMultipartKeyInfo extends WithObjectID implements CopyObject
 
     public Builder setReplicationConfig(ReplicationConfig replConfig) {
       this.replicationConfig = replConfig;
+      return this;
+    }
+
+    public Builder setStoragePolicy(StoragePolicy policy) {
+      this.storagePolicy = policy;
       return this;
     }
 
@@ -450,6 +466,9 @@ public final class OmMultipartKeyInfo extends WithObjectID implements CopyObject
             multipartKeyInfo.getOwnerName() : null)
         .setCreationTime(multipartKeyInfo.getCreationTime())
         .setReplicationConfig(replicationConfig)
+        .setStoragePolicy(multipartKeyInfo.hasStoragePolicy()
+            ? OzoneStoragePolicy.fromProto(multipartKeyInfo.getStoragePolicy())
+            : null)
         .setAcls(OzoneAclUtil.fromProtobuf(multipartKeyInfo.getAclsList()))
         .setPartKeyInfoList(list)
         .setObjectID(multipartKeyInfo.getObjectID())
@@ -504,6 +523,9 @@ public final class OmMultipartKeyInfo extends WithObjectID implements CopyObject
       builder.setEcReplicationConfig(ecConf.toProto());
     } else {
       builder.setFactor(ReplicationConfig.getLegacyFactor(replicationConfig));
+    }
+    if (storagePolicy != null) {
+      builder.setStoragePolicy(OzoneStoragePolicy.toProto(storagePolicy));
     }
 
     builder.addAllAcls(OzoneAclUtil.toProtobuf(acls));

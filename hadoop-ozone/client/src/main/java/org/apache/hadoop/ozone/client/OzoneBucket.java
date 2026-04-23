@@ -42,6 +42,7 @@ import org.apache.hadoop.hdds.client.OzoneQuota;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationFactor;
 import org.apache.hadoop.hdds.client.ReplicationType;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.protocol.StorageType;
 import org.apache.hadoop.hdds.scm.client.HddsClientUtils;
@@ -93,6 +94,8 @@ public class OzoneBucket extends WithMetadata {
    * [RAM_DISK, SSD, DISK, ARCHIVE]
    */
   private StorageType storageType;
+  private StoragePolicy storagePolicy;
+  private Boolean allowFallbackStoragePolicy;
 
   /**
    * Bucket Version flag.
@@ -169,6 +172,8 @@ public class OzoneBucket extends WithMetadata {
     this.defaultReplication = builder.defaultReplicationConfig != null ?
         builder.defaultReplicationConfig.getReplicationConfig() : null;
     this.storageType = builder.storageType;
+    this.storagePolicy = builder.storagePolicy;
+    this.allowFallbackStoragePolicy = builder.allowFallbackStoragePolicy;
     this.versioning = builder.versioning;
     if (builder.conf != null) {
       this.listCacheSize = HddsClientUtils.getListCacheSize(builder.conf);
@@ -238,6 +243,14 @@ public class OzoneBucket extends WithMetadata {
    */
   public StorageType getStorageType() {
     return storageType;
+  }
+
+  public StoragePolicy getStoragePolicy() {
+    return storagePolicy;
+  }
+
+  public Boolean getAllowFallbackStoragePolicy() {
+    return allowFallbackStoragePolicy;
   }
 
   /**
@@ -356,6 +369,28 @@ public class OzoneBucket extends WithMetadata {
   public void setStorageType(StorageType newStorageType) throws IOException {
     proxy.setBucketStorageType(volumeName, name, newStorageType);
     storageType = newStorageType;
+  }
+
+  public void setStoragePolicy(StoragePolicy newStoragePolicy)
+      throws IOException {
+    setStoragePolicy(newStoragePolicy, null);
+  }
+
+  public void setStoragePolicy(StoragePolicy newStoragePolicy,
+      Boolean newAllowFallbackStoragePolicy) throws IOException {
+    proxy.setBucketStoragePolicy(volumeName, name, newStoragePolicy,
+        newAllowFallbackStoragePolicy);
+    storagePolicy = newStoragePolicy;
+    if (newAllowFallbackStoragePolicy != null) {
+      allowFallbackStoragePolicy = newAllowFallbackStoragePolicy;
+    }
+  }
+
+  public void setAllowFallbackStoragePolicy(
+      Boolean newAllowFallbackStoragePolicy) throws IOException {
+    proxy.setBucketStoragePolicy(volumeName, name, null,
+        newAllowFallbackStoragePolicy);
+    allowFallbackStoragePolicy = newAllowFallbackStoragePolicy;
   }
 
   /**
@@ -494,8 +529,19 @@ public class OzoneBucket extends WithMetadata {
       Map<String, String> keyMetadata,
       Map<String, String> tags)
       throws IOException {
+    return createKey(key, size, replicationConfig, keyMetadata, tags,
+        storagePolicy);
+  }
+
+  public OzoneOutputStream createKey(String key, long size,
+      ReplicationConfig replicationConfig,
+      Map<String, String> keyMetadata,
+      Map<String, String> tags,
+      StoragePolicy keyStoragePolicy)
+      throws IOException {
     return proxy
-        .createKey(volumeName, name, key, size, replicationConfig, keyMetadata, tags);
+        .createKey(volumeName, name, key, size, replicationConfig, keyMetadata,
+            tags, keyStoragePolicy);
   }
 
   /**
@@ -609,8 +655,19 @@ public class OzoneBucket extends WithMetadata {
     if (replicationConfig == null) {
       replicationConfig = defaultReplication;
     }
+    return createStreamKey(key, size, replicationConfig, keyMetadata, tags,
+        storagePolicy);
+  }
+
+  public OzoneDataStreamOutput createStreamKey(String key, long size,
+      ReplicationConfig replicationConfig, Map<String, String> keyMetadata,
+      Map<String, String> tags, StoragePolicy keyStoragePolicy)
+      throws IOException {
+    if (replicationConfig == null) {
+      replicationConfig = defaultReplication;
+    }
     return proxy.createStreamKey(volumeName, name, key, size,
-        replicationConfig, keyMetadata, tags);
+        replicationConfig, keyMetadata, tags, keyStoragePolicy);
   }
 
   /**
@@ -888,7 +945,15 @@ public class OzoneBucket extends WithMetadata {
       ReplicationConfig config, Map<String, String> metadata,
       Map<String, String> tags)
       throws IOException {
-    return proxy.initiateMultipartUpload(volumeName, name, keyName, config, metadata, tags);
+    return initiateMultipartUpload(keyName, config, metadata, tags, null);
+  }
+
+  public OmMultipartInfo initiateMultipartUpload(String keyName,
+      ReplicationConfig config, Map<String, String> metadata,
+      Map<String, String> tags, StoragePolicy keyStoragePolicy)
+      throws IOException {
+    return proxy.initiateMultipartUpload(volumeName, name, keyName, config,
+        metadata, tags, keyStoragePolicy);
   }
 
   /**
@@ -1060,16 +1125,29 @@ public class OzoneBucket extends WithMetadata {
   public OzoneOutputStream createFile(String keyName, long size,
       ReplicationConfig replicationConfig, boolean overWrite,
       boolean recursive) throws IOException {
-    return proxy
-        .createFile(volumeName, name, keyName, size, replicationConfig,
-            overWrite, recursive);
+    return createFile(keyName, size, replicationConfig, overWrite, recursive,
+        storagePolicy);
+  }
+
+  public OzoneOutputStream createFile(String keyName, long size,
+      ReplicationConfig replicationConfig, boolean overWrite,
+      boolean recursive, StoragePolicy keyStoragePolicy) throws IOException {
+    return proxy.createFile(volumeName, name, keyName, size, replicationConfig,
+        overWrite, recursive, keyStoragePolicy);
   }
 
   public OzoneDataStreamOutput createStreamFile(String keyName, long size,
       ReplicationConfig replicationConfig, boolean overWrite,
       boolean recursive) throws IOException {
+    return createStreamFile(keyName, size, replicationConfig, overWrite,
+        recursive, storagePolicy);
+  }
+
+  public OzoneDataStreamOutput createStreamFile(String keyName, long size,
+      ReplicationConfig replicationConfig, boolean overWrite,
+      boolean recursive, StoragePolicy keyStoragePolicy) throws IOException {
     return proxy.createStreamFile(volumeName, name, keyName, size,
-        replicationConfig, overWrite, recursive);
+        replicationConfig, overWrite, recursive, keyStoragePolicy);
   }
 
   /**
@@ -1217,6 +1295,8 @@ public class OzoneBucket extends WithMetadata {
     private String name;
     private DefaultReplicationConfig defaultReplicationConfig;
     private StorageType storageType;
+    private StoragePolicy storagePolicy;
+    private Boolean allowFallbackStoragePolicy;
     private Boolean versioning;
     private long usedBytes;
     private long usedNamespace;
@@ -1264,6 +1344,17 @@ public class OzoneBucket extends WithMetadata {
 
     public Builder setStorageType(StorageType storageType) {
       this.storageType = storageType;
+      return this;
+    }
+
+    public Builder setStoragePolicy(StoragePolicy storagePolicy) {
+      this.storagePolicy = storagePolicy;
+      return this;
+    }
+
+    public Builder setAllowFallbackStoragePolicy(
+        Boolean allowFallbackStoragePolicy) {
+      this.allowFallbackStoragePolicy = allowFallbackStoragePolicy;
       return this;
     }
 
