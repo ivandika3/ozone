@@ -254,15 +254,18 @@ public class ECReconstructionCoordinator implements Closeable {
     List<StorageType> toReconstructStorageType = new ArrayList<>();
     List<Integer> notReconstructIndexes = new ArrayList<>();
     List<StorageType> notReconstructStorageType = new ArrayList<>();
-    for (Integer index : targetMap.keySet()) {
+    for (Map.Entry<Integer, ECReconstructionTarget> entry :
+        targetMap.entrySet()) {
+      Integer index = entry.getKey();
+      ECReconstructionTarget target = entry.getValue();
       if (index <= dataLocs || index > repConfig.getData()) {
         toReconstructIndexes.add(index);
-        toReconstructStorageType.add(targetMap.get(index).getStorageType());
+        toReconstructStorageType.add(target.getStorageType());
       } else {
         // Don't need to be reconstructed, but we do need a stream to write
         // the block data to.
         notReconstructIndexes.add(index);
-        notReconstructStorageType.add(targetMap.get(index).getStorageType());
+        notReconstructStorageType.add(target.getStorageType());
       }
     }
 

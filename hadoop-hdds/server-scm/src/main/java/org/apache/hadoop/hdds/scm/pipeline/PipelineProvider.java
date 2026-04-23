@@ -98,7 +98,6 @@ public abstract class PipelineProvider<REPLICATION_CONFIG
                                          ConfigurationSource conf, StorageTier storageTier)
       throws IOException {
     StorageTierUtil.validateNotEmpty(storageTier);
-    StorageType storageType = StorageTierUtil.getStorageTypeForUniformStorageTier(storageTier);
     int nodesRequired = replicationConfig.getRequiredNodes();
     List<DatanodeDetails> healthyDNs = pickAllNodesNotUsed(replicationConfig);
     List<DatanodeDetails> healthyDNsWithSpace = healthyDNs.stream()
