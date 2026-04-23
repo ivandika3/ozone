@@ -26,7 +26,8 @@ import org.apache.hadoop.hdds.client.StoragePolicy;
 public enum S3StorageClass {
   STANDARD(OzoneStoragePolicy.HOT),
   STANDARD_IA(OzoneStoragePolicy.WARM),
-  GLACIER(OzoneStoragePolicy.COLD);
+  GLACIER(OzoneStoragePolicy.COLD),
+  DEEP_ARCHIVE(OzoneStoragePolicy.COLD);
 
   private final StoragePolicy storagePolicy;
 

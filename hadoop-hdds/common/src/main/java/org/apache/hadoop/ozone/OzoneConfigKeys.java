@@ -185,6 +185,12 @@ public final class OzoneConfigKeys {
       "ozone.s3.default.storagepolicy";
   public static final String OZONE_S3_DEFAULT_STORAGE_POLICY_DEFAULT =
       "STANDARD_IA";
+  public static final String OZONE_S3_DEEP_ARCHIVE_EC_REPLICATION_CONFIG_KEY =
+      "ozone.s3.deep.archive.ec.replication.config";
+  public static final String
+      OZONE_S3_DEEP_ARCHIVE_EC_REPLICATION_CONFIG_DEFAULT = "rs-6-3-1024k";
+  public static final String OZONE_S3_DEEP_ARCHIVE_EC_SIZE_THRESHOLD_KEY =
+      "ozone.s3.deep.archive.ec.size.threshold";
 
   public static final String OZONE_CLIENT_MAX_EC_STRIPE_WRITE_RETRIES =
       "ozone.client.max.ec.stripe.write.retries";

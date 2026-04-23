@@ -108,7 +108,6 @@ import org.apache.hadoop.ozone.s3.util.RangeHeaderParserUtil;
 import org.apache.hadoop.ozone.s3.util.S3Consts;
 import org.apache.hadoop.ozone.s3.util.S3Consts.QueryParams;
 import org.apache.hadoop.ozone.s3.util.S3StorageClass;
-import org.apache.hadoop.ozone.s3.util.S3StorageType;
 import org.apache.hadoop.ozone.s3.util.S3Utils;
 import org.apache.hadoop.util.Time;
 import org.apache.http.HttpStatus;
@@ -127,6 +126,7 @@ public class ObjectEndpoint extends ObjectOperationHandler {
 
   private static final Logger LOG =
       LoggerFactory.getLogger(ObjectEndpoint.class);
+  private static final long UNKNOWN_KEY_LENGTH = -1L;
 
   private ObjectOperationHandler handler;
 
@@ -244,8 +244,12 @@ public class ObjectEndpoint extends ObjectOperationHandler {
 
       copyHeader = getHeaders().getHeaderString(COPY_SOURCE_HEADER);
       String storageClass = getHeaders().getHeaderString(STORAGE_CLASS_HEADER);
-
-      ReplicationConfig replicationConfig = getReplicationConfig(bucket);
+      String amzDecodedLength =
+          getHeaders().getHeaderString(DECODED_CONTENT_LENGTH_HEADER);
+      long keyLengthForReplication =
+          getKeyLengthForReplication(length, amzDecodedLength);
+      ReplicationConfig replicationConfig =
+          getReplicationConfig(bucket, keyLengthForReplication);
       StoragePolicy storagePolicy = S3Utils.getS3StoragePolicy(storageClass,
           getOzoneConfiguration(), bucket);
 
@@ -270,8 +274,6 @@ public class ObjectEndpoint extends ObjectOperationHandler {
               OZONE_S3G_FSO_DIRECTORY_CREATION_ENABLED_DEFAULT) &&
           bucket.getBucketLayout() == BucketLayout.FILE_SYSTEM_OPTIMIZED;
 
-      String amzDecodedLength =
-          getHeaders().getHeaderString(S3Consts.DECODED_CONTENT_LENGTH_HEADER);
       boolean hasAmzDecodedLengthZero = amzDecodedLength != null &&
           Long.parseLong(amzDecodedLength) == 0;
       if (canCreateDirectory &&
@@ -735,7 +737,8 @@ public class ObjectEndpoint extends ObjectOperationHandler {
 
       Map<String, String> tags = getTaggingFromHeaders(getHeaders());
 
-      ReplicationConfig replicationConfig = getReplicationConfig(ozoneBucket);
+      ReplicationConfig replicationConfig =
+          getReplicationConfig(ozoneBucket, UNKNOWN_KEY_LENGTH);
       StoragePolicy storagePolicy = S3Utils.getS3StoragePolicy(
           getHeaders().getHeaderString(STORAGE_CLASS_HEADER),
           getOzoneConfiguration(), ozoneBucket);
@@ -861,13 +864,16 @@ public class ObjectEndpoint extends ObjectOperationHandler {
     final String bucketName = ozoneBucket.getName();
     try {
       String amzDecodedLength = getHeaders().getHeaderString(DECODED_CONTENT_LENGTH_HEADER);
+      long keyLengthForReplication =
+          getKeyLengthForReplication(length, amzDecodedLength);
       S3ChunkInputStreamInfo chunkInputStreamInfo = getS3ChunkInputStreamInfo(
           body, length, amzDecodedLength, key);
       multiDigestInputStream = chunkInputStreamInfo.getMultiDigestInputStream();
       length = chunkInputStreamInfo.getEffectiveLength();
 
       copyHeader = getHeaders().getHeaderString(COPY_SOURCE_HEADER);
-      ReplicationConfig replicationConfig = getReplicationConfig(ozoneBucket);
+      ReplicationConfig replicationConfig =
+          getReplicationConfig(ozoneBucket, keyLengthForReplication);
 
       boolean enableEC = false;
       if ((replicationConfig != null &&
@@ -1199,6 +1205,18 @@ public class ObjectEndpoint extends ObjectOperationHandler {
           volumeName, bucketName, keyPath, length, replicationConfig,
           customMetadata, tags, storagePolicy);
     }
+  }
+
+  private long getKeyLengthForReplication(long contentLength,
+      String amzDecodedLength) {
+    if (amzDecodedLength != null) {
+      try {
+        return Long.parseLong(amzDecodedLength);
+      } catch (NumberFormatException ex) {
+        return contentLength;
+      }
+    }
+    return contentLength;
   }
 
   /** Request context shared among {@code ObjectOperationHandler}s. */

@@ -32,7 +32,8 @@ public enum S3StorageType {
   STANDARD(
       RatisReplicationConfig.getInstance(HddsProtos.ReplicationFactor.THREE)),
   STANDARD_IA(new ECReplicationConfig(3, 2)),
-  GLACIER(RatisReplicationConfig.getInstance(HddsProtos.ReplicationFactor.THREE));
+  GLACIER(RatisReplicationConfig.getInstance(HddsProtos.ReplicationFactor.THREE)),
+  DEEP_ARCHIVE(null);
 
   private final ReplicationConfig replicationConfig;
 
@@ -42,6 +43,11 @@ public enum S3StorageType {
 
   public ReplicationConfig getReplicationConfig() {
     return replicationConfig;
+  }
+
+  public boolean isEC() {
+    return replicationConfig != null &&
+        replicationConfig.getReplicationType() == HddsProtos.ReplicationType.EC;
   }
 
   public static S3StorageType fromReplicationConfig(ReplicationConfig config) {

@@ -34,7 +34,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.conf.OzoneConfiguration;
+import org.apache.hadoop.hdds.conf.StorageUnit;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
+import org.apache.hadoop.ozone.OzoneConfigKeys;
 import org.apache.hadoop.ozone.s3.endpoint.S3Owner;
 import org.apache.hadoop.ozone.s3.exception.OS3Exception;
 import org.apache.hadoop.ozone.s3.exception.S3ErrorTable;
@@ -47,6 +50,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * Tests the S3Utils APIs.
  */
 public class TestS3Utils {
+  private static final OzoneConfiguration CONFIGURATION =
+      new OzoneConfiguration();
   private static final ReplicationConfig EC32REPLICATIONCONFIG =
       new ECReplicationConfig(3, 2);
   private static final ReplicationConfig RATIS3REPLICATIONCONFIG =
@@ -147,6 +152,39 @@ public class TestS3Utils {
         resolveS3ClientSideReplicationConfig(
             s3StorageType, s3StorageConfig, clientConfiguredReplConfig, bucketReplConfig));
     assertEquals(S3ErrorTable.INVALID_STORAGE_CLASS.getCode(), exception.getCode());
+  }
+
+  @Test
+  public void testResolveDeepArchiveDefaultEC() throws OS3Exception {
+    ReplicationConfig replicationConfig = S3Utils
+        .resolveS3ClientSideReplicationConfig(
+            S3StorageType.DEEP_ARCHIVE.name(), null, null, null,
+            CONFIGURATION, 1L);
+    assertEquals(new ECReplicationConfig(
+        OzoneConfigKeys.OZONE_S3_DEEP_ARCHIVE_EC_REPLICATION_CONFIG_DEFAULT),
+        replicationConfig);
+  }
+
+  @Test
+  public void testResolveDeepArchiveWithSizeThreshold() throws OS3Exception {
+    OzoneConfiguration conf = new OzoneConfiguration();
+    conf.setStorageSize(
+        OzoneConfigKeys.OZONE_S3_DEEP_ARCHIVE_EC_SIZE_THRESHOLD_KEY,
+        1, StorageUnit.KB);
+
+    ReplicationConfig smallKeyConfig = S3Utils
+        .resolveS3ClientSideReplicationConfig(
+            S3StorageType.DEEP_ARCHIVE.name(), null,
+            RATIS3REPLICATIONCONFIG, null, conf, 100);
+    assertEquals(RATIS3REPLICATIONCONFIG, smallKeyConfig);
+
+    ReplicationConfig largeKeyConfig = S3Utils
+        .resolveS3ClientSideReplicationConfig(
+            S3StorageType.DEEP_ARCHIVE.name(), null,
+            RATIS3REPLICATIONCONFIG, null, conf, 2048);
+    assertEquals(new ECReplicationConfig(
+        OzoneConfigKeys.OZONE_S3_DEEP_ARCHIVE_EC_REPLICATION_CONFIG_DEFAULT),
+        largeKeyConfig);
   }
 
   @Test

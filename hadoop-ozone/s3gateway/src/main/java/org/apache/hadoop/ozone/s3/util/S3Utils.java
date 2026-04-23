@@ -18,6 +18,9 @@
 package org.apache.hadoop.ozone.s3.util;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_S3_DEEP_ARCHIVE_EC_REPLICATION_CONFIG_DEFAULT;
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_S3_DEEP_ARCHIVE_EC_REPLICATION_CONFIG_KEY;
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_S3_DEEP_ARCHIVE_EC_SIZE_THRESHOLD_KEY;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_S3_DEFAULT_STORAGE_POLICY_DEFAULT;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_S3_DEFAULT_STORAGE_POLICY_KEY;
 import static org.apache.hadoop.ozone.s3.exception.S3ErrorTable.BAD_DIGEST;
@@ -49,6 +52,7 @@ import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
+import org.apache.hadoop.hdds.conf.StorageUnit;
 import org.apache.hadoop.ozone.client.OzoneBucket;
 import org.apache.hadoop.ozone.s3.exception.OS3Exception;
 import org.apache.hadoop.ozone.s3.exception.S3ErrorTable;
@@ -89,10 +93,29 @@ public final class S3Utils {
       ReplicationConfig clientConfiguredReplConfig,
       ReplicationConfig bucketReplConfig)
       throws OS3Exception {
+    return resolveS3ClientSideReplicationConfig(s3StorageTypeHeader,
+        s3StorageConfigHeader, clientConfiguredReplConfig, bucketReplConfig,
+        null, -1L);
+  }
+
+  /**
+   * Resolve S3-requested replication, optionally considering the object size
+   * for storage classes whose replication depends on it.
+   */
+  public static ReplicationConfig resolveS3ClientSideReplicationConfig(
+      String s3StorageTypeHeader, String s3StorageConfigHeader,
+      ReplicationConfig clientConfiguredReplConfig,
+      ReplicationConfig bucketReplConfig,
+      OzoneConfiguration configuration, long keySize)
+      throws OS3Exception {
 
     // If user provided s3 storage type header is not null then map it
     // to ozone replication config
     if (!StringUtils.isEmpty(s3StorageTypeHeader)) {
+      if (S3StorageType.DEEP_ARCHIVE.name().equals(s3StorageTypeHeader)) {
+        return resolveDeepArchiveReplication(clientConfiguredReplConfig,
+            configuration, keySize);
+      }
       return toReplicationConfig(s3StorageTypeHeader, s3StorageConfigHeader);
     }
 
@@ -100,6 +123,39 @@ public final class S3Utils {
     // otherwise default to server side default replication config.
     return (clientConfiguredReplConfig != null) ?
         clientConfiguredReplConfig : bucketReplConfig;
+  }
+
+  private static ReplicationConfig resolveDeepArchiveReplication(
+      ReplicationConfig clientConfiguredReplConfig,
+      OzoneConfiguration configuration, long keySize) {
+    if (shouldUseDeepArchiveECReplication(configuration, keySize)) {
+      return getDeepArchiveECReplicationConfig(configuration);
+    }
+    return clientConfiguredReplConfig;
+  }
+
+  private static boolean shouldUseDeepArchiveECReplication(
+      OzoneConfiguration configuration, long keySize) {
+    if (configuration == null || keySize < 0) {
+      // For MPU initialization and other callers without length context,
+      // prefer the configured EC archive replication.
+      return true;
+    }
+    long threshold = (long) configuration.getStorageSize(
+        OZONE_S3_DEEP_ARCHIVE_EC_SIZE_THRESHOLD_KEY, "0B", StorageUnit.BYTES);
+    if (threshold <= 0) {
+      return true;
+    }
+    return keySize > threshold;
+  }
+
+  private static ReplicationConfig getDeepArchiveECReplicationConfig(
+      OzoneConfiguration configuration) {
+    OzoneConfiguration conf =
+        configuration != null ? configuration : new OzoneConfiguration();
+    String ecConfig = conf.get(OZONE_S3_DEEP_ARCHIVE_EC_REPLICATION_CONFIG_KEY,
+        OZONE_S3_DEEP_ARCHIVE_EC_REPLICATION_CONFIG_DEFAULT);
+    return new ECReplicationConfig(ecConfig);
   }
 
   public static ReplicationConfig toReplicationConfig(String s3StorageType, String s3StorageConfig)

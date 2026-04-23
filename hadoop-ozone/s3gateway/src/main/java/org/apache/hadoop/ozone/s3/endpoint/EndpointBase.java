@@ -600,6 +600,11 @@ public abstract class EndpointBase {
   }
 
   protected ReplicationConfig getReplicationConfig(OzoneBucket ozoneBucket) throws OS3Exception {
+    return getReplicationConfig(ozoneBucket, -1L);
+  }
+
+  protected ReplicationConfig getReplicationConfig(OzoneBucket ozoneBucket,
+      long keySize) throws OS3Exception {
     String storageType = getHeaders().getHeaderString(STORAGE_CLASS_HEADER);
     String storageConfig = getHeaders().getHeaderString(CUSTOM_METADATA_HEADER_PREFIX + STORAGE_CONFIG_HEADER);
 
@@ -607,7 +612,8 @@ public abstract class EndpointBase {
         OzoneClientUtils.getClientConfiguredReplicationConfig(getOzoneConfiguration());
 
     return S3Utils.resolveS3ClientSideReplicationConfig(storageType, storageConfig,
-        clientConfiguredReplicationConfig, ozoneBucket.getReplicationConfig());
+        clientConfiguredReplicationConfig, ozoneBucket.getReplicationConfig(),
+        getOzoneConfiguration(), keySize);
   }
 
   /**
