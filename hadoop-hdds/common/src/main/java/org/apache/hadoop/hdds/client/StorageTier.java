@@ -172,8 +172,7 @@ public enum StorageTier {
       }
     }
 
-    throw new IllegalArgumentException("Unsupported ReplicationConfig: " +
-        replicationConfig + " for StorageTier: " + getTierName());
+    return computeStorageTypes(replicationConfig);
   }
 
 }

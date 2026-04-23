@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Arrays;
 import java.util.List;
 import org.apache.hadoop.fs.StorageType;
+import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.StandaloneReplicationConfig;
@@ -48,6 +49,7 @@ class StorageTierTest {
         StandaloneReplicationConfig.getInstance(ONE);
     ReplicationConfig standaloneThree =
         StandaloneReplicationConfig.getInstance(THREE);
+    ReplicationConfig ec = new ECReplicationConfig("RS-3-2-1024k");
 
     // Assert uniform storage types
     Arrays.asList(StorageTier.SSD, StorageTier.DISK, StorageTier.ARCHIVE, StorageTier.EMPTY)
@@ -57,8 +59,8 @@ class StorageTierTest {
       if (!tier.isUniformStorageType()) {
         return;
       }
-      for (ReplicationConfig replicationConfig : Arrays.asList(ratisOne, ratisThree,
-          standaloneOne, standaloneThree)) {
+      for (ReplicationConfig replicationConfig : Arrays.asList(ratisOne,
+          ratisThree, standaloneOne, standaloneThree, ec)) {
         List<StorageType> storageTypes = tier.getStorageTypes(replicationConfig);
         if (tier.equals(StorageTier.EMPTY)) {
           assertEquals(0, storageTypes.size());
