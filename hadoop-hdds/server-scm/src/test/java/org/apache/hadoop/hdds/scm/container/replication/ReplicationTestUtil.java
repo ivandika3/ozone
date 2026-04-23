@@ -28,13 +28,16 @@ import static org.mockito.Mockito.anyList;
 import static org.mockito.Mockito.doAnswer;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.conf.StorageUnit;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
@@ -42,7 +45,9 @@ import org.apache.hadoop.hdds.protocol.DatanodeID;
 import org.apache.hadoop.hdds.protocol.MockDatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.ContainerReplicaProto;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.StorageReportProto;
 import org.apache.hadoop.hdds.scm.ContainerPlacementStatus;
+import org.apache.hadoop.hdds.scm.HddsTestUtils;
 import org.apache.hadoop.hdds.scm.PlacementPolicy;
 import org.apache.hadoop.hdds.scm.SCMCommonPlacementPolicy;
 import org.apache.hadoop.hdds.scm.ScmConfigKeys;
@@ -53,7 +58,9 @@ import org.apache.hadoop.hdds.scm.container.TestContainerInfo;
 import org.apache.hadoop.hdds.scm.container.placement.algorithms.ContainerPlacementStatusDefault;
 import org.apache.hadoop.hdds.scm.exceptions.SCMException;
 import org.apache.hadoop.hdds.scm.net.Node;
+import org.apache.hadoop.hdds.scm.node.DatanodeInfo;
 import org.apache.hadoop.hdds.scm.node.NodeManager;
+import org.apache.hadoop.hdds.scm.node.NodeStatus;
 import org.apache.hadoop.hdds.utils.HddsServerUtil;
 import org.apache.hadoop.ozone.protocol.commands.DeleteContainerCommand;
 import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand;
@@ -222,6 +229,7 @@ public final class ReplicationTestUtil {
     builder.setSequenceId(0);
     builder.setOriginNodeId(originNodeId);
     builder.setEmpty(keyCount == 0);
+    builder.setStorageType(StorageType.DISK);
     return builder.build();
   }
 
@@ -260,6 +268,17 @@ public final class ReplicationTestUtil {
 
   public static ContainerInfo createContainerInfo(
       ReplicationConfig replicationConfig, long containerID,
+      HddsProtos.LifeCycleState containerState, StorageTier storageTier) {
+    return TestContainerInfo.newBuilderForTest()
+        .setContainerID(containerID)
+        .setReplicationConfig(replicationConfig)
+        .setState(containerState)
+        .setStorageTier(storageTier)
+        .build();
+  }
+
+  public static ContainerInfo createContainerInfo(
+      ReplicationConfig replicationConfig, long containerID,
       HddsProtos.LifeCycleState containerState, long sequenceID) {
     return TestContainerInfo.newBuilderForTest()
         .setContainerID(containerID)
@@ -286,6 +305,15 @@ public final class ReplicationTestUtil {
     return TestContainerInfo.newBuilderForTest()
         .setState(state)
         .setReplicationConfig(replicationConfig)
+        .build();
+  }
+
+  public static ContainerInfo createContainer(HddsProtos.LifeCycleState state,
+      ReplicationConfig replicationConfig, StorageTier storageTier) {
+    return TestContainerInfo.newBuilderForTest()
+        .setState(state)
+        .setReplicationConfig(replicationConfig)
+        .setStorageTier(storageTier)
         .build();
   }
 
@@ -322,7 +350,8 @@ public final class ReplicationTestUtil {
               long metadataSizeRequired, long dataSizeRequired) {
         List<DatanodeDetails> dns = new ArrayList<>();
         for (int i = 0; i < nodesRequiredToChoose; i++) {
-          dns.add(MockDatanodeDetails.randomDatanodeDetails());
+          dns.add(randomDatanodeWithStorageTypes(
+              StorageType.SSD, StorageType.DISK, StorageType.ARCHIVE));
         }
         return dns;
       }
@@ -344,6 +373,82 @@ public final class ReplicationTestUtil {
         return new ContainerPlacementStatusDefault(2, 2, 3);
       }
     };
+  }
+
+  public static PlacementPolicy getSimpleTestPlacementPolicyWithFailedStorageType(
+      final NodeManager nodeManager, final OzoneConfiguration conf,
+      StorageType... failedStorageTypes) {
+
+    final Node rackNode = MockDatanodeDetails.randomDatanodeDetails();
+
+    return new SCMCommonPlacementPolicy(nodeManager, conf) {
+      @Override
+      protected List<DatanodeDetails> chooseDatanodesInternal(
+              List<DatanodeDetails> usedNodes,
+              List<DatanodeDetails> excludedNodes,
+              List<DatanodeDetails> favoredNodes, int nodesRequiredToChoose,
+              long metadataSizeRequired, long dataSizeRequired) {
+        List<StorageType> failedTypes = Arrays.asList(failedStorageTypes);
+        List<DatanodeDetails> dns = new ArrayList<>();
+        for (int i = 0; i < nodesRequiredToChoose; i++) {
+          dns.add(randomDatanodeWithStorageTypes(
+              StorageType.getMovableTypes().stream()
+                  .filter(type -> !failedTypes.contains(type))
+                  .toArray(StorageType[]::new)));
+        }
+        return dns;
+      }
+
+      @Override
+      public DatanodeDetails chooseNode(List<DatanodeDetails> healthyNodes) {
+        return null;
+      }
+
+      @Override
+      protected Node getPlacementGroup(DatanodeDetails dn) {
+        // Make it look like a single rack cluster
+        return rackNode;
+      }
+    };
+  }
+
+  static DatanodeInfo randomDatanodeWithStorageTypes(
+      StorageType... storageTypes) {
+    return datanodeWithStorageTypes(MockDatanodeDetails.randomDatanodeDetails(),
+        storageTypes);
+  }
+
+  static DatanodeInfo datanodeWithStorageTypes(DatanodeDetails datanode,
+      StorageType... storageTypes) {
+    final long capacity = 10L * 1024 * 1024 * 1024 * 1024;
+    DatanodeInfo datanodeInfo = new DatanodeInfo(datanode,
+        NodeStatus.inServiceHealthy(), null);
+    List<StorageReportProto> reports = new ArrayList<>();
+    for (StorageType storageType : storageTypes) {
+      reports.add(HddsTestUtils.createStorageReport(datanodeInfo.getID(),
+          "/data-" + storageType + "-" + datanodeInfo.getID(),
+          capacity, 0, capacity, toStorageTypeProto(storageType)));
+    }
+    datanodeInfo.updateStorageReports(reports);
+    return datanodeInfo;
+  }
+
+  private static HddsProtos.StorageTypeProto toStorageTypeProto(
+      StorageType storageType) {
+    switch (storageType) {
+    case SSD:
+      return HddsProtos.StorageTypeProto.SSD;
+    case DISK:
+      return HddsProtos.StorageTypeProto.DISK;
+    case ARCHIVE:
+      return HddsProtos.StorageTypeProto.ARCHIVE;
+    case RAM_DISK:
+      return HddsProtos.StorageTypeProto.RAM_DISK;
+    case PROVIDED:
+      return HddsProtos.StorageTypeProto.PROVIDED;
+    default:
+      return HddsProtos.StorageTypeProto.DISK;
+    }
   }
 
   public static PlacementPolicy getSameNodeTestPlacementPolicy(
@@ -368,7 +473,8 @@ public final class ReplicationTestUtil {
           throw new SCMException("Insufficient Nodes available to choose",
               SCMException.ResultCodes.FAILED_TO_FIND_HEALTHY_NODES);
         }
-        return Collections.singletonList(nodeToReturn);
+        return Collections.singletonList(datanodeWithStorageTypes(nodeToReturn,
+            StorageType.SSD, StorageType.DISK, StorageType.ARCHIVE));
       }
 
       @Override
@@ -426,7 +532,8 @@ public final class ReplicationTestUtil {
               FAILED_TO_FIND_SUITABLE_NODE);
         }
         return Collections
-            .singletonList(MockDatanodeDetails.randomDatanodeDetails());
+            .singletonList(randomDatanodeWithStorageTypes(
+                StorageType.SSD, StorageType.DISK, StorageType.ARCHIVE));
       }
 
       @Override
@@ -488,7 +595,7 @@ public final class ReplicationTestUtil {
         throw new CommandTargetOverloadedException("Overloaded");
       }
       ReconstructECContainersCommand cmd = invocationOnMock.getArgument(1);
-      commandsSent.add(Pair.of(cmd.getTargetDatanodes().get(0), cmd));
+      commandsSent.add(Pair.of(cmd.getTargetDatanodes().get(0).getDatanodeDetails(), cmd));
       return null;
     }).when(mock).sendThrottledReconstructionCommand(any(ContainerInfo.class), any());
   }

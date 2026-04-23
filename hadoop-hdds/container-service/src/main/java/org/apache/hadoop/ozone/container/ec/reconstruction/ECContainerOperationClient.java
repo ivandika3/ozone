@@ -25,6 +25,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
@@ -157,14 +158,14 @@ public class ECContainerOperationClient implements Closeable {
   }
 
   public void createRecoveringContainer(long containerID, DatanodeDetails dn,
-      ECReplicationConfig repConfig, String encodedToken, int replicaIndex)
+      ECReplicationConfig repConfig, String encodedToken, int replicaIndex, StorageType storageType)
       throws IOException {
     XceiverClientSpi xceiverClient = this.xceiverClientManager.acquireClient(
         singleNodePipeline(dn, repConfig));
     try {
       ContainerProtocolCalls
           .createRecoveringContainer(xceiverClient, containerID, encodedToken,
-              replicaIndex);
+              replicaIndex, storageType);
     } finally {
       this.xceiverClientManager.releaseClient(xceiverClient, false);
     }

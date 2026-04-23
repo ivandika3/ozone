@@ -26,7 +26,6 @@ import static org.apache.hadoop.hdds.protocol.proto.HddsProtos.NodeState.HEALTHY
 import static org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationType.EC;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.protobuf.ByteString;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Duration;
@@ -40,6 +39,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.HddsConfigKeys;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
@@ -90,6 +90,7 @@ import org.apache.hadoop.ozone.container.replication.ReplicationServer;
 import org.apache.hadoop.ozone.protocol.commands.CloseContainerCommand;
 import org.apache.hadoop.ozone.protocol.commands.DeleteContainerCommand;
 import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand;
+import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand.ECReconstructionTarget;
 import org.apache.hadoop.ozone.protocol.commands.ReplicateContainerCommand;
 import org.apache.hadoop.ozone.protocol.commands.SCMCommand;
 import org.apache.hadoop.util.ExitUtil;
@@ -537,7 +538,9 @@ public class ReplicationManager implements SCMService, ContainerReplicaPendingOp
   public void sendThrottledReconstructionCommand(ContainerInfo containerInfo,
       ReconstructECContainersCommand command)
       throws CommandTargetOverloadedException, NotLeaderException {
-    List<DatanodeDetails> targets = command.getTargetDatanodes();
+    List<DatanodeDetails> targets = command.getTargetDatanodes()
+        .stream().map(ECReconstructionTarget::getDatanodeDetails)
+        .collect(Collectors.toList());
     List<Pair<Integer, DatanodeDetails>> targetWithCmds =
         getAvailableDatanodesForReplication(targets);
     if (targetWithCmds.isEmpty()) {
@@ -690,12 +693,14 @@ public class ReplicationManager implements SCMService, ContainerReplicaPendingOp
       }
     } else if (cmd.getType() == Type.reconstructECContainersCommand) {
       ReconstructECContainersCommand rcc = (ReconstructECContainersCommand) cmd;
-      List<DatanodeDetails> targets = rcc.getTargetDatanodes();
-      final ByteString targetIndexes = rcc.getMissingContainerIndexes();
-      long requiredSize = HddsServerUtil.requiredReplicationSpace(containerInfo.getUsedBytes());
-      for (int i = 0; i < targetIndexes.size(); i++) {
-        containerReplicaPendingOps.scheduleAddReplica(containerInfo.containerID(), targets.get(i),
-            targetIndexes.byteAt(i), cmd, scmDeadlineEpochMs, requiredSize, clock.millis());
+      List<ECReconstructionTarget> targets = rcc.getTargetDatanodes();
+      byte[] targetIndexes = rcc.getMissingContainerIndexes().toByteArray();
+      long requiredSize =
+          HddsServerUtil.requiredReplicationSpace(containerInfo.getUsedBytes());
+      for (int i = 0; i < targetIndexes.length; i++) {
+        containerReplicaPendingOps.scheduleAddReplica(
+            containerInfo.containerID(), targets.get(i).getDatanodeDetails(), targetIndexes[i],
+            cmd, scmDeadlineEpochMs, requiredSize, clock.millis());
       }
       getMetrics().incrEcReconstructionCmdsSentTotal();
     } else if (cmd.getType() == Type.replicateContainerCommand) {
@@ -1620,4 +1625,3 @@ public class ReplicationManager implements SCMService, ContainerReplicaPendingOp
     }
   }
 }
-

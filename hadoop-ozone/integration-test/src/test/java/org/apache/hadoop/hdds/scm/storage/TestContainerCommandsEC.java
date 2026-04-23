@@ -53,6 +53,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.apache.commons.lang3.RandomUtils;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.BlockID;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.ECReplicationConfig.EcCodec;
@@ -109,6 +110,8 @@ import org.apache.hadoop.ozone.container.ec.reconstruction.ECReconstructionCoord
 import org.apache.hadoop.ozone.container.ec.reconstruction.ECReconstructionMetrics;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.protocol.commands.DeleteBlocksCommand;
+import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand.DatanodeDetailsAndReplicaIndex;
+import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand.ECReconstructionTarget;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.TokenIdentifier;
 import org.apache.ozone.test.GenericTestUtils;
@@ -348,20 +351,22 @@ public class TestContainerCommandsEC {
     // information is missing for index 2. As all containers in the stripe must
     // have the block information, this makes the stripe look like a orphan
     // block, where the write went to some nodes but not all.
-    SortedMap<Integer, DatanodeDetails> sourceNodeMap = new TreeMap<>();
+    SortedMap<Integer, DatanodeDetailsAndReplicaIndex> sourceNodeMap = new TreeMap<>();
     for (DatanodeDetails node : orphanPipeline.getNodes()) {
-      if (orphanPipeline.getReplicaIndex(node) <= EC_DATA) {
-        sourceNodeMap.put(orphanPipeline.getReplicaIndex(node), node);
+      int replicaIndex = orphanPipeline.getReplicaIndex(node);
+      if (replicaIndex <= EC_DATA) {
+        sourceNodeMap.put(replicaIndex,
+            new DatanodeDetailsAndReplicaIndex(node, replicaIndex));
       }
     }
     // Here we find some spare nodes - ie nodes in the cluster that are not in
     // the original pipeline.
-    List<DatanodeDetails> targets = cluster.getHddsDatanodes().stream()
-        .map(HddsDatanodeService::getDatanodeDetails)
-        .filter(d -> !orphanPipeline.getNodes().contains(d))
+    List<ECReconstructionTarget> targets = cluster.getHddsDatanodes().stream()
+        .map(dn -> new ECReconstructionTarget(dn.getDatanodeDetails(), StorageType.DEFAULT))
+        .filter(d -> !orphanPipeline.getNodes().contains(d.getDatanodeDetails()))
         .limit(2)
         .collect(Collectors.toList());
-    SortedMap<Integer, DatanodeDetails> targetNodeMap = new TreeMap<>();
+    SortedMap<Integer, ECReconstructionTarget> targetNodeMap = new TreeMap<>();
     for (int j = 0; j < targets.size(); j++) {
       targetNodeMap.put(EC_DATA + j + 1, targets.get(j));
     }
@@ -381,7 +386,7 @@ public class TestContainerCommandsEC {
     // should be present but with no blocks as the only block in the container
     // was an orphan block.
     try (XceiverClientGrpc reconClient = new XceiverClientGrpc(
-        createSingleNodePipeline(orphanPipeline, targetNodeMap.get(4), 4),
+        createSingleNodePipeline(orphanPipeline, targetNodeMap.get(4).getDatanodeDetails(), 4),
         cluster.getConf())) {
       ListBlockResponseProto response = ContainerProtocolCalls
           .listBlock(reconClient, orphanContainerID, null, Integer.MAX_VALUE,
@@ -475,7 +480,7 @@ public class TestContainerCommandsEC {
         String encodedToken = cToken.encodeToUrlString();
         ContainerProtocolCalls.createRecoveringContainer(dnClient,
             container.containerID().getProtobuf().getId(),
-            encodedToken, replicaIndex);
+            encodedToken, replicaIndex, StorageType.DEFAULT);
 
         BlockID blockID = ContainerTestHelper
             .getTestBlockID(container.containerID().getProtobuf().getId());
@@ -565,7 +570,7 @@ public class TestContainerCommandsEC {
         String encodedToken = cToken.encodeToUrlString();
         ContainerProtocolCalls.createRecoveringContainer(dnClient,
             container.containerID().getProtobuf().getId(),
-            encodedToken, 4);
+            encodedToken, 4, StorageType.DEFAULT);
 
         // Restart the DN.
         cluster.restartHddsDatanode(targetDN, true);
@@ -697,7 +702,7 @@ public class TestContainerCommandsEC {
           scm.getContainerManager().getContainer(ContainerID.valueOf(conID))
               .getPipelineID());
 
-      SortedMap<Integer, DatanodeDetails> sourceNodeMap = new TreeMap<>();
+      SortedMap<Integer, DatanodeDetailsAndReplicaIndex> sourceNodeMap = new TreeMap<>();
 
       List<DatanodeDetails> nodeSet = containerPipeline.getNodes();
       List<Pipeline> containerToDeletePipeline = new ArrayList<>();
@@ -708,7 +713,8 @@ public class TestContainerCommandsEC {
               createSingleNodePipeline(containerPipeline, srcDn, replIndex));
           continue;
         }
-        sourceNodeMap.put(replIndex, srcDn);
+        sourceNodeMap.put(replIndex,
+            new DatanodeDetailsAndReplicaIndex(srcDn, replIndex));
       }
 
       //Find nodes outside of pipeline
@@ -752,9 +758,10 @@ public class TestContainerCommandsEC {
         }
 
         //Give the new target to reconstruct the container
-        SortedMap<Integer, DatanodeDetails> targetNodeMap = new TreeMap<>();
+        SortedMap<Integer, ECReconstructionTarget> targetNodeMap = new TreeMap<>();
         for (int k = 0; k < missingIndexes.size(); k++) {
-          targetNodeMap.put(missingIndexes.get(k), targetNodes.get(k));
+          targetNodeMap.put(missingIndexes.get(k),
+              new ECReconstructionTarget(targetNodes.get(k), StorageType.DEFAULT));
         }
 
         coordinator.reconstructECContainerGroup(conID,
@@ -762,14 +769,14 @@ public class TestContainerCommandsEC {
             sourceNodeMap, targetNodeMap);
 
         // Assert the original container metadata with the new recovered one
-        Iterator<Map.Entry<Integer, DatanodeDetails>> iterator =
+        Iterator<Map.Entry<Integer, ECReconstructionTarget>> iterator =
             targetNodeMap.entrySet().iterator();
         int i = 0;
         while (iterator.hasNext()) {
-          Map.Entry<Integer, DatanodeDetails> next = iterator.next();
-          DatanodeDetails targetDN = next.getValue();
+          Map.Entry<Integer, ECReconstructionTarget> next = iterator.next();
+          DatanodeDetails targetDN = next.getValue().getDatanodeDetails();
           Map<DatanodeDetails, Integer> indexes = new HashMap<>();
-          indexes.put(targetNodeMap.entrySet().iterator().next().getValue(),
+          indexes.put(targetNodeMap.entrySet().iterator().next().getValue().getDatanodeDetails(),
               targetNodeMap.entrySet().iterator().next().getKey());
           Pipeline newTargetPipeline = Pipeline.newBuilder()
               .setId(PipelineID.randomId())
@@ -883,12 +890,13 @@ public class TestContainerCommandsEC {
             .getPipelineID());
 
     List<DatanodeDetails> nodeSet = containerPipeline.getNodes();
-    SortedMap<Integer, DatanodeDetails> sourceNodeMap = new TreeMap<>();
+    SortedMap<Integer, DatanodeDetailsAndReplicaIndex> sourceNodeMap = new TreeMap<>();
     nodeSet.stream().filter(k -> {
       int replIndex = containerPipeline.getReplicaIndex(k);
       return !missingIndexes.contains(replIndex);
     }).forEach(dn -> {
-      sourceNodeMap.put(containerPipeline.getReplicaIndex(dn), dn);
+      sourceNodeMap.put(containerPipeline.getReplicaIndex(dn), new DatanodeDetailsAndReplicaIndex(
+          dn, containerPipeline.getReplicaIndex(dn)));
     });
 
     //Find a good node outside of pipeline
@@ -904,12 +912,12 @@ public class TestContainerCommandsEC {
     }
 
     //Give the new target to reconstruct the container
-    SortedMap<Integer, DatanodeDetails> targetNodeMap = new TreeMap<>();
-    targetNodeMap.put(1, goodTargetNode);
+    SortedMap<Integer, ECReconstructionTarget> targetNodeMap = new TreeMap<>();
+    targetNodeMap.put(1, new ECReconstructionTarget(goodTargetNode, StorageType.DEFAULT));
     // Replace one of the target node with wrong to simulate failure at target.
     DatanodeDetails invalidTargetNode =
         MockDatanodeDetails.randomDatanodeDetails();
-    targetNodeMap.put(3, invalidTargetNode);
+    targetNodeMap.put(3, new ECReconstructionTarget(invalidTargetNode, StorageType.DEFAULT));
 
     assertThrows(IOException.class, () -> {
       try (ECReconstructionCoordinator coordinator =

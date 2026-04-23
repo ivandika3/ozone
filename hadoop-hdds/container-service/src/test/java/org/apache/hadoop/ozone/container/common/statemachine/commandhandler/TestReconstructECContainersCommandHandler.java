@@ -30,6 +30,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
@@ -44,6 +45,7 @@ import org.apache.hadoop.ozone.container.ec.reconstruction.ECReconstructionCoord
 import org.apache.hadoop.ozone.container.ozoneimpl.OzoneContainer;
 import org.apache.hadoop.ozone.container.replication.ReplicationSupervisor;
 import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand;
+import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand.ECReconstructionTarget;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -85,7 +87,9 @@ public class TestReconstructECContainersCommandHandler {
           dnDetails.stream().map(a -> new ReconstructECContainersCommand
               .DatanodeDetailsAndReplicaIndex(a, dnDetails.indexOf(a)))
                   .collect(Collectors.toList());
-      List<DatanodeDetails> targets = getDNDetails(2);
+      List<ECReconstructionTarget> targets = getDNDetails(2).stream()
+          .map(dn -> new ECReconstructionTarget(dn, StorageType.DEFAULT))
+          .collect(Collectors.toList());
       ReconstructECContainersCommand reconstructECContainersCommand =
           new ReconstructECContainersCommand(1L, sources, targets,
               missingContainerIndexes, ecReplicationConfig);

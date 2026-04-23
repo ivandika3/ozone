@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.annotation.InterfaceStability;
 import org.apache.hadoop.hdds.client.BlockID;
 import org.apache.hadoop.hdds.client.StorageTypeUtils;
@@ -42,6 +43,7 @@ import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.ChunkInfo;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.CloseContainerRequestProto;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.ContainerCommandRequestProto;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.ContainerCommandResponseProto;
+import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.ContainerDataProto.State;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.DatanodeBlockID;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.EchoRequestProto;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.EchoResponseProto;
@@ -572,17 +574,19 @@ public final class ContainerProtocolCalls  {
    * Currently this is used for EC reconstruction containers. When EC
    * reconstruction coordinator reconstructing the containers, the in progress
    * containers would be created as "RECOVERING" state containers.
-   * @param client  - client
-   * @param containerID - ID of container
+   *
+   * @param client       - client
+   * @param containerID  - ID of container
    * @param encodedToken - encodedToken if security is enabled
    * @param replicaIndex - index position of the container replica
+   * @param storageType  - storageType of the container replica
    */
   @InterfaceStability.Evolving
   public static void createRecoveringContainer(XceiverClientSpi client,
-      long containerID, String encodedToken, int replicaIndex)
+      long containerID, String encodedToken, int replicaIndex, StorageType storageType)
       throws IOException {
     createContainer(client, containerID, encodedToken,
-        ContainerProtos.ContainerDataProto.State.RECOVERING, replicaIndex);
+        ContainerProtos.ContainerDataProto.State.RECOVERING, replicaIndex, storageType);
   }
 
   /**
@@ -593,20 +597,22 @@ public final class ContainerProtocolCalls  {
    */
   public static void createContainer(XceiverClientSpi client, long containerID,
       String encodedToken) throws IOException {
-    createContainer(client, containerID, encodedToken, null, 0);
+    createContainer(client, containerID, encodedToken, null, 0, null);
   }
 
   /**
    * createContainer call that creates a container on the datanode.
-   * @param client  - client
-   * @param containerID - ID of container
+   *
+   * @param client       - client
+   * @param containerID  - ID of container
    * @param encodedToken - encodedToken if security is enabled
-   * @param state - state of the container
+   * @param state        - state of the container
    * @param replicaIndex - index position of the container replica
+   * @param storageType  - storageType of the container replica
    */
   public static void createContainer(XceiverClientSpi client,
       long containerID, String encodedToken,
-      ContainerProtos.ContainerDataProto.State state, int replicaIndex)
+      State state, int replicaIndex, StorageType storageType)
       throws IOException {
     ContainerProtos.CreateContainerRequestProto.Builder createRequest =
         ContainerProtos.CreateContainerRequestProto.newBuilder();
@@ -618,6 +624,9 @@ public final class ContainerProtocolCalls  {
     }
     if (replicaIndex > 0) {
       createRequest.setReplicaIndex(replicaIndex);
+    }
+    if (storageType != null) {
+      createRequest.setStorageTypeID(StorageTypeUtils.getID(storageType));
     }
 
     String id = client.getPipeline().getFirstNode().getUuidString();

@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
@@ -58,6 +59,7 @@ import org.apache.hadoop.ozone.container.common.statemachine.EndpointStateMachin
 import org.apache.hadoop.ozone.container.common.statemachine.StateContext;
 import org.apache.hadoop.ozone.protocol.commands.ReconcileContainerCommand;
 import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand;
+import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand.ECReconstructionTarget;
 import org.apache.hadoop.ozone.protocolPB.StorageContainerDatanodeProtocolClientSideTranslatorPB;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -75,9 +77,9 @@ public class TestHeartbeatEndpointTask {
     StorageContainerDatanodeProtocolClientSideTranslatorPB scm =
         mock(StorageContainerDatanodeProtocolClientSideTranslatorPB.class);
 
-    List<DatanodeDetails> targetDns = new ArrayList<>();
-    targetDns.add(MockDatanodeDetails.randomDatanodeDetails());
-    targetDns.add(MockDatanodeDetails.randomDatanodeDetails());
+    List<ECReconstructionTarget> targetDns = new ArrayList<>();
+    targetDns.add(new ECReconstructionTarget(MockDatanodeDetails.randomDatanodeDetails(), StorageType.DEFAULT));
+    targetDns.add(new ECReconstructionTarget(MockDatanodeDetails.randomDatanodeDetails(), StorageType.DEFAULT));
     ReconstructECContainersCommand cmd = new ReconstructECContainersCommand(
         1, emptyList(), targetDns,
         UnsafeByteOperations.unsafeWrap(new byte[]{2, 5}),

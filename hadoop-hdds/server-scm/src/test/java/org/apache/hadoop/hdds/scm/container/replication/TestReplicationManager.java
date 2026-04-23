@@ -60,14 +60,17 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.DatanodeID;
@@ -98,6 +101,7 @@ import org.apache.hadoop.hdds.security.token.ContainerTokenGenerator;
 import org.apache.hadoop.hdds.server.events.EventPublisher;
 import org.apache.hadoop.ozone.protocol.commands.DeleteContainerCommand;
 import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand;
+import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand.ECReconstructionTarget;
 import org.apache.hadoop.ozone.protocol.commands.ReplicateContainerCommand;
 import org.apache.hadoop.ozone.protocol.commands.SCMCommand;
 import org.apache.ozone.test.GenericTestUtils;
@@ -836,7 +840,7 @@ public class TestReplicationManager {
   public void testUnderReplicationBlockedByUnhealthyReplicas()
       throws IOException, NodeNotFoundException {
     ContainerInfo container = createContainerInfo(repConfig, 1,
-        HddsProtos.LifeCycleState.CLOSED);
+        HddsProtos.LifeCycleState.CLOSED, StorageTier.DISK);
     Set<ContainerReplica> replicas =
         addReplicas(container, ContainerReplicaProto.State.CLOSED, 1, 2, 3);
     ContainerReplica unhealthyReplica1 =
@@ -1153,11 +1157,11 @@ public class TestReplicationManager {
           new ReconstructECContainersCommand.DatanodeDetailsAndReplicaIndex(
               MockDatanodeDetails.randomDatanodeDetails(), i));
     }
-    List<DatanodeDetails> targetNodes = new ArrayList<>();
+    List<ECReconstructionTarget> targetNodes = new ArrayList<>();
     DatanodeDetails target4 = MockDatanodeDetails.randomDatanodeDetails();
     DatanodeDetails target5 = MockDatanodeDetails.randomDatanodeDetails();
-    targetNodes.add(target4);
-    targetNodes.add(target5);
+    targetNodes.add(new ECReconstructionTarget(target4, StorageType.DEFAULT));
+    targetNodes.add(new ECReconstructionTarget(target5, StorageType.DEFAULT));
     byte[] missingIndexes = {4, 5};
 
     ReconstructECContainersCommand command = new ReconstructECContainersCommand(
@@ -1178,8 +1182,8 @@ public class TestReplicationManager {
       cmdIndexes.add(op.getReplicaIndex());
     }
     assertEquals(2, cmdTargets.size());
-    for (DatanodeDetails dn : targetNodes) {
-      assertThat(cmdTargets).contains(dn);
+    for (ECReconstructionTarget dn : targetNodes) {
+      assertTrue(cmdTargets.contains(dn.getDatanodeDetails()));
     }
 
     assertEquals(2, cmdIndexes.size());
@@ -1418,18 +1422,22 @@ public class TestReplicationManager {
   public void testSendThrottledReconstructionCommand()
       throws CommandTargetOverloadedException, NodeNotFoundException,
       NotLeaderException {
-    Map<DatanodeDetails, Integer> targetNodes = new HashMap<>();
+    Map<ECReconstructionTarget, Integer> targetNodes = new HashMap<>();
     DatanodeDetails cmdTarget = MockDatanodeDetails.randomDatanodeDetails();
-    targetNodes.put(cmdTarget, 0);
-    targetNodes.put(MockDatanodeDetails.randomDatanodeDetails(), 5);
-
-    mockReplicationCommandCounts(targetNodes::get, any -> 0);
+    targetNodes.put(new ECReconstructionTarget(cmdTarget, StorageType.DEFAULT), 0);
+    targetNodes.put(new ECReconstructionTarget(
+        MockDatanodeDetails.randomDatanodeDetails(), StorageType.DEFAULT), 5);
+    Map<DatanodeDetails, Integer> targetDns = new HashMap<>();
+    for (Entry<ECReconstructionTarget, Integer> entry : targetNodes.entrySet()) {
+      targetDns.put(entry.getKey().getDatanodeDetails(), entry.getValue());
+    }
+    mockReplicationCommandCounts(targetDns::get, any -> 0);
 
     ContainerInfo container = ReplicationTestUtil.createContainerInfo(
         repConfig, 1, HddsProtos.LifeCycleState.CLOSED, 10, 20);
 
     ReconstructECContainersCommand command = createReconstructionCommand(
-        container, targetNodes.keySet().toArray(new DatanodeDetails[0]));
+        container, targetNodes.keySet().toArray(new ECReconstructionTarget[0]));
 
     replicationManager.sendThrottledReconstructionCommand(container, command);
 
@@ -1459,8 +1467,8 @@ public class TestReplicationManager {
     ContainerInfo container = ReplicationTestUtil.createContainerInfo(
         repConfig, 1, HddsProtos.LifeCycleState.CLOSED, 10, 20);
     ReconstructECContainersCommand command = createReconstructionCommand(
-        container, MockDatanodeDetails.randomDatanodeDetails(),
-        MockDatanodeDetails.randomDatanodeDetails());
+        container, new ECReconstructionTarget(MockDatanodeDetails.randomDatanodeDetails(), StorageType.DEFAULT),
+        new ECReconstructionTarget(MockDatanodeDetails.randomDatanodeDetails(), StorageType.DEFAULT));
     long overLoadedCount = replicationManager.getMetrics()
         .getEcReconstructionCmdsDeferredTotal();
     assertThrows(CommandTargetOverloadedException.class,
@@ -1471,7 +1479,7 @@ public class TestReplicationManager {
   }
 
   private ReconstructECContainersCommand createReconstructionCommand(
-      ContainerInfo containerInfo, DatanodeDetails... targets) {
+      ContainerInfo containerInfo, ECReconstructionTarget... targets) {
     List<ReconstructECContainersCommand.DatanodeDetailsAndReplicaIndex> sources
         = new ArrayList<>();
     for (int i = 1; i <= 3; i++) {
@@ -1568,7 +1576,8 @@ public class TestReplicationManager {
     // at the lowest count, but this command should push it to the limit and
     // cause it to be excluded.
     ReconstructECContainersCommand command = createReconstructionCommand(
-        container, dn1, dn2);
+        container, new ECReconstructionTarget(dn1, StorageType.DEFAULT),
+        new ECReconstructionTarget(dn2, StorageType.DEFAULT));
     replicationManager.sendThrottledReconstructionCommand(container, command);
     excluded = replicationManager.getExcludedNodes();
     assertEquals(1, excluded.size());

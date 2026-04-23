@@ -26,6 +26,7 @@ import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.client.StorageTierUtil;
+import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.scm.SCMCommonPlacementPolicy;
 import org.apache.hadoop.hdds.scm.container.ContainerReplica;
@@ -93,8 +94,11 @@ public abstract class PipelineProvider<REPLICATION_CONFIG
 
   List<DatanodeDetails> pickNodesNotUsed(REPLICATION_CONFIG replicationConfig,
                                          long metadataSizeRequired,
-                                         long dataSizeRequired)
-      throws SCMException {
+                                         long dataSizeRequired,
+                                         ConfigurationSource conf, StorageTier storageTier)
+      throws IOException {
+    StorageTierUtil.validateNotEmpty(storageTier);
+    StorageType storageType = StorageTierUtil.getStorageTypeForUniformStorageTier(storageTier);
     int nodesRequired = replicationConfig.getRequiredNodes();
     List<DatanodeDetails> healthyDNs = pickAllNodesNotUsed(replicationConfig);
     List<DatanodeDetails> healthyDNsWithSpace = healthyDNs.stream()

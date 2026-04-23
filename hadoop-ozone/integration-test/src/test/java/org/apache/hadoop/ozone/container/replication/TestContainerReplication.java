@@ -287,7 +287,7 @@ class TestContainerReplication {
     long containerID = CONTAINER_ID.incrementAndGet();
     try (XceiverClientSpi client = clientFactory.acquireClient(
         createPipeline(singleton(dn)))) {
-      createContainer(client, containerID, null, CLOSED, 0);
+      createContainer(client, containerID, null, CLOSED, 0, null);
       return containerID;
     }
   }

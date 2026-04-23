@@ -73,6 +73,7 @@ import org.apache.commons.compress.archivers.ArchiveOutputStream;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.apache.commons.io.IOUtils;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
@@ -110,6 +111,7 @@ import org.apache.hadoop.ozone.container.keyvalue.KeyValueContainerData;
 import org.apache.hadoop.ozone.container.ozoneimpl.ContainerController;
 import org.apache.hadoop.ozone.protocol.commands.ReconcileContainerCommand;
 import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand;
+import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand.ECReconstructionTarget;
 import org.apache.hadoop.ozone.protocol.commands.ReplicateContainerCommand;
 import org.apache.ozone.test.GenericTestUtils;
 import org.apache.ozone.test.GenericTestUtils.LogCapturer;
@@ -997,11 +999,14 @@ public class TestReplicationSupervisor {
     byte[] missingIndexes = new byte[1];
     missingIndexes[0] = 4;
 
-    List<DatanodeDetails> target = singletonList(
-        MockDatanodeDetails.randomDatanodeDetails());
-    ReconstructECContainersCommand cmd = new ReconstructECContainersCommand(containerId, sources, target,
-        UnsafeByteOperations.unsafeWrap(missingIndexes),
-        new ECReplicationConfig(3, 2));
+    List<ECReconstructionTarget> target = singletonList(
+        new ECReconstructionTarget(MockDatanodeDetails.randomDatanodeDetails(), StorageType.DEFAULT));
+    ReconstructECContainersCommand cmd =
+        new ReconstructECContainersCommand(containerId,
+            sources,
+            target,
+            UnsafeByteOperations.unsafeWrap(missingIndexes),
+            new ECReplicationConfig(3, 2));
     cmd.setTerm(CURRENT_TERM);
     return cmd;
   }
@@ -1025,8 +1030,9 @@ public class TestReplicationSupervisor {
 
     @Override
     public void reconstructECContainerGroup(long containerID,
-        ECReplicationConfig repConfig, SortedMap<Integer, DatanodeDetails> sourceNodeMap,
-        SortedMap<Integer, DatanodeDetails> targetNodeMap) {
+        ECReplicationConfig repConfig,
+        SortedMap<Integer, ReconstructECContainersCommand.DatanodeDetailsAndReplicaIndex> sourceNodeMap,
+        SortedMap<Integer, ECReconstructionTarget> targetNodeMap) {
       assertEquals(1, supervisor.getTotalInFlightReplications());
 
       KeyValueContainerData kvcd = new KeyValueContainerData(

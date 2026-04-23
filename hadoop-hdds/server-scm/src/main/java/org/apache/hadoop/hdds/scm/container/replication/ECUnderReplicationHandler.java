@@ -18,6 +18,7 @@
 package org.apache.hadoop.hdds.scm.container.replication;
 
 import static org.apache.hadoop.hdds.protocol.proto.HddsProtos.NodeOperationalState.IN_SERVICE;
+import static org.apache.hadoop.hdds.scm.container.replication.ReplicationManagerUtil.getTargetDatanodesWithFallback;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
@@ -33,6 +34,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.StorageUnit;
@@ -50,6 +52,7 @@ import org.apache.hadoop.hdds.scm.node.NodeStatus;
 import org.apache.hadoop.hdds.scm.node.states.NodeNotFoundException;
 import org.apache.hadoop.hdds.scm.pipeline.InsufficientDatanodesException;
 import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand;
+import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand.ECReconstructionTarget;
 import org.apache.hadoop.ozone.protocol.commands.ReplicateContainerCommand;
 import org.apache.ratis.protocol.exceptions.NotLeaderException;
 import org.slf4j.Logger;
@@ -303,9 +306,15 @@ public class ECUnderReplicationHandler implements UnhealthyReplicationHandler {
           : excludedNodes;
 
       // placement with overloaded nodes excluded
-      final List<DatanodeDetails> selectedDatanodes = getTargetDatanodes(
-          container, expectedTargetCount, usedNodes, excludedOrOverloadedNodes
-      );
+      List<DatanodeDetails> selectedDatanodes;
+      StorageType finalStorageType;
+      Pair<StorageType, List<DatanodeDetails>> storageTypeWithDns =
+          getTargetDatanodesWithFallback(containerPlacement, expectedTargetCount, usedNodes,
+              excludedOrOverloadedNodes, currentContainerSize, container, container.getStorageTier());
+      finalStorageType = storageTypeWithDns.getKey();
+      selectedDatanodes = storageTypeWithDns.getValue();
+
+
       final int targetCount = selectedDatanodes.size();
 
       if (hasOverloaded &&
@@ -316,7 +325,7 @@ public class ECUnderReplicationHandler implements UnhealthyReplicationHandler {
 
         // check if placement exists when overloaded nodes are not excluded
         final List<DatanodeDetails> targetsMaybeOverloaded = getTargetDatanodes(
-            container, expectedTargetCount, usedNodes, excludedNodes);
+            container, expectedTargetCount, usedNodes, excludedNodes, finalStorageType);
 
         if (targetsMaybeOverloaded.size() == expectedTargetCount) {
           final int overloadedCount = expectedTargetCount - targetCount;
@@ -360,12 +369,16 @@ public class ECUnderReplicationHandler implements UnhealthyReplicationHandler {
               new ReconstructECContainersCommand
                   .DatanodeDetailsAndReplicaIndex(
                   src.getLeft().getDatanodeDetails(),
-                  src.getLeft().getReplicaIndex()));
+                  src.getLeft().getReplicaIndex()
+              ));
         }
 
         final ReconstructECContainersCommand reconstructionCommand =
             new ReconstructECContainersCommand(container.getContainerID(),
-                sourceDatanodesWithIndex, selectedDatanodes,
+                sourceDatanodesWithIndex,
+                selectedDatanodes.stream()
+                    .map(dn -> new ECReconstructionTarget(dn, finalStorageType))
+                    .collect(Collectors.toList()),
                 integers2ByteString(missingIndexes),
                 repConfig);
         // This can throw a CommandTargetOverloadedException, but there is no
@@ -414,6 +427,17 @@ public class ECUnderReplicationHandler implements UnhealthyReplicationHandler {
         containerPlacement, requiredNodes,
         usedNodes, excludedNodes,
         currentContainerSize, container);
+  }
+
+  private List<DatanodeDetails> getTargetDatanodes(
+      ContainerInfo container, int requiredNodes,
+      List<DatanodeDetails> usedNodes,
+      List<DatanodeDetails> excludedNodes,
+      StorageType storageType) throws SCMException {
+    return ReplicationManagerUtil.getTargetDatanodes(
+        containerPlacement, requiredNodes,
+        usedNodes, excludedNodes,
+        currentContainerSize, container, storageType);
   }
 
   /**

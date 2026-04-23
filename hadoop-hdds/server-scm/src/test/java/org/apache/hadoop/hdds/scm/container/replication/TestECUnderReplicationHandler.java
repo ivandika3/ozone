@@ -30,6 +30,8 @@ import static org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProt
 import static org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.ContainerReplicaProto.State.UNHEALTHY;
 import static org.apache.hadoop.hdds.scm.container.replication.ReplicationTestUtil.createContainer;
 import static org.apache.hadoop.hdds.scm.container.replication.ReplicationTestUtil.createContainerReplica;
+import static org.apache.hadoop.hdds.scm.container.replication.ReplicationTestUtil.getSimpleTestPlacementPolicy;
+import static org.apache.hadoop.hdds.scm.container.replication.ReplicationTestUtil.getSimpleTestPlacementPolicyWithFailedStorageType;
 import static org.apache.hadoop.hdds.scm.net.NetConstants.LEAF_SCHEMA;
 import static org.apache.hadoop.hdds.scm.net.NetConstants.RACK_SCHEMA;
 import static org.apache.hadoop.hdds.scm.net.NetConstants.ROOT_SCHEMA;
@@ -69,7 +71,10 @@ import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
+import org.apache.hadoop.hdds.client.StorageTierUtil;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.MockDatanodeDetails;
@@ -93,6 +98,7 @@ import org.apache.hadoop.hdds.scm.pipeline.InsufficientDatanodesException;
 import org.apache.hadoop.ozone.container.common.SCMTestUtils;
 import org.apache.hadoop.ozone.protocol.commands.DeleteContainerCommand;
 import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand;
+import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand.ECReconstructionTarget;
 import org.apache.hadoop.ozone.protocol.commands.ReplicateContainerCommand;
 import org.apache.hadoop.ozone.protocol.commands.SCMCommand;
 import org.apache.ratis.protocol.exceptions.NotLeaderException;
@@ -124,6 +130,7 @@ public class TestECUnderReplicationHandler {
       = new AtomicBoolean(false);
   private final AtomicBoolean throwOverloadedExceptionOnReconstruction
       = new AtomicBoolean(false);
+  private static final StorageTier DEFAULT_STORAGE_TIER = StorageTier.DISK;
 
   @BeforeEach
   void setup(@TempDir File testDir) throws NodeNotFoundException,
@@ -161,7 +168,7 @@ public class TestECUnderReplicationHandler {
 
     conf = SCMTestUtils.getConf(testDir);
     repConfig = new ECReplicationConfig(DATA, PARITY);
-    container = createContainer(HddsProtos.LifeCycleState.CLOSED, repConfig);
+    container = createContainer(HddsProtos.LifeCycleState.CLOSED, repConfig, DEFAULT_STORAGE_TIER);
     policy = ReplicationTestUtil
             .getSimpleTestPlacementPolicy(nodeManager, conf);
     NodeSchema[] schemas =
@@ -202,11 +209,11 @@ public class TestECUnderReplicationHandler {
         () -> subject.processAndSendCommands(replicas, emptyList(), result, 2));
 
     // THEN
-    assertEquals(2, spy.callCount());
-    assertExcluded(excluded, spy.excludedNodes(0));
-    assertUsedNodes(replicas, spy.usedNodes(0));
-    assertExcluded(emptySet(), spy.excludedNodes(1));
+    assertEquals(3, spy.callCount());
+    assertExcluded(excluded, spy.excludedNodes(1));
     assertUsedNodes(replicas, spy.usedNodes(1));
+    assertExcluded(emptySet(), spy.excludedNodes(2));
+    assertUsedNodes(replicas, spy.usedNodes(2));
     assertEquals(parity - remainingRedundancy, e.getRequiredNodes());
     assertEquals(e.getRequiredNodes() - excluded.size(), e.getAvailableNodes());
     verify(replicationManager, never())
@@ -219,7 +226,7 @@ public class TestECUnderReplicationHandler {
     UnderReplicatedHealthResult result =
         mock(UnderReplicatedHealthResult.class);
     when(result.getContainerInfo())
-        .thenReturn(createContainer(HddsProtos.LifeCycleState.CLOSED, ec));
+        .thenReturn(createContainer(HddsProtos.LifeCycleState.CLOSED, ec, DEFAULT_STORAGE_TIER));
     return result;
   }
 
@@ -263,7 +270,7 @@ public class TestECUnderReplicationHandler {
         () -> subject.processAndSendCommands(replicas, emptyList(), result, 2));
 
     // THEN
-    assertEquals(1, spy.callCount());
+    assertEquals(2, spy.callCount());
     assertEquals(singletonList(excludedByRM), spy.excludedNodes(0));
     assertUsedNodes(replicas, spy.usedNodes(0));
     assertEquals(parity - remainingRedundancy, e.getRequiredNodes());
@@ -271,6 +278,26 @@ public class TestECUnderReplicationHandler {
     verify(replicationManager, times(1))
         .sendThrottledReconstructionCommand(any(), any());
     assertEquals(1, metrics.getECPartialReconstructionCriticalTotal());
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"rs-6-3-1024k"})
+  void testInsufficientReplicaCountWillBeRetiedFallbackStorageType(String rep) throws IOException {
+    // GIVEN
+    final ECReplicationConfig ec = new ECReplicationConfig(rep);
+    PlacementPolicySpy spy = new PlacementPolicySpy(ecPlacementPolicy,
+        ec.getData() + ec.getParity() - 1);
+    ECUnderReplicationHandler subject = new ECUnderReplicationHandler(
+        ecPlacementPolicy, conf, replicationManager);
+    UnderReplicatedHealthResult result = mockUnderReplicated(ec);
+    Set<ContainerReplica> replicas = createReplicas(ec.getData());
+
+    // WHEN
+    assertThrows(InsufficientDatanodesException.class,
+        () -> subject.processAndSendCommands(replicas, emptyList(), result, remainingMaintenanceRedundancy));
+    // THEN
+    // For the default storageType DISK, the first time will check DISK and then fall back to ARCHIVE
+    assertEquals(2, spy.callCount());
   }
 
   @Test
@@ -1043,7 +1070,8 @@ public class TestECUnderReplicationHandler {
           int numNodes = invocationOnMock.getArgument(3);
           List<DatanodeDetails> targets = new ArrayList<>();
           for (int i = 0; i < numNodes; i++) {
-            targets.add(MockDatanodeDetails.randomDatanodeDetails());
+            targets.add(ReplicationTestUtil.randomDatanodeWithStorageTypes(
+                StorageType.SSD, StorageType.DISK, StorageType.ARCHIVE));
           }
           return targets;
         });
@@ -1088,9 +1116,11 @@ public class TestECUnderReplicationHandler {
           List<DatanodeDetails> excludeList = invocationOnMock.getArgument(1);
           List<DatanodeDetails> targets = new ArrayList<>(1);
           if (usedList.contains(dn) || excludeList.contains(dn)) {
-            targets.add(MockDatanodeDetails.randomDatanodeDetails());
+            targets.add(ReplicationTestUtil.randomDatanodeWithStorageTypes(
+                StorageType.SSD, StorageType.DISK, StorageType.ARCHIVE));
           } else {
-            targets.add(dn);
+            targets.add(ReplicationTestUtil.datanodeWithStorageTypes(dn,
+                StorageType.SSD, StorageType.DISK, StorageType.ARCHIVE));
           }
           return targets;
         });
@@ -1150,18 +1180,78 @@ public class TestECUnderReplicationHandler {
     assertEquals(maintReplica.getDatanodeDetails(), target);
   }
 
+  @Test
+  public void testUnderReplicationWithSSDStorageTier() throws IOException {
+    Set<ContainerReplica> availableReplicas = getReplica125();
+    PlacementPolicy policy1 = getSimpleTestPlacementPolicy(nodeManager, conf);
+    ContainerInfo containerSSD = createContainer(HddsProtos.LifeCycleState.CLOSED, repConfig, StorageTier.SSD);
+    // Assert StorageTier.SSD Container will reconstruct to SSD StorageType
+    testUnderReplicationWithMissingIndexes(ImmutableList.of(3, 4), availableReplicas,
+        0, 0, policy1, containerSSD, StorageTier.SSD.getStorageTypes().get(0));
+  }
+
+  @Test
+  public void testUnderReplicationWithSSDFallback() throws IOException {
+    Set<ContainerReplica> availableReplicas = getReplica125();
+    PlacementPolicy policy1 = getSimpleTestPlacementPolicyWithFailedStorageType(nodeManager, conf, StorageType.SSD);
+    ContainerInfo containerSSD = createContainer(HddsProtos.LifeCycleState.CLOSED, repConfig, StorageTier.SSD);
+    // If we cannot found Volume in any SSD StorageType Volume, then we will find DISK StorageType Volume
+    // Since the StorageTier.SSD fallback StorageType is StorageType.DISK
+    testUnderReplicationWithMissingIndexes(ImmutableList.of(3, 4), availableReplicas,
+        0, 0, policy1, containerSSD, StorageType.DISK);
+  }
+
+  @Test
+  public void testUnderReplicationWithFallbackException() throws IOException {
+    ContainerInfo containerSSD =
+        createContainer(HddsProtos.LifeCycleState.CLOSED, repConfig, StorageTier.SSD);
+    ContainerInfo containerDISK =
+        createContainer(HddsProtos.LifeCycleState.CLOSED, repConfig, StorageTier.DISK);
+    Set<ContainerReplica> availableReplicas = getReplica125();
+
+    // If all the StorageTier fallback StorageType were exception, a SCMException will be thrown.
+    // Test StorageTier.SSD
+    PlacementPolicy policy1 = ReplicationTestUtil
+        .getNoNodesTestPlacementPolicy(nodeManager, conf);
+    assertThrows(SCMException.class,
+        () -> testUnderReplicationWithMissingIndexes(ImmutableList.of(3, 4),
+            availableReplicas, 0, 0, policy1, containerSSD, StorageType.SSD));
+    // Test StorageTier.DISK
+    PlacementPolicy policy2 = ReplicationTestUtil
+        .getNoNodesTestPlacementPolicy(nodeManager, conf);
+    assertThrows(SCMException.class, () -> testUnderReplicationWithMissingIndexes(ImmutableList.of(3, 4),
+        availableReplicas, 0, 0, policy2, containerDISK, StorageType.DISK));
+  }
+
+  private Set<ContainerReplica> getReplica125() {
+    return ReplicationTestUtil
+        .createReplicas(Pair.of(IN_SERVICE, 1), Pair.of(IN_SERVICE, 2), Pair.of(IN_SERVICE, 5));
+  }
+
   public Set<Pair<DatanodeDetails, SCMCommand<?>>>
       testUnderReplicationWithMissingIndexes(
       List<Integer> missingIndexes, Set<ContainerReplica> availableReplicas,
       int decomIndexes, int maintenanceIndexes,
       PlacementPolicy placementPolicy) throws IOException {
+    StorageType defaultStorageType = StorageTierUtil.getStorageTypeForUniformStorageTier(
+        DEFAULT_STORAGE_TIER);
+    return testUnderReplicationWithMissingIndexes(missingIndexes, availableReplicas,
+        decomIndexes, maintenanceIndexes, placementPolicy, container, defaultStorageType);
+  }
+
+  public Set<Pair<DatanodeDetails, SCMCommand<?>>>
+      testUnderReplicationWithMissingIndexes(
+      List<Integer> missingIndexes, Set<ContainerReplica> availableReplicas,
+      int decomIndexes, int maintenanceIndexes,
+      PlacementPolicy placementPolicy, ContainerInfo containerInfo,
+      StorageType targetDnStorageType) throws IOException {
     ECUnderReplicationHandler ecURH =
         new ECUnderReplicationHandler(
             placementPolicy, conf, replicationManager);
     UnderReplicatedHealthResult result =
         mock(UnderReplicatedHealthResult.class);
     when(result.isUnrecoverable()).thenReturn(false);
-    when(result.getContainerInfo()).thenReturn(container);
+    when(result.getContainerInfo()).thenReturn(containerInfo);
 
     ecURH.processAndSendCommands(availableReplicas, ImmutableList.of(),
         result, remainingMaintenanceRedundancy);
@@ -1175,6 +1265,10 @@ public class TestECUnderReplicationHandler {
         replicateCommand++;
       } else if (dnCommand
           .getValue() instanceof ReconstructECContainersCommand) {
+        ReconstructECContainersCommand reconEcCommand = (ReconstructECContainersCommand) dnCommand.getValue();
+        for (ECReconstructionTarget targetDatanode : reconEcCommand.getTargetDatanodes()) {
+          assertEquals(targetDnStorageType, targetDatanode.getStorageType());
+        }
         if (shouldReconstructCommandExist) {
           assertEquals(ECUnderReplicationHandler.integers2ByteString(missingIndexes),
               ((ReconstructECContainersCommand) dnCommand.getValue())
@@ -1227,7 +1321,8 @@ public class TestECUnderReplicationHandler {
 
         final List<DatanodeDetails> targets = new ArrayList<>();
         for (int i = 0; i < Math.min(nodesRequired, availableNodes); i++) {
-          targets.add(MockDatanodeDetails.randomDatanodeDetails());
+          targets.add(ReplicationTestUtil.randomDatanodeWithStorageTypes(
+              StorageType.SSD, StorageType.DISK, StorageType.ARCHIVE));
         }
         if (targets.isEmpty()) {
           throw new SCMException("not enough nodes",

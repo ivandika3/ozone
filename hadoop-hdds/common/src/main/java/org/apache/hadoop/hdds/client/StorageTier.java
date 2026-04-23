@@ -17,11 +17,8 @@
 
 package org.apache.hadoop.hdds.client;
 
-import static org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationFactor.ONE;
-import static org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationFactor.THREE;
-
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -34,33 +31,43 @@ import org.apache.hadoop.hdds.protocol.proto.HddsProtos.StorageTierProto;
  * Ozone specific storage tiers.
  */
 public enum StorageTier {
-  SSD("SSD", StorageType.SSD),
-  DISK("DISK", StorageType.DISK),
-  ARCHIVE("ARCHIVE", StorageType.ARCHIVE),
+  SSD("SSD", fallback(StorageType.DISK, StorageType.ARCHIVE), StorageType.SSD),
+  DISK("DISK", fallback(StorageType.ARCHIVE), StorageType.DISK),
+  ARCHIVE("ARCHIVE", noFallback(), StorageType.ARCHIVE),
   EMPTY("EMPTY");
 
   private final String tierName;
   private final List<StorageType> storageTypes;
-  private final boolean uniformStorageType;
-  private static final StorageTier DEFAULT_TIER = DISK;
-  private static final Map<StorageTier, Map<ReplicationConfig, List<StorageType>>>
+  private final List<StorageType> fallbackStorageTypes;
+  private final boolean isUniform;
+  private static final Map<StorageTier, Map<Integer, List<StorageType>>>
       CACHE = new EnumMap<>(StorageTier.class);
+  private static final int MAX_NODE_COUNT = 20;
+  private static StorageTier defaultTier = DISK;
+  private static final Map<StorageType, Integer> STORAGE_TYPE_PRIME_MAP =
+      new EnumMap<>(StorageType.class);
+  private static final Map<Integer, Map<Long, StorageTier>>
+      NODE_COUNT_TO_STORAGE_TIER_MAP = new HashMap<>();
 
   StorageTier(String tierName) {
     this.tierName = tierName;
     this.storageTypes = Collections.emptyList();
-    this.uniformStorageType = true;
+    this.fallbackStorageTypes = Collections.emptyList();
+    this.isUniform = true;
   }
 
   // Constructor for uniform storage tiers
-  StorageTier(String tierName, StorageType uniformStorageType) {
+  StorageTier(String tierName, List<StorageType> fallbackStorageTypes,
+      StorageType uniformStorageType) {
     this.tierName = tierName;
     this.storageTypes = Collections.singletonList(uniformStorageType);
-    this.uniformStorageType = true;
+    this.fallbackStorageTypes = fallbackStorageTypes;
+    this.isUniform = true;
   }
 
   // Constructor for non-uniform storage tiers
-  StorageTier(String tierName, StorageType... storageTypes) {
+  StorageTier(String tierName, List<StorageType> fallbackStorageTypes,
+      StorageType... storageTypes) {
     this.tierName = tierName;
     if (Arrays.stream(storageTypes).distinct().count() <= 1) {
       throw new IllegalArgumentException("StorageTier '" + tierName +
@@ -69,25 +76,42 @@ public enum StorageTier {
           " StorageType were provided.");
     }
     this.storageTypes = Arrays.asList(storageTypes);
-    this.uniformStorageType = false;
+    this.fallbackStorageTypes = fallbackStorageTypes;
+    this.isUniform = false;
   }
 
   static {
-    // Precompute storage type mappings for each replication config
-    for (StorageTier tier : StorageTier.values()) {
-      Map<ReplicationConfig, List<StorageType>> tierCache = new HashMap<>();
-      List<ReplicationConfig> replicationConfigs = Arrays.asList(
-          RatisReplicationConfig.getInstance(ONE),
-          RatisReplicationConfig.getInstance(THREE),
-          StandaloneReplicationConfig.getInstance(ONE),
-          StandaloneReplicationConfig.getInstance(THREE)
-      );
+    int prime = 2;
+    for (StorageType type : StorageType.values()) {
+      STORAGE_TYPE_PRIME_MAP.put(type, prime);
+      prime = nextPrime(prime + 1);
+    }
 
-      for (ReplicationConfig config : replicationConfigs) {
-        tierCache.put(config, tier.computeStorageTypes(config));
+    // Precompute storage type mappings for common node counts.
+    for (StorageTier tier : StorageTier.values()) {
+      Map<Integer, List<StorageType>> tierCache = new HashMap<>();
+      for (int nodeCount = 0; nodeCount <= MAX_NODE_COUNT; nodeCount++) {
+        List<StorageType> storageTypes = tier.computeStorageTypes(nodeCount);
+        tierCache.put(nodeCount, storageTypes);
+        NODE_COUNT_TO_STORAGE_TIER_MAP
+            .computeIfAbsent(nodeCount, k -> new HashMap<>())
+            .put(computeId(storageTypes), tier);
       }
       CACHE.put(tier, tierCache);
     }
+  }
+
+  /**
+   * Get the fallback StorageTypes allowed by the current StorageTier.
+   * If no fallback StorageType is allowed, return an empty List
+   * @return fallback StorageTypes
+   */
+  public List<StorageType> getFallbackStorageTypes() {
+    return fallbackStorageTypes;
+  }
+
+  public static StorageTier getDefaultTier() {
+    return defaultTier;
   }
 
   public StorageTierProto toProto() {
@@ -122,16 +146,12 @@ public enum StorageTier {
     }
   }
 
-  public static StorageTier getDefaultTier() {
-    return DEFAULT_TIER;
-  }
-
   public String getTierName() {
     return tierName;
   }
 
   public boolean isUniformStorageType() {
-    return uniformStorageType;
+    return isUniform;
   }
 
   /**
@@ -140,17 +160,15 @@ public enum StorageTier {
    * @param replicationConfig The replication configuration.
    * @return The list of StorageTypes for the given tier and replication configuration.
    */
-  private List<StorageType> computeStorageTypes(
-      ReplicationConfig replicationConfig) {
+  private List<StorageType> computeStorageTypes(int nodeCount) {
     if (isUniformStorageType()) {
-      int numberOfNodes = replicationConfig.getRequiredNodes();
       if (storageTypes.isEmpty()) {
         return Collections.emptyList();
       }
-      return new ArrayList<>(Collections.nCopies(numberOfNodes, storageTypes.get(0)));
+      return Collections.nCopies(nodeCount, storageTypes.get(0));
     } else {
       throw new UnsupportedOperationException(
-          "Unsupported not UniformStorage Storage Tier: " + replicationConfig);
+          "Unsupported not UniformStorage Storage Tier: " + this);
     }
   }
 
@@ -163,16 +181,83 @@ public enum StorageTier {
    */
   public List<StorageType> getStorageTypes(
       ReplicationConfig replicationConfig) {
-    Map<ReplicationConfig, List<StorageType>> tierCache = CACHE.get(this);
+    return getStorageTypes(replicationConfig.getRequiredNodes());
+  }
+
+  public List<StorageType> getStorageTypes(int nodeCount) {
+    Map<Integer, List<StorageType>> tierCache = CACHE.get(this);
 
     if (tierCache != null) {
-      List<StorageType> cachedStorageType = tierCache.get(replicationConfig);
+      List<StorageType> cachedStorageType = tierCache.get(nodeCount);
       if (cachedStorageType != null) {
         return cachedStorageType;
       }
     }
 
-    return computeStorageTypes(replicationConfig);
+    return computeStorageTypes(nodeCount);
   }
 
+  /**
+   * Calculates the multiplication of the IDs of the given StorageType List.
+   *
+   * @param storageTypes the StorageType List need to calculate
+   * @return int value;
+   */
+  public static long computeId(Collection<StorageType> storageTypes) {
+    long computedId = 1;
+    for (StorageType type : storageTypes) {
+      long prime = STORAGE_TYPE_PRIME_MAP.get(type);
+      if (computedId > Long.MAX_VALUE / prime) {
+        throw new ArithmeticException("Overflow detected when calculating ID for StorageType.");
+      }
+      computedId *= prime;
+    }
+    return computedId;
+  }
+
+  public static StorageTier fromID(int nodeCount, long id) {
+    if (nodeCount > MAX_NODE_COUNT) {
+      throw new IllegalArgumentException("Not support node count: " + nodeCount
+          + "Max support node count: " + MAX_NODE_COUNT);
+    }
+    if (NODE_COUNT_TO_STORAGE_TIER_MAP.get(nodeCount) != null) {
+      return NODE_COUNT_TO_STORAGE_TIER_MAP.get(nodeCount).get(id);
+    }
+    return null;
+  }
+
+  public static void setDefault(StorageTier storageTier) {
+    defaultTier = storageTier;
+  }
+
+  private static List<StorageType> fallback(StorageType... fallbackTypes) {
+    return Arrays.asList(fallbackTypes);
+  }
+
+  private static List<StorageType> noFallback() {
+    return Collections.emptyList();
+  }
+
+  public List<StorageType> getStorageTypes() {
+    return storageTypes;
+  }
+
+  private static int nextPrime(int value) {
+    while (!isPrime(value)) {
+      value++;
+    }
+    return value;
+  }
+
+  private static boolean isPrime(int value) {
+    if (value < 2) {
+      return false;
+    }
+    for (int i = 2; i * i <= value; i++) {
+      if (value % i == 0) {
+        return false;
+      }
+    }
+    return true;
+  }
 }

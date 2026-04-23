@@ -28,10 +28,12 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
-import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.MockDatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos;
+import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand.DatanodeDetailsAndReplicaIndex;
+import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand.ECReconstructionTarget;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -44,8 +46,9 @@ public class TestReconstructionECContainersCommands {
     ECReplicationConfig ecReplicationConfig = new ECReplicationConfig(3, 2);
     final ByteString missingContainerIndexes = UnsafeByteOperations.unsafeWrap(new byte[]{1, 2});
 
-    List<DatanodeDetails> targetDns = new ArrayList<>();
-    targetDns.add(MockDatanodeDetails.randomDatanodeDetails());
+    List<ECReconstructionTarget> targetDns = new ArrayList<>();
+    targetDns.add(new ECReconstructionTarget(MockDatanodeDetails.randomDatanodeDetails(),
+        StorageType.DEFAULT));
 
     assertThrows(IllegalArgumentException.class,
         () -> new ReconstructECContainersCommand(1L, Collections.emptyList(),
@@ -57,14 +60,13 @@ public class TestReconstructionECContainersCommands {
     byte[] missingIndexes = {1, 2};
     final ByteString missingContainerIndexes = UnsafeByteOperations.unsafeWrap(missingIndexes);
     ECReplicationConfig ecReplicationConfig = new ECReplicationConfig(3, 2);
-    final List<DatanodeDetails> dnDetails = getDNDetails(5);
+    final List<ECReconstructionTarget> dnDetails = getDNDetails(5);
 
-    List<ReconstructECContainersCommand.DatanodeDetailsAndReplicaIndex>
-        sources = dnDetails.stream().map(
-          a -> new ReconstructECContainersCommand
-              .DatanodeDetailsAndReplicaIndex(a, dnDetails.indexOf(a)))
+    List<DatanodeDetailsAndReplicaIndex>
+        sources = dnDetails.stream().map(a -> new DatanodeDetailsAndReplicaIndex(
+            a.getDatanodeDetails(), dnDetails.indexOf(a)))
         .collect(Collectors.toList());
-    List<DatanodeDetails> targets = getDNDetails(2);
+    List<ECReconstructionTarget> targets = getDNDetails(2);
     ReconstructECContainersCommand reconstructECContainersCommand =
         new ReconstructECContainersCommand(1L, sources, targets,
             missingContainerIndexes, ecReplicationConfig);
@@ -75,12 +77,11 @@ public class TestReconstructionECContainersCommands {
     StorageContainerDatanodeProtocolProtos.ReconstructECContainersCommandProto
         proto = reconstructECContainersCommand.getProto();
 
-    List<ReconstructECContainersCommand.DatanodeDetailsAndReplicaIndex>
+    List<DatanodeDetailsAndReplicaIndex>
         srcDnsFromProto = proto.getSourcesList().stream().map(
-          a -> ReconstructECContainersCommand.DatanodeDetailsAndReplicaIndex
-            .fromProto(a)).collect(Collectors.toList());
-    List<DatanodeDetails> targetDnsFromProto = proto.getTargetsList().stream()
-        .map(a -> DatanodeDetails.getFromProtoBuf(a))
+        DatanodeDetailsAndReplicaIndex::fromProto).collect(Collectors.toList());
+    List<ECReconstructionTarget> targetDnsFromProto = proto.getReconstructionTargetsList().stream()
+        .map(ECReconstructionTarget::fromProto)
         .collect(Collectors.toList());
     assertEquals(1L, proto.getContainerID());
     assertEquals(sources, srcDnsFromProto);
@@ -105,10 +106,11 @@ public class TestReconstructionECContainersCommands {
         fromProtobuf.getEcReplicationConfig());
   }
 
-  private List<DatanodeDetails> getDNDetails(int numDns) {
-    List<DatanodeDetails> dns = new ArrayList<>();
+  private List<ECReconstructionTarget> getDNDetails(int numDns) {
+    List<ECReconstructionTarget> dns = new ArrayList<>();
     for (int i = 0; i < numDns; i++) {
-      dns.add(MockDatanodeDetails.randomDatanodeDetails());
+      dns.add(new ECReconstructionTarget(MockDatanodeDetails.randomDatanodeDetails(),
+          StorageType.DEFAULT));
     }
     return dns;
   }

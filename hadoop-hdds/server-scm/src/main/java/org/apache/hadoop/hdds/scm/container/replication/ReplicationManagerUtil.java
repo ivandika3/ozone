@@ -17,22 +17,29 @@
 
 package org.apache.hadoop.hdds.scm.container.replication;
 
+import static org.apache.hadoop.hdds.client.StorageTierUtil.getAvailableStorageTypeOrdered;
+import static org.apache.hadoop.hdds.client.StorageTierUtil.shouldFallBack;
 import static org.apache.hadoop.hdds.scm.container.replication.ReplicationManager.compareState;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.fs.StorageType;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.DatanodeID;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.ContainerReplicaProto;
 import org.apache.hadoop.hdds.scm.PlacementPolicy;
+import org.apache.hadoop.hdds.scm.SCMCommonPlacementPolicy;
 import org.apache.hadoop.hdds.scm.container.ContainerInfo;
 import org.apache.hadoop.hdds.scm.container.ContainerReplica;
 import org.apache.hadoop.hdds.scm.container.placement.metrics.SCMNodeMetric;
@@ -115,6 +122,47 @@ public final class ReplicationManagerUtil {
             "Excluded Nodes: %s.", policy.getClass(), requiredNodes, dataSizeRequired, container,
         formatDatanodeDetails(usedNodes), formatDatanodeDetails(excludedNodes)),
         SCMException.ResultCodes.FAILED_TO_FIND_SUITABLE_NODE);
+  }
+
+  public static List<DatanodeDetails> getTargetDatanodes(PlacementPolicy policy,
+      int requiredNodes, List<DatanodeDetails> usedNodes,
+      List<DatanodeDetails> excludedNodes, long defaultContainerSize,
+      ContainerInfo container, StorageType storageType) throws SCMException {
+    final long dataSizeRequired = HddsServerUtil.requiredReplicationSpace(
+        Math.max(container.getUsedBytes(), defaultContainerSize));
+
+    int mutableRequiredNodes = requiredNodes;
+    while (mutableRequiredNodes > 0) {
+      try {
+        List<DatanodeDetails> targets;
+        if (usedNodes == null) {
+          targets = policy.chooseDatanodes(excludedNodes, null,
+              mutableRequiredNodes, 0, dataSizeRequired);
+        } else {
+          targets = policy.chooseDatanodes(usedNodes, excludedNodes, null,
+              mutableRequiredNodes, 0, dataSizeRequired);
+        }
+        List<DatanodeDetails> targetsWithSpace = targets.stream()
+            .filter(dn -> SCMCommonPlacementPolicy.hasEnoughSpace(dn, 0,
+                dataSizeRequired, storageType))
+            .collect(Collectors.toList());
+        if (!targetsWithSpace.isEmpty()) {
+          return targetsWithSpace;
+        }
+      } catch (IOException e) {
+        LOG.debug("Placement policy was not able to return {} nodes for " +
+            "container {} and storage type {}.",
+            mutableRequiredNodes, container.getContainerID(), storageType, e);
+      }
+      mutableRequiredNodes--;
+    }
+    throw new SCMException(String.format("Placement Policy: %s did not return"
+            + " any nodes. Number of required Nodes %d, Data size Required: "
+            + "%d. Storage Type: %s. Container: %s, Used Nodes %s, "
+            + "Excluded Nodes: %s.", policy.getClass(), requiredNodes,
+        dataSizeRequired, storageType, container, formatDatanodeDetails(usedNodes),
+        formatDatanodeDetails(excludedNodes)),
+        SCMException.ResultCodes.FAILED_TO_FIND_NODES_WITH_SPACE);
   }
 
   /**
@@ -459,4 +507,51 @@ public final class ReplicationManagerUtil {
     }
   }
 
+  public static Pair<StorageType, List<DatanodeDetails>> getTargetDatanodesWithFallback(
+      PlacementPolicy containerPlacement, int requiredNodes, List<DatanodeDetails> usedNodes,
+      List<DatanodeDetails> excludedNodes, long currentContainerSize, ContainerInfo container,
+      StorageTier storageTier) throws IOException {
+    if (storageTier == null) {
+      // If the storageTier is null, we treat it as StorageTier.DISK
+      // TODO StoragePolicy Consider compatible the null or add a configuration for this scenario
+      storageTier = StorageTier.DISK;
+    }
+    List<StorageType> availableStorageTypes = getAvailableStorageTypeOrdered(storageTier);
+    Iterator<StorageType> iterator = availableStorageTypes.iterator();
+    StorageType firstStorageType = null;
+    List<DatanodeDetails> firstDns = null;
+    while (iterator.hasNext()) {
+      try {
+        StorageType storageType = iterator.next();
+        List<DatanodeDetails> dns = ReplicationManagerUtil.getTargetDatanodes(containerPlacement,
+            requiredNodes, usedNodes, excludedNodes, currentContainerSize, container, storageType);
+        if (firstStorageType == null) {
+          firstStorageType = storageType;
+          firstDns = dns;
+        }
+        if (dns.size() < requiredNodes && iterator.hasNext()) {
+          // If we don't find enough datanodes,
+          // we will try to use the next fallback Storagetype to find datanodes
+          if (!storageTier.getFallbackStorageTypes().isEmpty()) {
+            continue;
+          }
+        }
+        return Pair.of(storageType, dns);
+      } catch (SCMException e) {
+        if (shouldFallBack(container.getStorageTier(), e)) {
+          continue;
+        }
+        throw e;
+      }
+    }
+    // If the attempt for all storageType failed, return the first attempted StorageType and dns
+    if (firstStorageType != null) {
+      return Pair.of(firstStorageType, firstDns);
+    }
+    throw new SCMException(String.format("Placement Policy: %s did not return"
+            + " any nodes. Number of required Nodes %d, Datasize Required: %d for StorageTier %s",
+        containerPlacement.getClass(), requiredNodes,
+        Math.max(container.getUsedBytes(), currentContainerSize), storageTier),
+        SCMException.ResultCodes.FAILED_TO_FIND_SUITABLE_NODE);
+  }
 }

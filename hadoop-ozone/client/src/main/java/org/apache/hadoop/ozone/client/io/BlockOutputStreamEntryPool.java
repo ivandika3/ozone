@@ -180,9 +180,8 @@ public class BlockOutputStreamEntryPool implements KeyMetadataAware {
     StorageType storageType = null;
     if (keyInfo.getStorageTier() != null) {
       try {
-        storageType = StorageTierUtil.getStorageTypeForUniformStorageTier(
-            keyInfo.getStorageTier(), keyInfo.getPipeline().getReplicationConfig());
-      } catch (SCMException e) {
+        storageType = StorageTierUtil.getStorageTypeForUniformStorageTier(keyInfo.getStorageTier());
+      } catch (IOException e) {
         throw new RuntimeException(e);
       }
     }
