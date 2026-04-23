@@ -1801,7 +1801,10 @@ public final class OzoneManagerProtocolClientSideTranslatorPB
             ReplicationConfig.fromProto(
                 response.getType(), response.getFactor(),
                 response.getEcReplicationConfig()),
-            response.getNextPartNumberMarker(), response.getIsTruncated());
+            response.getNextPartNumberMarker(), response.getIsTruncated(),
+            response.hasStoragePolicy()
+                ? OzoneStoragePolicy.fromProto(response.getStoragePolicy())
+                : null);
     omMultipartUploadListParts.addProtoPartList(response.getPartsListList());
 
     return omMultipartUploadListParts;

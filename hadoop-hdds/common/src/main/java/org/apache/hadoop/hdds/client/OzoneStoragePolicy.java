@@ -80,7 +80,7 @@ public enum OzoneStoragePolicy implements StoragePolicy {
    */
   public static OzoneStoragePolicy fromProto(StoragePolicyProto proto) {
     if (proto == null) {
-      throw new IllegalArgumentException("StoragePolicyProto cannot be null");
+      return getDefaultPolicy();
     }
     switch (proto) {
     case HOT:
@@ -89,8 +89,10 @@ public enum OzoneStoragePolicy implements StoragePolicy {
       return WARM;
     case COLD:
       return COLD;
+    case UNKNOWN_POLICY:
+      return getDefaultPolicy();
     default:
-      throw new IllegalArgumentException("Error: StoragePolicyProto not found, proto=" + proto);
+      return getDefaultPolicy();
     }
   }
 

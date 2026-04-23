@@ -105,6 +105,9 @@ public enum StorageTier {
   }
 
   public static StorageTier fromProto(StorageTierProto tier) {
+    if (tier == null) {
+      return getDefaultTier();
+    }
     switch (tier) {
     case SSD_TIER:
       return SSD;
@@ -112,9 +115,10 @@ public enum StorageTier {
       return DISK;
     case ARCHIVE_TIER:
       return ARCHIVE;
+    case UNKNOWN_TIER:
+      return getDefaultTier();
     default:
-      throw new IllegalStateException(
-          "Illegal StorageTierProto: " + tier);
+      return getDefaultTier();
     }
   }
 

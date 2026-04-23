@@ -337,12 +337,14 @@ enum StorageType {
 }
 
 enum StorageTierProto {
+    UNKNOWN_TIER = 0;
     DISK_TIER = 1;
     SSD_TIER = 2;
     ARCHIVE_TIER = 3;
 }
 
 enum StoragePolicyProto {
+    UNKNOWN_POLICY = 0;
     HOT = 1;
     WARM = 2;
     COLD = 3;

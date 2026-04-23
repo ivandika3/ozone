@@ -43,6 +43,7 @@ import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationFactor;
 import org.apache.hadoop.hdds.client.ReplicationType;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.scm.storage.ByteBufferStreamOutput;
 import org.apache.hadoop.ozone.OzoneAcl;
@@ -131,6 +132,14 @@ public final class OzoneBucketStub extends OzoneBucket {
       ReplicationConfig rConfig, Map<String, String> metadata,
       Map<String, String> tags)
       throws IOException {
+    return createKey(key, size, rConfig, metadata, tags, null);
+  }
+
+  @Override
+  public OzoneOutputStream createKey(String key, long size,
+      ReplicationConfig rConfig, Map<String, String> metadata,
+      Map<String, String> tags, StoragePolicy storagePolicy)
+      throws IOException {
     assertDoesNotExist(key + "/");
 
     final ReplicationConfig repConfig;
@@ -155,7 +164,7 @@ public final class OzoneBucketStub extends OzoneBucket {
                 new ArrayList<>(), finalReplicationCon, getMetadata(), null,
                 () -> readKey(key), true,
                 UserGroupInformation.getCurrentUser().getShortUserName(),
-                tags
+                tags, storagePolicy
             ));
             super.close();
           }
@@ -187,7 +196,7 @@ public final class OzoneBucketStub extends OzoneBucket {
                 System.currentTimeMillis(),
                 System.currentTimeMillis(),
                 new ArrayList<>(), finalReplicationCon, metadata, null,
-                () -> readKey(keyName), true, null, null
+                () -> readKey(keyName), true, null, null, null
             ));
             super.close();
           }
@@ -200,11 +209,19 @@ public final class OzoneBucketStub extends OzoneBucket {
   public OzoneOutputStream createKeyIfNotExists(String keyName, long size,
       ReplicationConfig rConfig, Map<String, String> metadata,
       Map<String, String> tags) throws IOException {
+    return createKeyIfNotExists(keyName, size, rConfig, metadata, tags, null);
+  }
+
+  @Override
+  public OzoneOutputStream createKeyIfNotExists(String keyName, long size,
+      ReplicationConfig rConfig, Map<String, String> metadata,
+      Map<String, String> tags, StoragePolicy storagePolicy)
+      throws IOException {
     if (keyDetails.containsKey(keyName)) {
       throw new OMException("Key already exists",
           ResultCodes.KEY_ALREADY_EXISTS);
     }
-    return createKey(keyName, size, rConfig, metadata, tags);
+    return createKey(keyName, size, rConfig, metadata, tags, storagePolicy);
   }
 
   @Override
@@ -212,6 +229,15 @@ public final class OzoneBucketStub extends OzoneBucket {
       String expectedETag, ReplicationConfig rConfig,
       Map<String, String> metadata, Map<String, String> tags)
       throws IOException {
+    return rewriteKeyIfMatch(keyName, size, expectedETag, rConfig, metadata,
+        tags, null);
+  }
+
+  @Override
+  public OzoneOutputStream rewriteKeyIfMatch(String keyName, long size,
+      String expectedETag, ReplicationConfig rConfig,
+      Map<String, String> metadata, Map<String, String> tags,
+      StoragePolicy storagePolicy) throws IOException {
     OzoneKeyDetails existing = keyDetails.get(keyName);
     if (existing == null) {
       throw new OMException("Key not found for If-Match",
@@ -225,7 +251,7 @@ public final class OzoneBucketStub extends OzoneBucket {
       throw new OMException("ETag mismatch",
           ResultCodes.ETAG_MISMATCH);
     }
-    return createKey(keyName, size, rConfig, metadata, tags);
+    return createKey(keyName, size, rConfig, metadata, tags, storagePolicy);
   }
 
   @Override
@@ -233,6 +259,14 @@ public final class OzoneBucketStub extends OzoneBucket {
                                                ReplicationConfig rConfig,
                                                Map<String, String> keyMetadata,
                                                Map<String, String> tags)
+      throws IOException {
+    return createStreamKey(key, size, rConfig, keyMetadata, tags, null);
+  }
+
+  @Override
+  public OzoneDataStreamOutput createStreamKey(String key, long size,
+      ReplicationConfig rConfig, Map<String, String> keyMetadata,
+      Map<String, String> tags, StoragePolicy storagePolicy)
       throws IOException {
     assertDoesNotExist(key + "/");
 
@@ -263,7 +297,7 @@ public final class OzoneBucketStub extends OzoneBucket {
                 new ArrayList<>(), rConfig, objectMetadata, null,
                 null, false,
                 UserGroupInformation.getCurrentUser().getShortUserName(),
-                tags
+                tags, storagePolicy
             ));
           }
 
@@ -287,11 +321,21 @@ public final class OzoneBucketStub extends OzoneBucket {
   public OzoneDataStreamOutput createStreamKeyIfNotExists(String key, long size,
       ReplicationConfig rConfig, Map<String, String> keyMetadata,
       Map<String, String> tags) throws IOException {
+    return createStreamKeyIfNotExists(key, size, rConfig, keyMetadata, tags,
+        null);
+  }
+
+  @Override
+  public OzoneDataStreamOutput createStreamKeyIfNotExists(String key, long size,
+      ReplicationConfig rConfig, Map<String, String> keyMetadata,
+      Map<String, String> tags, StoragePolicy storagePolicy)
+      throws IOException {
     if (keyDetails.containsKey(key)) {
       throw new OMException("Key already exists",
           ResultCodes.KEY_ALREADY_EXISTS);
     }
-    return createStreamKey(key, size, rConfig, keyMetadata, tags);
+    return createStreamKey(key, size, rConfig, keyMetadata, tags,
+        storagePolicy);
   }
 
   @Override
@@ -299,6 +343,15 @@ public final class OzoneBucketStub extends OzoneBucket {
       String expectedETag, ReplicationConfig rConfig,
       Map<String, String> keyMetadata, Map<String, String> tags)
       throws IOException {
+    return rewriteStreamKeyIfMatch(key, size, expectedETag, rConfig,
+        keyMetadata, tags, null);
+  }
+
+  @Override
+  public OzoneDataStreamOutput rewriteStreamKeyIfMatch(String key, long size,
+      String expectedETag, ReplicationConfig rConfig,
+      Map<String, String> keyMetadata, Map<String, String> tags,
+      StoragePolicy storagePolicy) throws IOException {
     OzoneKeyDetails existing = keyDetails.get(key);
     if (existing == null) {
       throw new OMException("Key not found for If-Match",
@@ -312,7 +365,8 @@ public final class OzoneBucketStub extends OzoneBucket {
       throw new OMException("ETag mismatch",
           ResultCodes.ETAG_MISMATCH);
     }
-    return createStreamKey(key, size, rConfig, keyMetadata, tags);
+    return createStreamKey(key, size, rConfig, keyMetadata, tags,
+        storagePolicy);
   }
 
   @Override
@@ -391,7 +445,8 @@ public final class OzoneBucketStub extends OzoneBucket {
           ozoneKeyDetails.getMetadata(),
           ozoneKeyDetails.isFile(),
           ozoneKeyDetails.getOwner(),
-          ozoneKeyDetails.getTags());
+          ozoneKeyDetails.getTags(),
+          ozoneKeyDetails.getStoragePolicy());
     } else {
       throw new OMException(ResultCodes.KEY_NOT_FOUND);
     }
@@ -447,7 +502,8 @@ public final class OzoneBucketStub extends OzoneBucket {
               key.getDataSize(),
               key.getCreationTime().getEpochSecond() * 1000,
               key.getModificationTime().getEpochSecond() * 1000,
-              key.getReplicationConfig(), key.isFile(), key.getOwner());
+              key.getReplicationConfig(), key.isFile(), key.getOwner(),
+              key.getStoragePolicy());
         }).collect(Collectors.toList());
 
     if (prevKey != null) {
@@ -500,8 +556,17 @@ public final class OzoneBucketStub extends OzoneBucket {
   public OmMultipartInfo initiateMultipartUpload(String keyName,
        ReplicationConfig config, Map<String, String> metadata, Map<String, String> tags)
       throws IOException {
+    return initiateMultipartUpload(keyName, config, metadata, tags, null);
+  }
+
+  @Override
+  public OmMultipartInfo initiateMultipartUpload(String keyName,
+      ReplicationConfig config, Map<String, String> metadata,
+      Map<String, String> tags, StoragePolicy storagePolicy)
+      throws IOException {
     String uploadID = UUID.randomUUID().toString();
-    keyToMultipartUpload.put(keyName, new MultipartInfoStub(uploadID, metadata, tags));
+    keyToMultipartUpload.put(keyName,
+        new MultipartInfoStub(uploadID, metadata, tags, storagePolicy));
     return new OmMultipartInfo(getVolumeName(), getName(), keyName, uploadID);
   }
 
@@ -574,7 +639,8 @@ public final class OzoneBucketStub extends OzoneBucket {
           keyToMultipartUpload.get(key).getMetadata(), null,
           () -> readKey(key), true,
           UserGroupInformation.getCurrentUser().getShortUserName(),
-          keyToMultipartUpload.get(key).getTags()
+          keyToMultipartUpload.get(key).getTags(),
+          keyToMultipartUpload.get(key).getStoragePolicy()
       ));
     }
 
@@ -603,7 +669,7 @@ public final class OzoneBucketStub extends OzoneBucket {
     if (partList.get(key) == null) {
       return new OzoneMultipartUploadPartListParts(
           RatisReplicationConfig.getInstance(HddsProtos.ReplicationFactor.ONE),
-          0, false);
+          0, false, null);
     } else {
       Map<Integer, Part> partMap = partList.get(key);
       Iterator<Map.Entry<Integer, Part>> partIterator =
@@ -641,7 +707,8 @@ public final class OzoneBucketStub extends OzoneBucket {
 
       OzoneMultipartUploadPartListParts ozoneMultipartUploadPartListParts =
           new OzoneMultipartUploadPartListParts(replicationConfig,
-              nextPartNumberMarker, truncated);
+              nextPartNumberMarker, truncated,
+              keyToMultipartUpload.get(key).getStoragePolicy());
       ozoneMultipartUploadPartListParts.addAllParts(partInfoList);
 
       return ozoneMultipartUploadPartListParts;
@@ -755,7 +822,7 @@ public final class OzoneBucketStub extends OzoneBucket {
         new ArrayList<>(), replicationConfig, new HashMap<>(), null,
         () -> readKey(keyName), false,
         UserGroupInformation.getCurrentUser().getShortUserName(),
-        Collections.emptyMap()));
+        Collections.emptyMap(), null));
   }
 
   private void assertDoesNotExist(String keyName) throws OMException {
@@ -888,12 +955,14 @@ public final class OzoneBucketStub extends OzoneBucket {
     private final String uploadId;
     private final Map<String, String> metadata;
     private final Map<String, String> tags;
+    private final StoragePolicy storagePolicy;
 
     MultipartInfoStub(String uploadId, Map<String, String> metadata,
-                      Map<String, String> tags) {
+        Map<String, String> tags, StoragePolicy storagePolicy) {
       this.uploadId = uploadId;
       this.metadata = metadata;
       this.tags = tags;
+      this.storagePolicy = storagePolicy;
     }
 
     public String getUploadId() {
@@ -906,6 +975,10 @@ public final class OzoneBucketStub extends OzoneBucket {
 
     public Map<String, String> getTags() {
       return tags;
+    }
+
+    public StoragePolicy getStoragePolicy() {
+      return storagePolicy;
     }
   }
 

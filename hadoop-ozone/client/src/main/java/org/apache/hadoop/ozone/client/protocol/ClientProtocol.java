@@ -434,6 +434,13 @@ public interface ClientProtocol {
       ReplicationConfig replicationConfig, Map<String, String> metadata,
       Map<String, String> tags) throws IOException;
 
+  @SuppressWarnings("checkstyle:parameternumber")
+  OzoneOutputStream rewriteKeyIfMatch(String volumeName, String bucketName,
+      String keyName, long size, String expectedETag,
+      ReplicationConfig replicationConfig, Map<String, String> metadata,
+      Map<String, String> tags, StoragePolicy storagePolicy)
+      throws IOException;
+
   /**
    * Writes a key in an existing bucket.
    * @param volumeName Name of the Volume
@@ -541,6 +548,13 @@ public interface ClientProtocol {
       String bucketName, String keyName, long size, String expectedETag,
       ReplicationConfig replicationConfig, Map<String, String> metadata,
       Map<String, String> tags) throws IOException;
+
+  @SuppressWarnings("checkstyle:parameternumber")
+  OzoneDataStreamOutput rewriteStreamKeyIfMatch(String volumeName,
+      String bucketName, String keyName, long size, String expectedETag,
+      ReplicationConfig replicationConfig, Map<String, String> metadata,
+      Map<String, String> tags, StoragePolicy storagePolicy)
+      throws IOException;
 
   /**
    * Reads a key from an existing bucket.

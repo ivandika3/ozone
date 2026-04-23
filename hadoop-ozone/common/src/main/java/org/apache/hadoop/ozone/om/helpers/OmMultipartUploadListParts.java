@@ -20,6 +20,7 @@ package org.apache.hadoop.ozone.om.helpers;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.PartInfo;
 
 /**
@@ -40,13 +41,15 @@ public class OmMultipartUploadListParts {
   private boolean truncated;
 
   private final List<OmPartInfo> partInfoList = new ArrayList<>();
+  private final StoragePolicy storagePolicy;
 
   public OmMultipartUploadListParts(ReplicationConfig replicationConfig,
-      int nextMarker, boolean truncate) {
+      int nextMarker, boolean truncate, StoragePolicy storagePolicy) {
     this.replicationConfig = replicationConfig;
 
     this.nextPartNumberMarker = nextMarker;
     this.truncated = truncate;
+    this.storagePolicy = storagePolicy;
   }
 
   public void addPart(OmPartInfo partInfo) {
@@ -71,6 +74,10 @@ public class OmMultipartUploadListParts {
 
   public void addPartList(List<OmPartInfo> partInfos) {
     this.partInfoList.addAll(partInfos);
+  }
+
+  public StoragePolicy getStoragePolicy() {
+    return storagePolicy;
   }
 
   public void addProtoPartList(List<PartInfo> partInfos) {

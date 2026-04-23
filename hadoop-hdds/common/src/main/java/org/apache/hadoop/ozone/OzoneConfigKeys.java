@@ -181,6 +181,10 @@ public final class OzoneConfigKeys {
       "ozone.default.storagepolicy";
   public static final String OZONE_DEFAULT_STORAGE_POLICY_DEFAULT =
       OzoneStoragePolicy.WARM.name();
+  public static final String OZONE_S3_DEFAULT_STORAGE_POLICY_KEY =
+      "ozone.s3.default.storagepolicy";
+  public static final String OZONE_S3_DEFAULT_STORAGE_POLICY_DEFAULT =
+      "STANDARD_IA";
 
   public static final String OZONE_CLIENT_MAX_EC_STRIPE_WRITE_RETRIES =
       "ozone.client.max.ec.stripe.write.retries";

@@ -30,6 +30,9 @@ public final class S3Consts {
   public static final String COPY_SOURCE_HEADER_RANGE =
       "x-amz-copy-source-range";
   public static final String STORAGE_CLASS_HEADER = "x-amz-storage-class";
+  public static final String S3_STORAGE_CLASS_STANDARD = "STANDARD";
+  public static final String S3_STORAGE_CLASS_STANDARD_IA = "STANDARD_IA";
+  public static final String S3_STORAGE_CLASS_GLACIER = "GLACIER";
   public static final String ENCODING_TYPE = "url";
 
   // Constants related to AWS Signature Version V4 calculation
