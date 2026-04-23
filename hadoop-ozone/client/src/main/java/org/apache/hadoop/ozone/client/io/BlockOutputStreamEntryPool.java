@@ -30,13 +30,16 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Supplier;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.ContainerBlockID;
+import org.apache.hadoop.hdds.client.StorageTierUtil;
 import org.apache.hadoop.hdds.scm.ByteStringConversion;
 import org.apache.hadoop.hdds.scm.ContainerClientMetrics;
 import org.apache.hadoop.hdds.scm.OzoneClientConfig;
 import org.apache.hadoop.hdds.scm.StreamBufferArgs;
 import org.apache.hadoop.hdds.scm.XceiverClientFactory;
 import org.apache.hadoop.hdds.scm.container.common.helpers.ExcludeList;
+import org.apache.hadoop.hdds.scm.exceptions.SCMException;
 import org.apache.hadoop.hdds.scm.pipeline.PipelineID;
 import org.apache.hadoop.hdds.scm.storage.BufferPool;
 import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
@@ -103,7 +106,8 @@ public class BlockOutputStreamEntryPool implements KeyMetadataAware {
         .setDataSize(info.getDataSize())
         .setIsMultipartKey(b.isMultipartKey())
         .setMultipartUploadID(b.getMultipartUploadID())
-        .setMultipartUploadPartNumber(b.getMultipartNumber());
+        .setMultipartUploadPartNumber(b.getMultipartNumber())
+        .setStoragePolicy(info.getStoragePolicy());
     this.openID = b.getOpenHandler().getId();
     this.excludeList = createExcludeList();
 
@@ -167,12 +171,30 @@ public class BlockOutputStreamEntryPool implements KeyMetadataAware {
             .setClientMetrics(clientMetrics)
             .setStreamBufferArgs(streamBufferArgs)
             .setExecutorServiceSupplier(executorServiceSupplier)
+            .setStorageType(getStorageType(subKeyInfo))
             .setForRetry(forRetry)
             .build();
   }
 
+  public static StorageType getStorageType(OmKeyLocationInfo keyInfo) {
+    StorageType storageType = null;
+    if (keyInfo.getStorageTier() != null) {
+      try {
+        storageType = StorageTierUtil.getStorageTypeForUniformStorageTier(
+            keyInfo.getStorageTier(), keyInfo.getPipeline().getReplicationConfig());
+      } catch (SCMException e) {
+        throw new RuntimeException(e);
+      }
+    }
+    return storageType;
+  }
+
   private synchronized void addKeyLocationInfo(OmKeyLocationInfo subKeyInfo, boolean forRetry) {
     Objects.requireNonNull(subKeyInfo.getPipeline(), "subKeyInfo.getPipeline() == null");
+    if (subKeyInfo.getStorageTier() != null) {
+      Preconditions.checkArgument(subKeyInfo.getStorageTier().isUniformStorageType(),
+          "Unsupported non-uniform storage tier " + subKeyInfo.getStorageTier());
+    }
     streamEntries.add(createStreamEntry(subKeyInfo, forRetry));
   }
 

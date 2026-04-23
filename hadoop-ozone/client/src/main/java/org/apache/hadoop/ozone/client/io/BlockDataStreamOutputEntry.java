@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.BlockID;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.scm.OzoneClientConfig;
@@ -52,6 +53,7 @@ public final class BlockDataStreamOutputEntry
   private long currentPosition;
   private final Token<OzoneBlockTokenIdentifier> token;
   private List<StreamBuffer> bufferList;
+  private final StorageType storageType;
 
   @SuppressWarnings({"parameternumber", "squid:S00107"})
   private BlockDataStreamOutputEntry(
@@ -61,7 +63,8 @@ public final class BlockDataStreamOutputEntry
       long length,
       Token<OzoneBlockTokenIdentifier> token,
       OzoneClientConfig config,
-      List<StreamBuffer> bufferList
+      List<StreamBuffer> bufferList,
+      StorageType storageType
   ) {
     this.config = config;
     this.byteBufferStreamOutput = null;
@@ -73,6 +76,7 @@ public final class BlockDataStreamOutputEntry
     this.length = length;
     this.currentPosition = 0;
     this.bufferList = bufferList;
+    this.storageType = storageType;
   }
 
   long getLength() {
@@ -97,7 +101,7 @@ public final class BlockDataStreamOutputEntry
     if (this.byteBufferStreamOutput == null) {
       this.byteBufferStreamOutput =
           new BlockDataStreamOutput(blockID, xceiverClientManager, pipeline,
-              config, token, bufferList);
+              config, token, bufferList, storageType);
     }
   }
 
@@ -211,6 +215,7 @@ public final class BlockDataStreamOutputEntry
     private Token<OzoneBlockTokenIdentifier> token;
     private OzoneClientConfig config;
     private List<StreamBuffer> bufferList;
+    private StorageType storageType;
 
     public Builder setBlockID(BlockID bID) {
       this.blockID = bID;
@@ -254,13 +259,18 @@ public final class BlockDataStreamOutputEntry
       return this;
     }
 
+    public Builder setStorageType(StorageType storageType) {
+      this.storageType = storageType;
+      return this;
+    }
+
     public BlockDataStreamOutputEntry build() {
       return new BlockDataStreamOutputEntry(blockID,
           key,
           xceiverClientManager,
           pipeline,
           length,
-          token, config, bufferList);
+          token, config, bufferList, storageType);
     }
   }
 
@@ -293,5 +303,4 @@ public final class BlockDataStreamOutputEntry
     this.currentPosition = curPosition;
   }
 }
-
 

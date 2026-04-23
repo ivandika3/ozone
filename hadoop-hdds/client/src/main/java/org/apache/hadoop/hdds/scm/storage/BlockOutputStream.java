@@ -41,7 +41,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.BlockID;
+import org.apache.hadoop.hdds.client.StorageTypeUtils;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.BlockData;
@@ -153,6 +155,7 @@ public class BlockOutputStream extends OutputStream {
   private int replicationIndex;
   private Pipeline pipeline;
   private final ContainerClientMetrics clientMetrics;
+  private final StorageType storageType;
   private boolean allowPutBlockPiggybacking;
   private boolean supportIncrementalChunkList;
 
@@ -177,7 +180,8 @@ public class BlockOutputStream extends OutputStream {
       OzoneClientConfig config,
       Token<? extends TokenIdentifier> token,
       ContainerClientMetrics clientMetrics, StreamBufferArgs streamBufferArgs,
-      Supplier<ExecutorService> blockOutputStreamResourceProvider
+      Supplier<ExecutorService> blockOutputStreamResourceProvider,
+      StorageType storageType
   ) throws IOException {
     this.xceiverClientFactory = xceiverClientManager;
     this.config = config;
@@ -198,6 +202,7 @@ public class BlockOutputStream extends OutputStream {
     this.containerBlockData = BlockData.newBuilder().setBlockID(
         blkIDBuilder.build()).addMetadata(keyValue);
     this.pipeline = pipeline;
+    this.storageType = storageType;
     // tell DataNode I will send incremental chunk list
     this.supportIncrementalChunkList = canEnableIncrementalChunkList();
     LOG.debug("incrementalChunkList is {}", supportIncrementalChunkList);
@@ -965,7 +970,7 @@ public class BlockOutputStream extends OutputStream {
 
       asyncReply = writeChunkAsync(xceiverClient, chunkInfo,
           blockID.get(), data, tokenString, replicationIndex, blockData, close,
-          null);
+          storageType == null ? null : StorageTypeUtils.getStorageTypeProto(storageType));
       CompletableFuture<ContainerCommandResponseProto>
           respFuture = asyncReply.getResponse();
       validateFuture = respFuture.thenApplyAsync(e -> {

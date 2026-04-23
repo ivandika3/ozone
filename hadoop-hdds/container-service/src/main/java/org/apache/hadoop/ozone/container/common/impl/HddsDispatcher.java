@@ -17,8 +17,6 @@
 
 package org.apache.hadoop.ozone.container.common.impl;
 
-import static org.apache.hadoop.hdds.HddsConfigKeys.HDDS_DATANODE_SLOW_OP_WARNING_THRESHOLD_DEFAULT;
-import static org.apache.hadoop.hdds.HddsConfigKeys.HDDS_DATANODE_SLOW_OP_WARNING_THRESHOLD_KEY;
 import static org.apache.hadoop.hdds.scm.protocolPB.ContainerCommandResponseBuilders.malformedRequest;
 import static org.apache.hadoop.hdds.scm.protocolPB.ContainerCommandResponseBuilders.unsupportedRequest;
 import static org.apache.hadoop.ozone.audit.AuditLogger.PerformanceStringBuilder;
@@ -83,7 +81,6 @@ import org.apache.hadoop.util.Time;
 import org.apache.ratis.statemachine.StateMachine;
 import org.apache.ratis.thirdparty.io.grpc.stub.StreamObserver;
 import org.apache.ratis.util.UncheckedAutoCloseable;
-import org.apache.ratis.thirdparty.com.google.protobuf.ProtocolMessageEnum;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -504,9 +501,9 @@ public class HddsDispatcher implements ContainerDispatcher, Auditor {
     if (containerRequest.hasWriteChunk()) {
       DatanodeBlockID blockID = containerRequest.getWriteChunk().getBlockID();
       createRequest.setReplicaIndex(blockID.getReplicaIndex());
-      if (containerRequest.getWriteChunk().hasStorageTypeID()) {
+      if (blockID.hasStorageTypeID()) {
         createRequest.setStorageTypeID(
-            containerRequest.getWriteChunk().getStorageTypeID());
+            blockID.getStorageTypeID());
       }
     }
 
@@ -519,9 +516,9 @@ public class HddsDispatcher implements ContainerDispatcher, Auditor {
       // PutSmallFile Not support EC yet
       DatanodeBlockID blockID = containerRequest.getPutSmallFile().getBlock().getBlockData().getBlockID();
       createRequest.setReplicaIndex(blockID.getReplicaIndex());
-      if (containerRequest.getPutSmallFile().hasStorageTypeID()) {
+      if (blockID.hasStorageTypeID()) {
         createRequest.setStorageTypeID(
-            containerRequest.getPutSmallFile().getStorageTypeID());
+            blockID.getStorageTypeID());
       }
     }
     ContainerCommandRequestProto.Builder requestBuilder =

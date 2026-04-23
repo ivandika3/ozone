@@ -19,6 +19,7 @@ package org.apache.hadoop.hdds.client;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.Objects;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 
@@ -33,30 +34,35 @@ public class BlockID {
   // This value would be only set when deserializing from ContainerProtos.DatanodeBlockID or copying from another
   // BlockID object.
   private final Integer replicaIndex;
+  private StorageType storageType;
 
   public BlockID(long containerID, long localID) {
-    this(containerID, localID, 0, null);
+    this(containerID, localID, 0, null, null);
   }
 
-  private BlockID(long containerID, long localID, long bcsID, Integer repIndex) {
+  private BlockID(long containerID, long localID, long bcsID, Integer repIndex,
+      StorageType storageType) {
     containerBlockID = new ContainerBlockID(containerID, localID);
     blockCommitSequenceId = bcsID;
     this.replicaIndex = repIndex;
+    this.storageType = storageType;
   }
 
   public BlockID(BlockID blockID) {
     this(blockID.getContainerID(), blockID.getLocalID(), blockID.getBlockCommitSequenceId(),
-        blockID.getReplicaIndex());
+        blockID.getReplicaIndex(), blockID.getStorageType());
   }
 
   public BlockID(ContainerBlockID containerBlockID) {
-    this(containerBlockID, 0, null);
+    this(containerBlockID, 0, null, null);
   }
 
-  private BlockID(ContainerBlockID containerBlockID, long bcsId, Integer repIndex) {
+  private BlockID(ContainerBlockID containerBlockID, long bcsId, Integer repIndex,
+      StorageType storageType) {
     this.containerBlockID = containerBlockID;
     blockCommitSequenceId = bcsId;
     this.replicaIndex = repIndex;
+    this.storageType = storageType;
   }
 
   public long getContainerID() {
@@ -84,6 +90,15 @@ public class BlockID {
     return containerBlockID;
   }
 
+  public StorageType getStorageType() {
+    return storageType;
+  }
+
+  public BlockID setStorageType(StorageType storageType) {
+    this.storageType = storageType;
+    return this;
+  }
+
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder(64);
@@ -94,7 +109,8 @@ public class BlockID {
   public void appendTo(StringBuilder sb) {
     containerBlockID.appendTo(sb);
     sb.append(" bcsId: ").append(blockCommitSequenceId)
-        .append(" replicaIndex: ").append(replicaIndex);
+        .append(" replicaIndex: ").append(replicaIndex)
+        .append(" storageType: ").append(storageType);
   }
 
   @JsonIgnore
@@ -102,6 +118,9 @@ public class BlockID {
     ContainerProtos.DatanodeBlockID.Builder blockID = getDatanodeBlockIDProtobufBuilder();
     if (replicaIndex != null) {
       blockID.setReplicaIndex(replicaIndex);
+    }
+    if (storageType != null) {
+      blockID.setStorageTypeID(StorageTypeUtils.getID(storageType));
     }
     return blockID.build();
   }
@@ -116,10 +135,15 @@ public class BlockID {
 
   @JsonIgnore
   public static BlockID getFromProtobuf(ContainerProtos.DatanodeBlockID blockID) {
+    StorageType storageType = null;
+    if (blockID.hasStorageTypeID() && blockID.getStorageTypeID() > 0) {
+      storageType = StorageTypeUtils.getStorageTypeFromID(blockID.getStorageTypeID());
+    }
     return new BlockID(blockID.getContainerID(),
         blockID.getLocalID(),
         blockID.getBlockCommitSequenceId(),
-        blockID.hasReplicaIndex() ? blockID.getReplicaIndex() : null);
+        blockID.hasReplicaIndex() ? blockID.getReplicaIndex() : null,
+        storageType);
   }
 
   @JsonIgnore
@@ -133,7 +157,7 @@ public class BlockID {
   public static BlockID getFromProtobuf(HddsProtos.BlockID blockID) {
     return new BlockID(
         ContainerBlockID.getFromProtobuf(blockID.getContainerBlockID()),
-        blockID.getBlockCommitSequenceId(), null);
+        blockID.getBlockCommitSequenceId(), null, null);
   }
 
   @Override
@@ -147,12 +171,13 @@ public class BlockID {
     BlockID blockID = (BlockID) o;
     return this.getContainerBlockID().equals(blockID.getContainerBlockID())
         && this.getBlockCommitSequenceId() == blockID.getBlockCommitSequenceId()
-        && Objects.equals(this.getReplicaIndex(), blockID.getReplicaIndex());
+        && Objects.equals(this.getReplicaIndex(), blockID.getReplicaIndex())
+        && Objects.equals(this.getStorageType(), blockID.getStorageType());
   }
 
   @Override
   public int hashCode() {
     return Objects.hash(containerBlockID.getContainerID(), containerBlockID.getLocalID(),
-        blockCommitSequenceId, replicaIndex);
+        blockCommitSequenceId, replicaIndex, storageType);
   }
 }

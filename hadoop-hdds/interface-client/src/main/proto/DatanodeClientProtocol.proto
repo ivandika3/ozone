@@ -149,6 +149,7 @@ message DatanodeBlockID {
   required int64 localID = 2;
   optional uint64 blockCommitSequenceId = 3 [default = 0];
   optional int32 replicaIndex = 4;
+  optional int32 storageTypeID = 1000;
 
 }
 
@@ -445,10 +446,6 @@ message WriteChunkRequestProto  {
   optional ChunkInfo chunkData = 2;
   optional bytes data = 3;
   optional PutBlockRequestProto block = 4;
-
-  // If we do not set storageTypeID, it means that we allow Containers to be
-  // created on Volumes of any StorageType.
-  optional int32 storageTypeID = 1000;
 }
 
 message WriteChunkResponseProto {
@@ -505,10 +502,6 @@ message PutSmallFileRequestProto {
   required PutBlockRequestProto block = 1;
   required ChunkInfo chunkInfo = 2;
   required bytes data = 3;
-
-  // If we do not set storageTypeID, it means that we allow Containers to be
-  // created on Volumes of any StorageType.
-  optional int32 storageTypeID = 1000;
 }
 
 

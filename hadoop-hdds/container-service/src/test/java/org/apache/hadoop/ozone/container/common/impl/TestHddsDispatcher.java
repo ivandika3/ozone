@@ -56,7 +56,6 @@ import org.apache.commons.lang3.RandomUtils;
 import org.apache.hadoop.conf.StorageUnit;
 import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.BlockID;
-import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.client.StorageTypeUtils;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.fs.MockSpaceUsageCheckFactory;
@@ -73,9 +72,9 @@ import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.WriteChunk
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto
     .StorageContainerDatanodeProtocolProtos.ContainerAction;
+import org.apache.hadoop.hdds.scm.ScmConfigKeys;
 import org.apache.hadoop.hdds.scm.container.common.helpers.StorageContainerException;
 import org.apache.hadoop.hdds.security.token.TokenVerifier;
-import org.apache.hadoop.hdds.scm.ScmConfigKeys;
 import org.apache.hadoop.ozone.OzoneConfigKeys;
 import org.apache.hadoop.ozone.common.Checksum;
 import org.apache.hadoop.ozone.common.ChecksumData;
@@ -112,6 +111,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 /**
  * Test-cases to verify the functionality of HddsDispatcher.
  */
@@ -784,12 +784,11 @@ public class TestHddsDispatcher {
     WriteChunkRequestProto.Builder writeChunkRequest = WriteChunkRequestProto
         .newBuilder()
         .setBlockID(new BlockID(containerId, localId)
+            .setStorageType(storageType == null ? null :
+                StorageTypeUtils.getFromProtobuf(storageType))
             .getDatanodeBlockIDProtobuf())
         .setChunkData(chunk)
         .setData(data);
-    if (storageType != null) {
-      writeChunkRequest.setStorageTypeID(StorageTypeUtils.getIDFromProtobuf(storageType));
-    }
 
     return ContainerCommandRequestProto
         .newBuilder()

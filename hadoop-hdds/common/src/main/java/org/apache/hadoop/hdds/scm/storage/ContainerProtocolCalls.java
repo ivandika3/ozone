@@ -462,15 +462,19 @@ public final class ContainerProtocolCalls  {
       ByteString data, String tokenString, int replicationIndex,
       BlockData blockData, boolean close, HddsProtos.StorageType storageType)
       throws IOException, ExecutionException, InterruptedException {
+    DatanodeBlockID.Builder datanodeBlockID = DatanodeBlockID.newBuilder()
+        .setContainerID(blockID.getContainerID())
+        .setLocalID(blockID.getLocalID())
+        .setBlockCommitSequenceId(blockID.getBlockCommitSequenceId())
+        .setReplicaIndex(replicationIndex);
+    if (storageType != null) {
+      datanodeBlockID.setStorageTypeID(
+          StorageTypeUtils.getIDFromProtobuf(storageType));
+    }
 
     WriteChunkRequestProto.Builder writeChunkRequest =
         WriteChunkRequestProto.newBuilder()
-            .setBlockID(DatanodeBlockID.newBuilder()
-                .setContainerID(blockID.getContainerID())
-                .setLocalID(blockID.getLocalID())
-                .setBlockCommitSequenceId(blockID.getBlockCommitSequenceId())
-                .setReplicaIndex(replicationIndex)
-                .build())
+            .setBlockID(datanodeBlockID.build())
             .setChunkData(chunk)
             .setData(data);
     if (blockData != null) {
@@ -479,10 +483,6 @@ public final class ContainerProtocolCalls  {
               .setBlockData(blockData)
               .setEof(close);
       writeChunkRequest.setBlock(createBlockRequest);
-    }
-    if (storageType != null) {
-      writeChunkRequest.setStorageTypeID(
-          StorageTypeUtils.getIDFromProtobuf(storageType));
     }
     String id = xceiverClient.getPipeline().getFirstNode().getUuidString();
     ContainerCommandRequestProto.Builder builder =
@@ -517,9 +517,15 @@ public final class ContainerProtocolCalls  {
       XceiverClientSpi client, BlockID blockID, byte[] data,
       Token<OzoneBlockTokenIdentifier> token,
       HddsProtos.StorageType storageType) throws IOException {
+    BlockID smallFileBlockID = new BlockID(blockID);
+    if (storageType != null) {
+      smallFileBlockID.setStorageType(
+          StorageTypeUtils.getFromProtobuf(storageType));
+    }
 
     BlockData containerBlockData =
-        BlockData.newBuilder().setBlockID(blockID.getDatanodeBlockIDProtobuf())
+        BlockData.newBuilder()
+            .setBlockID(smallFileBlockID.getDatanodeBlockIDProtobuf())
             .build();
     PutBlockRequestProto.Builder createBlockRequest =
         PutBlockRequestProto.newBuilder()
@@ -544,9 +550,6 @@ public final class ContainerProtocolCalls  {
         PutSmallFileRequestProto.newBuilder().setChunkInfo(chunk)
             .setBlock(createBlockRequest)
             .setData(ByteString.copyFrom(data));
-    if (storageType != null) {
-      putSmallFileBuilder.setStorageTypeID(StorageTypeUtils.getIDFromProtobuf(storageType));
-    }
 
     String id = client.getPipeline().getFirstNode().getUuidString();
     ContainerCommandRequestProto.Builder builder =

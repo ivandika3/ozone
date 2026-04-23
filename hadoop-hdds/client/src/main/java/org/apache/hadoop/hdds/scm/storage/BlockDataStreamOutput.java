@@ -34,6 +34,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.BlockID;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos;
@@ -152,13 +153,15 @@ public class BlockDataStreamOutput implements ByteBufferStreamOutput {
       Pipeline pipeline,
       OzoneClientConfig config,
       Token<? extends TokenIdentifier> token,
-      List<StreamBuffer> bufferList
+      List<StreamBuffer> bufferList,
+      StorageType storageType
   ) throws IOException {
     this.xceiverClientFactory = xceiverClientManager;
     this.config = config;
     this.isDatastreamPipelineMode = config.isDatastreamPipelineMode();
     this.syncSize = config.getDataStreamSyncSize();
     this.blockID = new AtomicReference<>(blockID);
+    this.blockID.get().setStorageType(storageType);
     KeyValue keyValue =
         KeyValue.newBuilder().setKey("TYPE").setValue("KEY").build();
     this.containerBlockData =
@@ -191,6 +194,18 @@ public class BlockDataStreamOutput implements ByteBufferStreamOutput {
     checksum = new Checksum(config.getChecksumType(),
         config.getBytesPerChecksum());
     metrics = XceiverClientManager.getXceiverClientMetrics();
+  }
+
+  public BlockDataStreamOutput(
+      BlockID blockID,
+      XceiverClientFactory xceiverClientManager,
+      Pipeline pipeline,
+      OzoneClientConfig config,
+      Token<? extends TokenIdentifier> token,
+      List<StreamBuffer> bufferList
+  ) throws IOException {
+    this(blockID, xceiverClientManager, pipeline, config, token, bufferList,
+        null);
   }
 
   private DataStreamOutput setupStream(Pipeline pipeline) throws IOException {
