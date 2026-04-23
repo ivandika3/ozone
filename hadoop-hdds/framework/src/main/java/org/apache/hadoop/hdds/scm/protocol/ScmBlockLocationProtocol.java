@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationFactor;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationType;
@@ -110,6 +111,31 @@ public interface ScmBlockLocationProtocol extends Closeable {
   List<AllocatedBlock> allocateBlock(long size, int numBlocks,
       ReplicationConfig replicationConfig, String owner,
       ExcludeList excludeList, String clientMachine) throws IOException;
+
+  /**
+   * Asks SCM where blocks should be allocated using storage policy hints.
+   */
+  default List<AllocatedBlock> allocateBlock(long size, int numBlocks,
+      ReplicationConfig replicationConfig, String owner,
+      ExcludeList excludeList, StoragePolicy storagePolicy,
+      boolean allowFallbackStoragePolicy) throws IOException {
+    return allocateBlock(size, numBlocks, replicationConfig, owner,
+        excludeList, null, storagePolicy, allowFallbackStoragePolicy);
+  }
+
+  /**
+   * Asks SCM where blocks should be allocated using storage policy hints,
+   * sorted based on the client address.
+   */
+  @SuppressWarnings("checkstyle:parameternumber")
+  default List<AllocatedBlock> allocateBlock(long size, int numBlocks,
+      ReplicationConfig replicationConfig, String owner,
+      ExcludeList excludeList, String clientMachine,
+      StoragePolicy storagePolicy, boolean allowFallbackStoragePolicy)
+      throws IOException {
+    return allocateBlock(size, numBlocks, replicationConfig, owner,
+        excludeList, clientMachine);
+  }
 
   /**
    * Delete blocks for a set of object keys.

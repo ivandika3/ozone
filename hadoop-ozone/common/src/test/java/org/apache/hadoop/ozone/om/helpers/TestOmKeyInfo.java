@@ -37,6 +37,7 @@ import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.StandaloneReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationFactor;
 import org.apache.hadoop.hdds.scm.pipeline.Pipeline;
 import org.apache.hadoop.hdds.scm.pipeline.PipelineID;
@@ -114,6 +115,38 @@ public class TestOmKeyInfo {
         (ECReplicationConfig) recovered.getReplicationConfig();
     assertEquals(3, config.getData());
     assertEquals(2, config.getParity());
+  }
+
+  @Test
+  public void omKeyLocationInfoRoundTripsStorageTierMetadata() {
+    OmKeyLocationInfo locationInfo = new OmKeyLocationInfo.Builder()
+        .setBlockID(new BlockID(1L, 2L))
+        .setPipeline(getPipeline())
+        .setStorageTier(StorageTier.ARCHIVE)
+        .setIsFallBack(true)
+        .build();
+
+    OmKeyLocationInfo recovered = OmKeyLocationInfo.getFromProtobuf(
+        locationInfo.getProtobuf(ClientVersion.CURRENT_VERSION));
+
+    assertEquals(StorageTier.ARCHIVE, recovered.getStorageTier());
+    assertTrue(recovered.isFallBack());
+  }
+
+  @Test
+  public void omKeyLocationInfoDefaultsMissingStorageTierMetadata() {
+    OzoneManagerProtocolProtos.KeyLocation keyLocation =
+        OzoneManagerProtocolProtos.KeyLocation.newBuilder()
+            .setBlockID(new BlockID(1L, 2L).getProtobuf())
+            .setOffset(0)
+            .setLength(1)
+            .build();
+
+    OmKeyLocationInfo recovered = OmKeyLocationInfo.getFromProtobuf(
+        keyLocation);
+
+    assertEquals(StorageTier.getDefaultTier(), recovered.getStorageTier());
+    assertFalse(recovered.isFallBack());
   }
 
   private OmKeyInfo createOmKeyInfo(ReplicationConfig replicationConfig) {

@@ -29,7 +29,10 @@ import java.util.Objects;
 import javax.management.ObjectName;
 import org.apache.hadoop.hdds.client.BlockID;
 import org.apache.hadoop.hdds.client.ContainerBlockID;
+import org.apache.hadoop.hdds.client.OzoneStoragePolicy;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StoragePolicy;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.StorageUnit;
 import org.apache.hadoop.hdds.scm.ScmConfig;
@@ -147,6 +150,16 @@ public class BlockManagerImpl implements BlockManager, BlockmanagerMXBean {
       ReplicationConfig replicationConfig,
       String owner, ExcludeList excludeList)
       throws IOException {
+    return allocateBlock(size, replicationConfig, owner, excludeList,
+        OzoneStoragePolicy.getDefaultPolicy(), true);
+  }
+
+  @Override
+  public AllocatedBlock allocateBlock(final long size,
+      ReplicationConfig replicationConfig,
+      String owner, ExcludeList excludeList, StoragePolicy storagePolicy,
+      boolean allowFallbackStoragePolicy)
+      throws IOException {
     if (LOG.isTraceEnabled()) {
       LOG.trace("Size : {} , replicationConfig: {}", size, replicationConfig);
     }
@@ -160,17 +173,50 @@ public class BlockManagerImpl implements BlockManager, BlockmanagerMXBean {
           INVALID_BLOCK_SIZE);
     }
 
-    ContainerInfo containerInfo = writableContainerFactory.getContainer(
-        size, replicationConfig, owner, excludeList);
+    StoragePolicy effectiveStoragePolicy = storagePolicy == null
+        ? OzoneStoragePolicy.getDefaultPolicy() : storagePolicy;
+    StorageTier preferredTier = effectiveStoragePolicy.getCreationTier();
+    StorageTier fallbackTier = effectiveStoragePolicy.getCreationFallbackTier();
+    boolean fallbackUsed = false;
+
+    ContainerInfo containerInfo = null;
+    IOException preferredFailure = null;
+    try {
+      containerInfo = writableContainerFactory.getContainer(
+          size, replicationConfig, owner, excludeList, preferredTier);
+    } catch (SCMException ex) {
+      preferredFailure = ex;
+    }
+
+    if (containerInfo == null && allowFallbackStoragePolicy
+        && fallbackTier != null
+        && fallbackTier != StorageTier.EMPTY
+        && fallbackTier != preferredTier) {
+      try {
+        containerInfo = writableContainerFactory.getContainer(
+            size, replicationConfig, owner, excludeList, fallbackTier);
+        fallbackUsed = containerInfo != null;
+      } catch (SCMException ex) {
+        if (preferredFailure != null) {
+          ex.addSuppressed(preferredFailure);
+        }
+        throw ex;
+      }
+    }
 
     if (containerInfo != null) {
-      return newBlock(containerInfo);
+      return newBlock(containerInfo, fallbackUsed);
+    }
+    if (preferredFailure != null) {
+      throw preferredFailure;
     }
     // we have tried all strategies we know and but somehow we are not able
     // to get a container for this block. Log that info and return a null.
     LOG.error(
-        "Unable to allocate a block for the size: {}, replicationConfig: {}",
-        size, replicationConfig);
+        "Unable to allocate a block for the size: {}, replicationConfig: {},"
+            + " storagePolicy: {}, allowFallbackStoragePolicy: {}",
+        size, replicationConfig, effectiveStoragePolicy,
+        allowFallbackStoragePolicy);
     return null;
   }
 
@@ -180,7 +226,8 @@ public class BlockManagerImpl implements BlockManager, BlockmanagerMXBean {
    * @param containerInfo - Container Info.
    * @return AllocatedBlock
    */
-  private AllocatedBlock newBlock(ContainerInfo containerInfo)
+  private AllocatedBlock newBlock(ContainerInfo containerInfo,
+      boolean fallbackUsed)
       throws SCMException {
     try {
       final Pipeline pipeline = pipelineManager
@@ -189,7 +236,9 @@ public class BlockManagerImpl implements BlockManager, BlockmanagerMXBean {
       long containerID = containerInfo.getContainerID();
       AllocatedBlock.Builder abb =  new AllocatedBlock.Builder()
           .setContainerBlockID(new ContainerBlockID(containerID, localID))
-          .setPipeline(pipeline);
+          .setPipeline(pipeline)
+          .setStorageTier(containerInfo.getStorageTier())
+          .setIsFallBack(fallbackUsed);
       if (LOG.isTraceEnabled()) {
         LOG.trace("New block allocated : {} Container ID: {}", localID,
             containerID);

@@ -130,7 +130,7 @@ public class OMFileCreateRequest extends OMKeyRequest {
     // the placeholder for the data size. Therefore, we should at least allocate a
     // single block and we cannot simply skip the allocate block call
     List< OmKeyLocationInfo > omKeyLocationInfoList =
-        allocateBlock(ozoneManager.getScmClient(),
+        allocateBlock(ozoneManager, ozoneManager.getScmClient(),
               ozoneManager.getBlockTokenSecretManager(), repConfig,
               new ExcludeList(), requestedSize, scmBlockSize,
               ozoneManager.getPreallocateBlocksMax(),

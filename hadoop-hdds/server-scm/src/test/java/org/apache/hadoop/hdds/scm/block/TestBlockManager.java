@@ -42,8 +42,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.apache.hadoop.hdds.HddsConfigKeys;
+import org.apache.hadoop.hdds.client.OzoneStoragePolicy;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationFactor;
@@ -199,6 +201,22 @@ public class TestBlockManager {
     AllocatedBlock block = blockManager.allocateBlock(DEFAULT_BLOCK_SIZE,
         replicationConfig, OzoneConsts.OZONE, new ExcludeList());
     assertNotNull(block);
+    assertEquals(StorageTier.getDefaultTier(), block.getStorageTier());
+    assertTrue(!block.isFallBack());
+  }
+
+  @Test
+  public void testAllocateBlockWithStoragePolicyCarriesTierMetadata()
+      throws Exception {
+    pipelineManager.createPipeline(replicationConfig,
+        StorageTier.getDefaultTier());
+    HddsTestUtils.openAllRatisPipelines(pipelineManager);
+    AllocatedBlock block = blockManager.allocateBlock(DEFAULT_BLOCK_SIZE,
+        replicationConfig, OzoneConsts.OZONE, new ExcludeList(),
+        OzoneStoragePolicy.WARM, false);
+    assertNotNull(block);
+    assertEquals(StorageTier.getDefaultTier(), block.getStorageTier());
+    assertTrue(!block.isFallBack());
   }
 
   @Test

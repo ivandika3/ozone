@@ -32,9 +32,12 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hdds.annotation.InterfaceAudience;
 import org.apache.hadoop.hdds.client.ContainerBlockID;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
+import org.apache.hadoop.hdds.client.OzoneStoragePolicy;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.StandaloneReplicationConfig;
+import org.apache.hadoop.hdds.client.StoragePolicy;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.conf.StorageUnit;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
@@ -175,7 +178,23 @@ public final class ScmBlockLocationProtocolClientSideTranslatorPB
       String owner, ExcludeList excludeList,
       String clientMachine
   ) throws IOException {
+    return allocateBlock(size, num, replicationConfig, owner, excludeList,
+        clientMachine, OzoneStoragePolicy.getDefaultPolicy(), true);
+  }
+
+  @Override
+  public List<AllocatedBlock> allocateBlock(
+      long size, int num,
+      ReplicationConfig replicationConfig,
+      String owner, ExcludeList excludeList,
+      String clientMachine, StoragePolicy storagePolicy,
+      boolean allowFallbackStoragePolicy
+  ) throws IOException {
     Preconditions.checkArgument(size > 0, "block size must be greater than 0");
+    OzoneStoragePolicy ozoneStoragePolicy =
+        storagePolicy instanceof OzoneStoragePolicy
+            ? (OzoneStoragePolicy) storagePolicy
+            : OzoneStoragePolicy.fromName(storagePolicy.getName());
 
     final AllocateScmBlockRequestProto.Builder requestBuilder =
         AllocateScmBlockRequestProto.newBuilder()
@@ -183,7 +202,9 @@ public final class ScmBlockLocationProtocolClientSideTranslatorPB
             .setNumBlocks(num)
             .setType(replicationConfig.getReplicationType())
             .setOwner(owner)
-            .setExcludeList(excludeList.getProtoBuf());
+            .setExcludeList(excludeList.getProtoBuf())
+            .setStoragePolicy(ozoneStoragePolicy.toProto())
+            .setAllowFallBack(allowFallbackStoragePolicy);
 
     if (StringUtils.isNotEmpty(clientMachine)) {
       requestBuilder.setClient(clientMachine);
@@ -229,7 +250,11 @@ public final class ScmBlockLocationProtocolClientSideTranslatorPB
       AllocatedBlock.Builder builder = new AllocatedBlock.Builder()
           .setContainerBlockID(
               ContainerBlockID.getFromProtobuf(resp.getContainerBlockID()))
-          .setPipeline(Pipeline.getFromProtobuf(resp.getPipeline()));
+          .setPipeline(Pipeline.getFromProtobuf(resp.getPipeline()))
+          .setStorageTier(resp.hasStorageTier()
+              ? StorageTier.fromProto(resp.getStorageTier())
+              : StorageTier.getDefaultTier())
+          .setIsFallBack(resp.getIsFallBack());
       blocks.add(builder.build());
     }
 

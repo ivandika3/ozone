@@ -54,6 +54,7 @@ import org.apache.hadoop.fs.FileEncryptionInfo;
 import org.apache.hadoop.hdds.client.BlockID;
 import org.apache.hadoop.hdds.client.ContainerBlockID;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
+import org.apache.hadoop.hdds.client.OzoneStoragePolicy;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.scm.container.common.helpers.AllocatedBlock;
@@ -65,6 +66,7 @@ import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
 import org.apache.hadoop.ipc_.Server;
 import org.apache.hadoop.ozone.OmUtils;
 import org.apache.hadoop.ozone.OzoneAcl;
+import org.apache.hadoop.ozone.OzoneConfigKeys;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OMMetrics;
@@ -185,7 +187,8 @@ public abstract class OMKeyRequest extends OMClientRequest {
    * @throws IOException
    */
   @SuppressWarnings("parameternumber")
-  protected List< OmKeyLocationInfo > allocateBlock(ScmClient scmClient,
+  protected List< OmKeyLocationInfo > allocateBlock(OzoneManager ozoneManager,
+      ScmClient scmClient,
       OzoneBlockTokenSecretManager secretManager,
       ReplicationConfig replicationConfig, ExcludeList excludeList,
       long requestedSize, long scmBlockSize, int preallocateBlocksMax,
@@ -205,10 +208,14 @@ public abstract class OMKeyRequest extends OMClientRequest {
     List<OmKeyLocationInfo> locationInfos = new ArrayList<>(numBlocks);
     String remoteUser = getRemoteUser().getShortUserName();
     List<AllocatedBlock> allocatedBlocks;
+    OzoneStoragePolicy storagePolicy = OzoneStoragePolicy.fromName(
+        ozoneManager.getConfiguration().getTrimmed(
+            OzoneConfigKeys.OZONE_DEFAULT_STORAGE_POLICY_KEY,
+            OzoneConfigKeys.OZONE_DEFAULT_STORAGE_POLICY_DEFAULT));
     try {
       allocatedBlocks = scmClient.getBlockClient()
           .allocateBlock(scmBlockSize, numBlocks, replicationConfig, serviceID,
-              excludeList, clientMachine);
+              excludeList, clientMachine, storagePolicy, true);
     } catch (SCMException ex) {
       omMetrics.incNumBlockAllocateCallFails();
       if (ex.getResult()
@@ -224,7 +231,9 @@ public abstract class OMKeyRequest extends OMClientRequest {
           .setBlockID(blockID)
           .setLength(scmBlockSize)
           .setOffset(0)
-          .setPipeline(allocatedBlock.getPipeline());
+          .setPipeline(allocatedBlock.getPipeline())
+          .setStorageTier(allocatedBlock.getStorageTier())
+          .setIsFallBack(allocatedBlock.isFallBack());
       if (grpcBlockTokenEnabled) {
         builder.setToken(secretManager.generateToken(remoteUser, blockID,
             EnumSet.of(READ, WRITE), scmBlockSize));

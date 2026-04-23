@@ -162,7 +162,7 @@ public class OMKeyCreateRequest extends OMKeyRequest {
         effectiveDataSize = 0;
       } else {
         omKeyLocationInfoList = captureLatencyNs(perfMetrics.getCreateKeyAllocateBlockLatencyNs(),
-            () -> allocateBlock(ozoneManager.getScmClient(),
+            () -> allocateBlock(ozoneManager, ozoneManager.getScmClient(),
                 ozoneManager.getBlockTokenSecretManager(), repConfig,
                 new ExcludeList(), requestedSize, scmBlockSize,
                 ozoneManager.getPreallocateBlocksMax(),

@@ -19,15 +19,20 @@ package org.apache.hadoop.ozone.om.request.key;
 
 import static org.apache.hadoop.ozone.OzoneConsts.TRANSACTION_INFO_KEY;
 import static org.apache.hadoop.ozone.om.request.OMRequestTestUtils.setupReplicationConfigValidation;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.framework;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import jakarta.annotation.Nonnull;
@@ -38,9 +43,12 @@ import java.util.Random;
 import java.util.UUID;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.client.ContainerBlockID;
+import org.apache.hadoop.hdds.client.OzoneStoragePolicy;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.StandaloneReplicationConfig;
+import org.apache.hadoop.hdds.client.StoragePolicy;
+import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationFactor;
@@ -74,18 +82,22 @@ import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.OzoneManagerPrepareState;
 import org.apache.hadoop.ozone.om.ResolvedBucket;
 import org.apache.hadoop.ozone.om.ScmClient;
+import org.apache.hadoop.ozone.om.execution.flowcontrol.ExecutionContext;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfo;
 import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
 import org.apache.hadoop.ozone.om.request.OMClientRequest;
 import org.apache.hadoop.ozone.om.request.OMRequestTestUtils;
 import org.apache.hadoop.ozone.om.request.snapshot.OMSnapshotCreateRequest;
 import org.apache.hadoop.ozone.om.request.snapshot.TestOMSnapshotCreateRequest;
+import org.apache.hadoop.ozone.om.response.OMClientResponse;
 import org.apache.hadoop.ozone.om.response.snapshot.OMSnapshotCreateResponse;
 import org.apache.hadoop.ozone.om.upgrade.OMLayoutVersionManager;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.KeyArgs;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.UserInfo;
 import org.apache.hadoop.ozone.security.acl.OzoneNativeAuthorizer;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.Time;
@@ -135,17 +147,32 @@ public class TestOMKeyRequest {
 
   @BeforeEach
   public void setup() throws Exception {
+    OzoneConfiguration ozoneConfiguration = getOzoneConfiguration();
+    initializeCoreState(ozoneConfiguration);
+    setupOzoneManagerMocks(ozoneConfiguration);
+    setupScmMocks(ozoneConfiguration);
+    setupContainerLookup();
+    setupResolvedBucketMocks();
+    setupSnapshotManager();
+    setupLogging();
+  }
+
+  private void initializeCoreState(OzoneConfiguration ozoneConfiguration) {
     ozoneManager = mock(OzoneManager.class);
     omMetrics = OMMetrics.create();
     perfMetrics = OMPerformanceMetrics.register();
     delMetrics = DeletingServiceMetrics.create();
-    OzoneConfiguration ozoneConfiguration = getOzoneConfiguration();
     ozoneConfiguration.set(OMConfigKeys.OZONE_OM_DB_DIRS,
         folder.toAbsolutePath().toString());
     ozoneConfiguration.set(OzoneConfigKeys.OZONE_METADATA_DIRS,
         folder.toAbsolutePath().toString());
-    ozoneConfiguration.setBoolean(OzoneConfigKeys.OZONE_HBASE_ENHANCEMENTS_ALLOWED, true);
+    ozoneConfiguration.setBoolean(
+        OzoneConfigKeys.OZONE_HBASE_ENHANCEMENTS_ALLOWED, true);
     ozoneConfiguration.setBoolean(OzoneConfigKeys.OZONE_FS_HSYNC_ENABLED, true);
+  }
+
+  private void setupOzoneManagerMocks(OzoneConfiguration ozoneConfiguration)
+      throws Exception {
     omMetadataManager = spy(new OmMetadataManagerImpl(ozoneConfiguration,
         ozoneManager));
     when(ozoneManager.getMetrics()).thenReturn(omMetrics);
@@ -165,14 +192,21 @@ public class TestOMKeyRequest {
     when(ozoneManager.getBucketInfo(anyString(), anyString())).thenReturn(
         new OmBucketInfo.Builder().setVolumeName("").setBucketName("").build());
     doNothing().when(auditLogger).logWrite(any(AuditMessage.class));
+    setupAuditMessageMocks();
+    setupReplicationConfigValidation(ozoneManager, ozoneConfiguration);
+  }
 
+  private void setupAuditMessageMocks() {
     AuditMessage mockAuditMessage = mock(AuditMessage.class);
     when(mockAuditMessage.getOp()).thenReturn("MOCK_OP");
-    when(ozoneManager.buildAuditMessageForSuccess(any(), any())).thenReturn(mockAuditMessage);
-    when(ozoneManager.buildAuditMessageForFailure(any(), any(), any())).thenReturn(mockAuditMessage);
+    when(ozoneManager.buildAuditMessageForSuccess(any(), any()))
+        .thenReturn(mockAuditMessage);
+    when(ozoneManager.buildAuditMessageForFailure(any(), any(), any()))
+        .thenReturn(mockAuditMessage);
+  }
 
-    setupReplicationConfigValidation(ozoneManager, ozoneConfiguration);
-
+  private void setupScmMocks(OzoneConfiguration ozoneConfiguration)
+      throws Exception {
     scmClient = mock(ScmClient.class);
     ozoneBlockTokenSecretManager = mock(OzoneBlockTokenSecretManager.class);
     scmBlockLocationProtocol = mock(ScmBlockLocationProtocol.class);
@@ -189,7 +223,8 @@ public class TestOMKeyRequest {
     when(ozoneManager.getOMServiceId()).thenReturn(
         UUID.randomUUID().toString());
     when(scmClient.getBlockClient()).thenReturn(scmBlockLocationProtocol);
-    scmContainerLocationProtocol = Mockito.mock(StorageContainerLocationProtocol.class);
+    scmContainerLocationProtocol =
+        Mockito.mock(StorageContainerLocationProtocol.class);
     when(scmClient.getContainerClient()).thenReturn(scmContainerLocationProtocol);
 
     when(ozoneManager.getKeyManager()).thenReturn(keyManager);
@@ -206,18 +241,22 @@ public class TestOMKeyRequest {
 
     prepareState = new OzoneManagerPrepareState(ozoneConfiguration);
     when(ozoneManager.getPrepareState()).thenReturn(prepareState);
+    setupAllocateBlockMocks(createPipeline());
+  }
 
-    Pipeline pipeline = Pipeline.newBuilder()
+  private Pipeline createPipeline() {
+    return Pipeline.newBuilder()
         .setState(Pipeline.PipelineState.OPEN)
         .setId(PipelineID.randomId())
         .setReplicationConfig(
             StandaloneReplicationConfig.getInstance(ReplicationFactor.ONE))
         .setNodes(new ArrayList<>())
         .build();
+  }
 
-    AllocatedBlock.Builder blockBuilder = new AllocatedBlock.Builder()
-        .setPipeline(pipeline);
-
+  private void setupAllocateBlockMocks(Pipeline pipeline) throws Exception {
+    AllocatedBlock.Builder blockBuilder =
+        new AllocatedBlock.Builder().setPipeline(pipeline);
     when(scmBlockLocationProtocol.allocateBlock(anyLong(), anyInt(),
         any(ReplicationConfig.class),
         anyString(), any(ExcludeList.class),
@@ -232,6 +271,27 @@ public class TestOMKeyRequest {
           return allocatedBlocks;
         });
 
+    when(scmBlockLocationProtocol.allocateBlock(anyLong(), anyInt(),
+        any(ReplicationConfig.class),
+        anyString(), any(ExcludeList.class),
+        anyString(), any(StoragePolicy.class), anyBoolean()))
+        .thenAnswer(invocation -> {
+          int num = invocation.getArgument(1);
+          StoragePolicy storagePolicy = invocation.getArgument(6);
+          List<AllocatedBlock> allocatedBlocks = new ArrayList<>(num);
+          for (int i = 0; i < num; i++) {
+            blockBuilder.setContainerBlockID(
+                    new ContainerBlockID(CONTAINER_ID + i, LOCAL_ID + i))
+                .setStorageTier(storagePolicy.getCreationTier())
+                .setIsFallBack(false);
+            allocatedBlocks.add(blockBuilder.build());
+          }
+          return allocatedBlocks;
+        });
+  }
+
+  private void setupContainerLookup() throws Exception {
+    Pipeline pipeline = createPipeline();
     ContainerInfo containerInfo = new ContainerInfo.Builder()
         .setContainerID(1L)
         .setState(HddsProtos.LifeCycleState.OPEN)
@@ -240,7 +300,8 @@ public class TestOMKeyRequest {
         .build();
     ContainerWithPipeline containerWithPipeline =
         new ContainerWithPipeline(containerInfo, pipeline);
-    when(scmContainerLocationProtocol.getContainerWithPipeline(anyLong())).thenReturn(containerWithPipeline);
+    when(scmContainerLocationProtocol.getContainerWithPipeline(anyLong()))
+        .thenReturn(containerWithPipeline);
 
     volumeName = UUID.randomUUID().toString();
     bucketName = UUID.randomUUID().toString();
@@ -250,7 +311,9 @@ public class TestOMKeyRequest {
     dataSize = 1000L;
     random = new Random();
     version = 0L;
+  }
 
+  private void setupResolvedBucketMocks() throws Exception {
     ResolvedBucket bucket = new ResolvedBucket(volumeName, bucketName,
         volumeName, bucketName, "owner", BucketLayout.OBJECT_STORE);
     when(ozoneManager.resolveBucketLink(any(KeyArgs.class),
@@ -267,10 +330,16 @@ public class TestOMKeyRequest {
         });
     when(ozoneManager.resolveBucketLink(any(Pair.class)))
         .thenReturn(bucket);
-    OmSnapshotManager omSnapshotManager = Mockito.spy(new OmSnapshotManager(ozoneManager));
+  }
+
+  private void setupSnapshotManager() throws Exception {
+    OmSnapshotManager omSnapshotManager =
+        Mockito.spy(new OmSnapshotManager(ozoneManager));
     when(ozoneManager.getOmSnapshotManager())
         .thenReturn(omSnapshotManager);
+  }
 
+  private void setupLogging() {
     // Enable DEBUG level logging for relevant classes
     GenericTestUtils.setLogLevel(OMKeyRequest.class, Level.DEBUG);
     GenericTestUtils.setLogLevel(OMKeyCommitRequest.class, Level.DEBUG);
@@ -307,6 +376,38 @@ public class TestOMKeyRequest {
 
   public BucketLayout getBucketLayout() {
     return BucketLayout.DEFAULT;
+  }
+
+  @org.junit.jupiter.api.Test
+  public void testAllocateBlockUsesConfiguredDefaultStoragePolicy()
+      throws Exception {
+    ozoneManager.getConfiguration().set(
+        OzoneConfigKeys.OZONE_DEFAULT_STORAGE_POLICY_KEY,
+        OzoneStoragePolicy.HOT.name());
+    OMKeyRequest request = new OMKeyRequest(
+        OzoneManagerProtocolProtos.OMRequest.newBuilder()
+            .setCmdType(OzoneManagerProtocolProtos.Type.CreateKey)
+            .setClientId(UUID.randomUUID().toString())
+            .build()) {
+      @Override
+      public OMClientResponse validateAndUpdateCache(OzoneManager om,
+          ExecutionContext context) {
+        return null;
+      }
+    };
+
+    List<OmKeyLocationInfo> locationInfos = request.allocateBlock(ozoneManager,
+        scmClient,
+        ozoneBlockTokenSecretManager, replicationConfig, new ExcludeList(),
+        scmBlockSize, scmBlockSize, 1, false, "service", omMetrics, true,
+        UserInfo.newBuilder().setRemoteAddress("1.2.3.4").build());
+
+    assertEquals(1, locationInfos.size());
+    assertEquals(StorageTier.SSD, locationInfos.get(0).getStorageTier());
+    assertFalse(locationInfos.get(0).isFallBack());
+    verify(scmBlockLocationProtocol).allocateBlock(eq(scmBlockSize), eq(1),
+        eq(replicationConfig), eq("service"), any(ExcludeList.class),
+        eq("1.2.3.4"), eq(OzoneStoragePolicy.HOT), eq(true));
   }
 
   @AfterEach

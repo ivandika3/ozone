@@ -22,6 +22,7 @@ import static org.apache.hadoop.hdds.protocol.MockDatanodeDetails.randomDatanode
 import static org.apache.hadoop.hdds.scm.net.NetConstants.ROOT_LEVEL;
 import static org.apache.hadoop.ozone.OzoneConsts.MB;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -40,6 +41,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import org.apache.hadoop.hdds.HddsConfigKeys;
 import org.apache.hadoop.hdds.client.ContainerBlockID;
+import org.apache.hadoop.hdds.client.OzoneStoragePolicy;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
@@ -336,6 +338,33 @@ public class TestSCMBlockProtocolServer {
         }
       }
     }
+  }
+
+  @Test
+  void testAllocateScmBlockResponseCarriesStorageTierMetadata()
+      throws Exception {
+    final ReplicationConfig replicationConfig = RatisReplicationConfig
+        .getInstance(ReplicationFactor.THREE);
+    ScmBlockLocationProtocolProtos.AllocateScmBlockRequestProto request =
+        ScmBlockLocationProtocolProtos.AllocateScmBlockRequestProto
+            .newBuilder()
+            .setSize(128 * MB)
+            .setNumBlocks(1)
+            .setType(replicationConfig.getReplicationType())
+            .setFactor(ReplicationFactor.THREE)
+            .setOwner("o")
+            .setExcludeList(new ExcludeList().getProtoBuf())
+            .setStoragePolicy(OzoneStoragePolicy.WARM.toProto())
+            .setAllowFallBack(false)
+            .build();
+
+    ScmBlockLocationProtocolProtos.AllocateScmBlockResponseProto response =
+        service.allocateScmBlock(request, ClientVersion.CURRENT_VERSION);
+
+    assertEquals(1, response.getBlocksCount());
+    assertEquals(StorageTier.getDefaultTier().toProto(),
+        response.getBlocks(0).getStorageTier());
+    assertFalse(response.getBlocks(0).getIsFallBack());
   }
 
   private List<String> getNetworkNames() {

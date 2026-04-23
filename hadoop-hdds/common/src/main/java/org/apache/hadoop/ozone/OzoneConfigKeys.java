@@ -20,6 +20,7 @@ package org.apache.hadoop.ozone;
 import java.util.concurrent.TimeUnit;
 import org.apache.hadoop.hdds.annotation.InterfaceAudience;
 import org.apache.hadoop.hdds.annotation.InterfaceStability;
+import org.apache.hadoop.hdds.client.OzoneStoragePolicy;
 import org.apache.hadoop.hdds.client.ReplicationFactor;
 import org.apache.hadoop.hdds.client.ReplicationType;
 import org.apache.hadoop.hdds.scm.ScmConfigKeys;
@@ -176,6 +177,10 @@ public final class OzoneConfigKeys {
   public static final String OZONE_SCM_BLOCK_SIZE =
       "ozone.scm.block.size";
   public static final String OZONE_SCM_BLOCK_SIZE_DEFAULT = "256MB";
+  public static final String OZONE_DEFAULT_STORAGE_POLICY_KEY =
+      "ozone.default.storagepolicy";
+  public static final String OZONE_DEFAULT_STORAGE_POLICY_DEFAULT =
+      OzoneStoragePolicy.WARM.name();
 
   public static final String OZONE_CLIENT_MAX_EC_STRIPE_WRITE_RETRIES =
       "ozone.client.max.ec.stripe.write.retries";
