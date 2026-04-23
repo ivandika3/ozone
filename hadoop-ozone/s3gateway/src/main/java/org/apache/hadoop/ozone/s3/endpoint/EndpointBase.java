@@ -60,6 +60,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -93,9 +94,11 @@ import org.apache.hadoop.ozone.client.OzoneVolume;
 import org.apache.hadoop.ozone.client.protocol.ClientProtocol;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes;
+import org.apache.hadoop.ozone.om.helpers.CorsRule;
 import org.apache.hadoop.ozone.om.protocol.S3Auth;
 import org.apache.hadoop.ozone.s3.MultiDigestInputStream;
 import org.apache.hadoop.ozone.s3.RequestIdentifier;
+import org.apache.hadoop.ozone.s3.S3CorsHeaders;
 import org.apache.hadoop.ozone.s3.SignedChunksInputStream;
 import org.apache.hadoop.ozone.s3.UnsignedChunksInputStream;
 import org.apache.hadoop.ozone.s3.commontypes.RequestParameters;
@@ -104,6 +107,7 @@ import org.apache.hadoop.ozone.s3.exception.S3ErrorTable;
 import org.apache.hadoop.ozone.s3.metrics.S3GatewayMetrics;
 import org.apache.hadoop.ozone.s3.signature.SignatureInfo;
 import org.apache.hadoop.ozone.s3.util.AuditUtils;
+import org.apache.hadoop.ozone.s3.util.S3Consts;
 import org.apache.hadoop.ozone.s3.util.S3Utils;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.utils.URLEncodedUtils;
@@ -221,8 +225,64 @@ public abstract class EndpointBase {
     // hook method
   }
 
+  protected OzoneBucket getBucket(String bucketName)
+      throws OS3Exception, IOException {
+    OzoneBucket bucket;
+    try {
+      bucket = client.getObjectStore().getS3Bucket(bucketName);
+    } catch (OMException ex) {
+      if (ex.getResult() == ResultCodes.BUCKET_NOT_FOUND
+          || ex.getResult() == ResultCodes.VOLUME_NOT_FOUND) {
+        throw newError(S3ErrorTable.NO_SUCH_BUCKET, bucketName, ex);
+      } else if (ex.getResult() == ResultCodes.INVALID_TOKEN) {
+        throw newError(S3ErrorTable.ACCESS_DENIED,
+            s3Auth.getAccessID(), ex);
+      } else if (ex.getResult() == ResultCodes.PERMISSION_DENIED) {
+        throw newError(S3ErrorTable.ACCESS_DENIED, bucketName, ex);
+      } else if (ex.getResult() == ResultCodes.TIMEOUT ||
+          ex.getResult() == ResultCodes.INTERNAL_ERROR) {
+        throw newError(S3ErrorTable.INTERNAL_ERROR, bucketName, ex);
+      } else {
+        throw ex;
+      }
+    }
+    cacheBucket(bucketName, bucket);
+    return bucket;
+  }
+
+  @SuppressWarnings("unchecked")
+  protected void cacheBucket(String bucketName, OzoneBucket bucket) {
+    if (context == null || StringUtils.isBlank(bucketName) || bucket == null) {
+      return;
+    }
+    Map<String, OzoneBucket> buckets =
+        (Map<String, OzoneBucket>) context.getProperty(
+            S3Consts.CACHED_BUCKETS_CONTEXT_PROPERTY);
+    if (buckets == null) {
+      buckets = new HashMap<>();
+      context.setProperty(S3Consts.CACHED_BUCKETS_CONTEXT_PROPERTY, buckets);
+    }
+    buckets.put(bucketName, bucket);
+  }
   protected OzoneVolume getVolume() throws IOException {
     return client.getObjectStore().getS3Volume();
+  }
+
+  protected Response corsPreflightResponse(String bucketName)
+      throws IOException, OS3Exception {
+    String origin = getHeaders().getHeaderString(S3Consts.ORIGIN_HEADER);
+    String method = getHeaders().getHeaderString(
+        S3Consts.ACCESS_CONTROL_REQUEST_METHOD);
+    String requestedHeaders = getHeaders().getHeaderString(
+        S3Consts.ACCESS_CONTROL_REQUEST_HEADERS);
+    OzoneBucket bucket = getBucket(bucketName);
+    Optional<CorsRule> rule = S3CorsHeaders.findMatchingRule(
+        bucket.getCorsConfiguration(), origin, method, requestedHeaders);
+    if (!rule.isPresent()) {
+      throw newError(S3ErrorTable.ACCESS_DENIED, bucketName);
+    }
+    return S3CorsHeaders.applyHeaders(Response.ok(), rule.get(), origin,
+        requestedHeaders, true).build();
   }
 
   /**

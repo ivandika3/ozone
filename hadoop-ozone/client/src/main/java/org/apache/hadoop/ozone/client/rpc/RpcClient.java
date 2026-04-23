@@ -131,6 +131,7 @@ import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.BasicOmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketEncryptionKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
+import org.apache.hadoop.ozone.om.helpers.CorsConfiguration;
 import org.apache.hadoop.ozone.om.helpers.DeleteTenantState;
 import org.apache.hadoop.ozone.om.helpers.ErrorInfo;
 import org.apache.hadoop.ozone.om.helpers.KeyInfoWithVolumeContext;
@@ -656,7 +657,8 @@ public class RpcClient implements ClientProtocol {
         .setQuotaInBytes(bucketArgs.getQuotaInBytes())
         .setQuotaInNamespace(bucketArgs.getQuotaInNamespace())
         .setBucketLayout(bucketLayout)
-        .setOwner(owner);
+        .setOwner(owner)
+        .setCorsConfiguration(bucketArgs.getCorsConfiguration());
 
     if (bucketArgs.getAcls() != null) {
       builder.acls().addAll(bucketArgs.getAcls());
@@ -1233,6 +1235,31 @@ public class RpcClient implements ClientProtocol {
   }
 
   @Override
+  public void setBucketCors(String volumeName, String bucketName,
+      CorsConfiguration corsConfiguration) throws IOException {
+    verifyVolumeName(volumeName);
+    verifyBucketName(bucketName);
+    Objects.requireNonNull(corsConfiguration, "corsConfiguration == null");
+    OmBucketArgs.Builder builder = OmBucketArgs.newBuilder();
+    builder.setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setCorsConfiguration(corsConfiguration);
+    ozoneManagerClient.setBucketProperty(builder.build());
+  }
+
+  @Override
+  public void deleteBucketCors(String volumeName, String bucketName)
+      throws IOException {
+    verifyVolumeName(volumeName);
+    verifyBucketName(bucketName);
+    OmBucketArgs.Builder builder = OmBucketArgs.newBuilder();
+    builder.setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setClearCorsConfiguration(true);
+    ozoneManagerClient.setBucketProperty(builder.build());
+  }
+
+  @Override
   public void setBucketQuota(String volumeName, String bucketName,
       long quotaInNamespace, long quotaInBytes) throws IOException {
     verifyVolumeName(volumeName);
@@ -1340,6 +1367,7 @@ public class RpcClient implements ClientProtocol {
         .setBucketLayout(bucketInfo.getBucketLayout())
         .setOwner(bucketInfo.getOwner())
         .setDefaultReplicationConfig(bucketInfo.getDefaultReplicationConfig())
+        .setCorsConfiguration(bucketInfo.getCorsConfiguration())
         .build();
   }
 
@@ -1374,6 +1402,7 @@ public class RpcClient implements ClientProtocol {
                 .setOwner(bucket.getOwner())
                 .setDefaultReplicationConfig(
                     bucket.getDefaultReplicationConfig())
+                .setCorsConfiguration(bucket.getCorsConfiguration())
                 .build())
         .collect(Collectors.toList());
   }

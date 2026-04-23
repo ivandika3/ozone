@@ -17,77 +17,49 @@
 
 package org.apache.hadoop.ozone.om.helpers;
 
-import static org.apache.hadoop.hdds.client.ReplicationType.EC;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.apache.hadoop.hdds.client.DefaultReplicationConfig;
-import org.apache.hadoop.hdds.client.ECReplicationConfig;
+import java.util.Collections;
 import org.junit.jupiter.api.Test;
 
 /**
- * Tests for the OmBucketArgs class.
+ * Test bucket property arguments.
  */
 public class TestOmBucketArgs {
 
   @Test
-  public void testQuotaIsSetFlagsAreCorrectlySet() {
-    OmBucketArgs bucketArgs = OmBucketArgs.newBuilder()
+  public void corsConfigurationCanBeSetOrCleared() {
+    CorsConfiguration corsConfiguration =
+        CorsConfiguration.newBuilder()
+            .addRule(CorsRule.newBuilder()
+                .setAllowedOrigins(Collections.singletonList("*"))
+                .setAllowedMethods(Collections.singletonList("GET"))
+                .build())
+            .build();
+
+    OmBucketArgs setArgs = OmBucketArgs.newBuilder()
+        .setVolumeName("vol1")
         .setBucketName("bucket")
-        .setVolumeName("volume")
+        .setCorsConfiguration(corsConfiguration)
         .build();
 
-    assertFalse(bucketArgs.hasQuotaInBytes());
-    assertFalse(bucketArgs.hasQuotaInNamespace());
+    OmBucketArgs recoveredSetArgs =
+        OmBucketArgs.getFromProtobuf(setArgs.getProtobuf());
+    assertTrue(recoveredSetArgs.hasCorsConfiguration());
+    assertFalse(recoveredSetArgs.shouldClearCorsConfiguration());
+    assertEquals(corsConfiguration, recoveredSetArgs.getCorsConfiguration());
 
-    OmBucketArgs argsFromProto = OmBucketArgs.getFromProtobuf(
-        bucketArgs.getProtobuf());
-
-    assertFalse(argsFromProto.hasQuotaInBytes());
-    assertFalse(argsFromProto.hasQuotaInNamespace());
-
-    bucketArgs = OmBucketArgs.newBuilder()
+    OmBucketArgs clearArgs = OmBucketArgs.newBuilder()
+        .setVolumeName("vol1")
         .setBucketName("bucket")
-        .setVolumeName("volume")
-        .setQuotaInNamespace(123)
-        .setQuotaInBytes(456)
+        .setClearCorsConfiguration(true)
         .build();
 
-    assertTrue(bucketArgs.hasQuotaInBytes());
-    assertTrue(bucketArgs.hasQuotaInNamespace());
-
-    argsFromProto = OmBucketArgs.getFromProtobuf(
-        bucketArgs.getProtobuf());
-
-    assertTrue(argsFromProto.hasQuotaInBytes());
-    assertTrue(argsFromProto.hasQuotaInNamespace());
-  }
-
-  @Test
-  public void testDefaultReplicationConfigIsSetCorrectly() {
-    OmBucketArgs bucketArgs = OmBucketArgs.newBuilder()
-        .setBucketName("bucket")
-        .setVolumeName("volume")
-        .build();
-
-    OmBucketArgs argsFromProto = OmBucketArgs.getFromProtobuf(
-        bucketArgs.getProtobuf());
-
-    assertNull(argsFromProto.getDefaultReplicationConfig());
-
-    bucketArgs = OmBucketArgs.newBuilder()
-        .setBucketName("bucket")
-        .setVolumeName("volume")
-        .setDefaultReplicationConfig(new DefaultReplicationConfig(
-            new ECReplicationConfig(3, 2)))
-        .build();
-
-    argsFromProto = OmBucketArgs.getFromProtobuf(
-        bucketArgs.getProtobuf());
-
-    assertEquals(EC,
-        argsFromProto.getDefaultReplicationConfig().getType());
+    OmBucketArgs recoveredClearArgs =
+        OmBucketArgs.getFromProtobuf(clearArgs.getProtobuf());
+    assertFalse(recoveredClearArgs.hasCorsConfiguration());
+    assertTrue(recoveredClearArgs.shouldClearCorsConfiguration());
   }
 }

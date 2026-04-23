@@ -63,6 +63,7 @@ import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.HEAD;
+import javax.ws.rs.OPTIONS;
 import javax.ws.rs.POST;
 import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
@@ -152,6 +153,12 @@ public class ObjectEndpoint extends ObjectOperationHandler {
         .add(this)
         .build();
     handler = new AuditingObjectOperationHandler(chain);
+  }
+
+  @OPTIONS
+  public Response options(@PathParam(BUCKET) String bucketName)
+      throws IOException, OS3Exception {
+    return corsPreflightResponse(bucketName);
   }
 
   /**
@@ -1143,6 +1150,7 @@ public class ObjectEndpoint extends ObjectOperationHandler {
     OzoneBucket getBucket() throws IOException {
       if (bucket == null) {
         bucket = getVolume().getBucket(bucketName);
+        cacheBucket(bucketName, bucket);
       }
       return bucket;
     }
