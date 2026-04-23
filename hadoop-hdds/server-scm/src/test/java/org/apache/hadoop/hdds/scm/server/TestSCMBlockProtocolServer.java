@@ -362,8 +362,7 @@ public class TestSCMBlockProtocolServer {
         service.allocateScmBlock(request, ClientVersion.CURRENT_VERSION);
 
     assertEquals(1, response.getBlocksCount());
-    assertEquals(StorageTier.getDefaultTier().toProto(),
-        response.getBlocks(0).getStorageTier());
+    assertFalse(response.getBlocks(0).hasStorageTier());
     assertFalse(response.getBlocks(0).getIsFallBack());
   }
 

@@ -411,6 +411,11 @@ public final class ScmConfigKeys {
 
   public static final int OZONE_SCM_PIPELINE_PER_METADATA_VOLUME_DEFAULT = 2;
 
+  public static final String OZONE_SCM_CONTAINER_ALLOW_NULL_STORAGE_TIER =
+      "ozone.scm.container.allow.null.storage.tier";
+  public static final boolean
+      OZONE_SCM_CONTAINER_ALLOW_NULL_STORAGE_TIER_DEFAULT = false;
+
   public static final String OZONE_DATANODE_RATIS_VOLUME_FREE_SPACE_MIN =
       "ozone.scm.datanode.ratis.volume.free-space.min";
 

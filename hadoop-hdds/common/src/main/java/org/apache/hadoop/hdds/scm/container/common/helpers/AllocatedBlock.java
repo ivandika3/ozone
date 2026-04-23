@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.hdds.scm.container.common.helpers;
 
+import jakarta.annotation.Nullable;
 import org.apache.hadoop.hdds.client.ContainerBlockID;
 import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.scm.pipeline.Pipeline;
@@ -28,7 +29,7 @@ import org.apache.hadoop.hdds.scm.pipeline.Pipeline;
 public final class AllocatedBlock {
   private final Pipeline pipeline;
   private final ContainerBlockID containerBlockID;
-  private final StorageTier storageTier;
+  private final @Nullable StorageTier storageTier;
   private final boolean fallBack;
 
   /**
@@ -37,7 +38,7 @@ public final class AllocatedBlock {
   public static class Builder {
     private Pipeline pipeline;
     private ContainerBlockID containerBlockID;
-    private StorageTier storageTier = StorageTier.getDefaultTier();
+    private @Nullable StorageTier storageTier;
     private boolean fallBack;
 
     public Builder setPipeline(Pipeline p) {
@@ -50,8 +51,8 @@ public final class AllocatedBlock {
       return this;
     }
 
-    public Builder setStorageTier(StorageTier tier) {
-      this.storageTier = tier == null ? StorageTier.getDefaultTier() : tier;
+    public Builder setStorageTier(@Nullable StorageTier tier) {
+      this.storageTier = tier;
       return this;
     }
 
@@ -67,11 +68,10 @@ public final class AllocatedBlock {
   }
 
   private AllocatedBlock(Pipeline pipeline, ContainerBlockID containerBlockID,
-      StorageTier storageTier, boolean fallBack) {
+      @Nullable StorageTier storageTier, boolean fallBack) {
     this.pipeline = pipeline;
     this.containerBlockID = containerBlockID;
-    this.storageTier =
-        storageTier == null ? StorageTier.getDefaultTier() : storageTier;
+    this.storageTier = storageTier;
     this.fallBack = fallBack;
   }
 
@@ -83,7 +83,7 @@ public final class AllocatedBlock {
     return containerBlockID;
   }
 
-  public StorageTier getStorageTier() {
+  public @Nullable StorageTier getStorageTier() {
     return storageTier;
   }
 

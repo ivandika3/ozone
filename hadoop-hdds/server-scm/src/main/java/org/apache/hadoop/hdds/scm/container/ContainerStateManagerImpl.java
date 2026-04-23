@@ -96,6 +96,11 @@ public final class ContainerStateManagerImpl
   private final long containerSize;
 
   /**
+   * Allow reusing containers whose storage tier is absent during upgrade.
+   */
+  private final boolean allowNullStorageTier;
+
+  /**
    * In-memory representation of Container States.
    */
   private ContainerStateMap containers;
@@ -155,6 +160,9 @@ public final class ContainerStateManagerImpl
     this.containerStore = containerStore;
     this.stateMachine = newStateMachine();
     this.containerSize = getConfiguredContainerSize(conf);
+    this.allowNullStorageTier = conf.getBoolean(
+        ScmConfigKeys.OZONE_SCM_CONTAINER_ALLOW_NULL_STORAGE_TIER,
+        ScmConfigKeys.OZONE_SCM_CONTAINER_ALLOW_NULL_STORAGE_TIER_DEFAULT);
     this.containers = new ContainerStateMap();
     this.lastUsedMap = new ConcurrentHashMap<>();
     this.containerStateChangeActions = getContainerStateChangeActions();
@@ -540,10 +548,13 @@ public final class ContainerStateManagerImpl
     for (ContainerID id : searchSet) {
       try (AutoCloseableLock ignored = readLock(id)) {
         final ContainerInfo containerInfo = containers.getContainerInfo(id);
-        StorageTier containerTier = containerInfo.getStorageTier() == null
-            ? StorageTier.getDefaultTier() : containerInfo.getStorageTier();
-        if (containerTier == (storageTier == null
-            ? StorageTier.getDefaultTier() : storageTier)
+        StorageTier requestedTier = storageTier == null
+            ? StorageTier.getDefaultTier() : storageTier;
+        StorageTier containerTier = containerInfo.getStorageTier();
+        boolean tierMatches = (containerTier != null
+            && containerTier == requestedTier)
+            || (allowNullStorageTier && containerTier == null);
+        if (tierMatches
             && containerInfo.getUsedBytes() + size <= this.containerSize) {
           containerInfo.updateLastUsedTime();
           return containerInfo;
