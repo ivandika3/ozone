@@ -87,7 +87,7 @@ public final class ContainerInfo implements Comparable<ContainerInfo> {
   // The sequenceId of a close container cannot change, and all the
   // container replica should have the same sequenceId.
   private long sequenceId;
-  private final StorageTier storageTier;
+  private StorageTier storageTier;
   // Health state of the container (determined by ReplicationManager)
   private ContainerHealthState healthState;
   private boolean suppressed;
@@ -342,6 +342,10 @@ public final class ContainerInfo implements Comparable<ContainerInfo> {
 
   public void setOwner(String owner) {
     this.owner = owner;
+  }
+
+  public void setStorageTier(StorageTier storageTier) {
+    this.storageTier = storageTier;
   }
 
   @Override

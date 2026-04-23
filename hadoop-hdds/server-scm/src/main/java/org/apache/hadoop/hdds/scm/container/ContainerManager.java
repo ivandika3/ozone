@@ -261,4 +261,10 @@ public interface ContainerManager {
    */
   void updateContainerInfo(ContainerID containerID, ContainerInfoProto containerInfo)
       throws IOException;
+
+  /**
+   * Set or unset storage tier for a batch of containers.
+   */
+  void setContainerStorageTier(List<Long> containerIds,
+      StorageTier storageTier, boolean unsetStorageTier) throws IOException;
 }

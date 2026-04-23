@@ -22,6 +22,7 @@ import static org.apache.hadoop.hdds.scm.ha.SequenceIdGenerator.CONTAINER_ID;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -342,6 +343,39 @@ public class ContainerManagerImpl implements ContainerManager {
       }
     } finally {
       lock.unlock();
+    }
+  }
+
+  @Override
+  public void setContainerStorageTier(List<Long> containerIds,
+      StorageTier storageTier, boolean unsetStorageTier) throws IOException {
+    if (containerIds == null || containerIds.isEmpty()) {
+      throw new IOException("Invalid container ids, container ids is empty");
+    }
+    if ((storageTier == null) == !unsetStorageTier) {
+      throw new IOException("Either storageTier or unsetStorageTier should be "
+          + "specified, but not both or neither. current storageTier: "
+          + storageTier + " unsetStorageTier: " + unsetStorageTier);
+    }
+
+    List<HddsProtos.ContainerID> existingContainerIds = new ArrayList<>();
+    for (Long containerId : containerIds) {
+      ContainerID containerID = ContainerID.valueOf(containerId);
+      if (!containerStateManager.contains(containerID)) {
+        LOG.warn("Skip the non-existent Container {}", containerId);
+        continue;
+      }
+      existingContainerIds.add(containerID.getProtobuf());
+    }
+    if (existingContainerIds.isEmpty()) {
+      return;
+    }
+
+    if (unsetStorageTier) {
+      containerStateManager.unsetContainerStorageTier(existingContainerIds);
+    } else {
+      containerStateManager.setContainerStorageTier(existingContainerIds,
+          storageTier.toProto());
     }
   }
 

@@ -35,6 +35,7 @@ import picocli.CommandLine.Command;
         InfoSubcommand.class,
         CreateSubcommand.class,
         CloseSubcommand.class,
+        SetContainerStorageTierSubcommand.class,
         ReportSubcommand.class,
         UpgradeSubcommand.class,
         ReconcileSubcommand.class

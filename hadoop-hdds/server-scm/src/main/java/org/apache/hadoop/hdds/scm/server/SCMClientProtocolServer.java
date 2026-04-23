@@ -1799,6 +1799,33 @@ public class SCMClientProtocolServer implements
     return failedContainerIDs;
   }
 
+  @Override
+  public void setContainerStorageTier(List<Long> containerIds,
+      StorageTier storageTier, boolean unsetStorageTier) throws IOException {
+    getScm().checkAdminAccess(getRemoteUser(), false);
+
+    final Map<String, String> auditMap = Maps.newHashMap();
+    auditMap.put("containerIds", containerIds.toString());
+    auditMap.put("storageTier", unsetStorageTier ? "unset"
+        : storageTier.getTierName());
+
+    boolean auditSuccess = true;
+    try {
+      scm.getContainerManager().setContainerStorageTier(containerIds,
+          storageTier, unsetStorageTier);
+    } catch (IOException ex) {
+      auditSuccess = false;
+      AUDIT.logWriteFailure(buildAuditMessageForFailure(
+          SCMAction.SET_CONTAINER_STORAGE_TIER, auditMap, ex));
+      throw ex;
+    } finally {
+      if (auditSuccess) {
+        AUDIT.logWriteSuccess(buildAuditMessageForSuccess(
+            SCMAction.SET_CONTAINER_STORAGE_TIER, auditMap));
+      }
+    }
+  }
+
   private void persistContainerSuppression(long longContainerID, boolean suppress, SCMAction action)
       throws IOException {
     ContainerID containerID = ContainerID.valueOf(longContainerID);

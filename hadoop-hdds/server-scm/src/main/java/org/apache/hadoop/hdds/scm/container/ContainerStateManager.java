@@ -243,4 +243,18 @@ public interface ContainerStateManager extends SCMHandler {
   @Replicate
   void updateContainerInfo(HddsProtos.ContainerInfoProto containerInfo)
       throws IOException;
+
+  /**
+   * Set the storage tier for a batch of containers.
+   */
+  @Replicate
+  void setContainerStorageTier(List<HddsProtos.ContainerID> containerIds,
+      HddsProtos.StorageTierProto storageTier) throws IOException;
+
+  /**
+   * Unset the storage tier for a batch of containers.
+   */
+  @Replicate
+  void unsetContainerStorageTier(List<HddsProtos.ContainerID> containerIds)
+      throws IOException;
 }

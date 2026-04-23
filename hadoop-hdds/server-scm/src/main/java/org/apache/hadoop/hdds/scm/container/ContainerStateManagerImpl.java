@@ -607,6 +607,56 @@ public final class ContainerStateManagerImpl
     }
   }
 
+  @Override
+  public void setContainerStorageTier(List<HddsProtos.ContainerID> containerIds,
+      HddsProtos.StorageTierProto storageTier) throws IOException {
+    setContainerStorageTier(containerIds, StorageTier.fromProto(storageTier),
+        false);
+  }
+
+  @Override
+  public void unsetContainerStorageTier(List<HddsProtos.ContainerID> containerIds)
+      throws IOException {
+    setContainerStorageTier(containerIds, null, true);
+  }
+
+  private void setContainerStorageTier(List<HddsProtos.ContainerID> containerIds,
+      StorageTier storageTier, boolean unsetStorageTier) throws IOException {
+    if (containerIds == null || containerIds.isEmpty()) {
+      LOG.warn("Invalid container ids, container ids is empty");
+      return;
+    }
+
+    for (HddsProtos.ContainerID protoContainerID : containerIds) {
+      ContainerID containerID = ContainerID.getFromProtobuf(protoContainerID);
+      try (AutoCloseableLock ignored = writeLock(containerID)) {
+        ContainerInfo containerInfo = containers.getContainerInfo(containerID);
+        if (containerInfo == null) {
+          LOG.warn("Skip the non-existent Container {}", containerID);
+          continue;
+        }
+
+        StorageTier updatedTier = unsetStorageTier ? null : storageTier;
+        if (Objects.equals(containerInfo.getStorageTier(), updatedTier)) {
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Skip Container {} update, storage tier already {}",
+                containerID, updatedTier);
+          }
+          continue;
+        }
+
+        containerInfo.setStorageTier(updatedTier);
+        transactionBuffer.addToBuffer(containerStore, containerID,
+            containerInfo);
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Container {} storage tier {} to {}", containerID,
+              unsetStorageTier ? "unset" : "set",
+              unsetStorageTier ? "null" : storageTier);
+        }
+      }
+    }
+  }
+
   private AutoCloseableLock readLock() {
     return AutoCloseableLock.acquire(lock.readLock());
   }

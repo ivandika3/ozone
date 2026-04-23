@@ -519,4 +519,15 @@ public interface ScmClient extends Closeable {
    * @throws IOException
    */
   List<Long> suppressContainers(List<Long> containerIds, boolean suppress) throws IOException;
+
+  /**
+   * Set or unset storage tier for a batch of containers.
+   *
+   * @param containerIds container IDs to update
+   * @param storageTier target storage tier, or null when unsetting
+   * @param unsetStorageTier true to clear the storage tier
+   * @throws IOException
+   */
+  void setContainerStorageTier(List<Long> containerIds,
+      StorageTier storageTier, boolean unsetStorageTier) throws IOException;
 }

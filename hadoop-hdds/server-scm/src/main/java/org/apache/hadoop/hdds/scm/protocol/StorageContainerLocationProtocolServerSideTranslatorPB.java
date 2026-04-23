@@ -126,6 +126,8 @@ import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolPro
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.ScmContainerLocationRequest;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.ScmContainerLocationResponse;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.ScmContainerLocationResponse.Status;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.SetContainerStorageTierRequestProto;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.SetContainerStorageTierResponseProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.SingleNodeQueryRequestProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.SingleNodeQueryResponseProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.StartContainerBalancerRequestProto;
@@ -768,6 +770,13 @@ public final class StorageContainerLocationProtocolServerSideTranslatorPB
             .setCmdType(request.getCmdType())
             .setStatus(Status.OK)
             .setSuppressContainerResponse(suppressContainer(request.getSuppressContainerRequest()))
+            .build();
+      case SetContainerStorageTier:
+        return ScmContainerLocationResponse.newBuilder()
+            .setCmdType(request.getCmdType())
+            .setStatus(Status.OK)
+            .setSetContainerStorageTierResponse(
+                setContainerStorageTier(request.getSetContainerStorageTierRequest()))
             .build();
       default:
         throw new IllegalArgumentException(
@@ -1459,5 +1468,16 @@ public final class StorageContainerLocationProtocolServerSideTranslatorPB
     return SuppressContainerResponseProto.newBuilder()
         .addAllFailedContainerIDs(failedContainerIDs)
         .build();
+  }
+
+  public SetContainerStorageTierResponseProto setContainerStorageTier(
+      SetContainerStorageTierRequestProto request) throws IOException {
+    StorageTier storageTier = null;
+    if (request.hasStorageTier() && !request.getUnsetStorageTier()) {
+      storageTier = StorageTier.fromProto(request.getStorageTier());
+    }
+    impl.setContainerStorageTier(request.getContainerIdsList(), storageTier,
+        request.getUnsetStorageTier());
+    return SetContainerStorageTierResponseProto.newBuilder().build();
   }
 }

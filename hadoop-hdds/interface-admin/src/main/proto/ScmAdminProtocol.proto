@@ -89,6 +89,7 @@ message ScmContainerLocationRequest {
   optional GetDeletedBlocksTxnSummaryRequestProto getDeletedBlocksTxnSummaryRequest = 50;
   optional SCMListContainerIDsRequestProto scmListContainerIDsRequest = 51;
   optional SuppressContainerRequestProto suppressContainerRequest = 52;
+  optional SetContainerStorageTierRequestProto setContainerStorageTierRequest = 53;
 }
 
 message ScmContainerLocationResponse {
@@ -149,6 +150,7 @@ message ScmContainerLocationResponse {
   optional GetDeletedBlocksTxnSummaryResponseProto getDeletedBlocksTxnSummaryResponse = 50;
   optional SCMListContainerIDsResponseProto scmListContainerIDsResponse = 51;
   optional SuppressContainerResponseProto suppressContainerResponse = 52;
+  optional SetContainerStorageTierResponseProto setContainerStorageTierResponse = 53;
 
   enum Status {
     OK = 1;
@@ -208,6 +210,7 @@ enum Type {
   GetDeletedBlocksTransactionSummary = 46;
   ListContainerIDs = 47;
   SuppressContainer = 48;
+  SetContainerStorageTier = 49;
 }
 
 /**
@@ -324,6 +327,15 @@ message SCMListContainerRequestProto {
 message SCMListContainerResponseProto {
   repeated ContainerInfoProto containers = 1;
   optional int64 containerCount = 2;
+}
+
+message SetContainerStorageTierRequestProto {
+  repeated int64 containerIds = 1;
+  optional StorageTierProto storageTier = 2;
+  optional bool unsetStorageTier = 3 [default = false];
+}
+
+message SetContainerStorageTierResponseProto {
 }
 
 message SCMDeleteContainerRequestProto {

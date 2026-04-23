@@ -655,4 +655,11 @@ public class ContainerOperationClient implements ScmClient {
   public List<Long> suppressContainers(List<Long> containerIds, boolean suppress) throws IOException {
     return storageContainerLocationClient.suppressContainers(containerIds, suppress);
   }
+
+  @Override
+  public void setContainerStorageTier(List<Long> containerIds,
+      StorageTier storageTier, boolean unsetStorageTier) throws IOException {
+    storageContainerLocationClient.setContainerStorageTier(containerIds,
+        storageTier, unsetStorageTier);
+  }
 }

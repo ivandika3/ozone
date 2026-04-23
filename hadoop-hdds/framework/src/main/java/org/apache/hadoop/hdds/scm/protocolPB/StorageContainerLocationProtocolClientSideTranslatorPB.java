@@ -119,6 +119,7 @@ import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolPro
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.ScmContainerLocationRequest;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.ScmContainerLocationRequest.Builder;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.ScmContainerLocationResponse;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.SetContainerStorageTierRequestProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.SingleNodeQueryRequestProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.SingleNodeQueryResponseProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.StartContainerBalancerRequestProto;
@@ -1364,6 +1365,30 @@ public final class StorageContainerLocationProtocolClientSideTranslatorPB
         submitRequest(Type.SuppressContainer, builder -> builder.setSuppressContainerRequest(request))
             .getSuppressContainerResponse();
     return response.getFailedContainerIDsList();
+  }
+
+  @Override
+  public void setContainerStorageTier(List<Long> containerIds,
+      StorageTier storageTier, boolean unsetStorageTier) throws IOException {
+    Preconditions.checkArgument(containerIds != null && !containerIds.isEmpty(),
+        "must contain at least one container");
+    if ((storageTier == null) == !unsetStorageTier) {
+      throw new IllegalArgumentException(
+          "Either storageTier or unsetStorageTier should be specified, "
+              + "but not both or neither.");
+    }
+
+    SetContainerStorageTierRequestProto.Builder request =
+        SetContainerStorageTierRequestProto.newBuilder()
+            .addAllContainerIds(containerIds);
+    if (unsetStorageTier) {
+      request.setUnsetStorageTier(true);
+    } else {
+      request.setStorageTier(storageTier.toProto());
+    }
+
+    submitRequest(Type.SetContainerStorageTier,
+        builder -> builder.setSetContainerStorageTierRequest(request.build()));
   }
 
   /**
