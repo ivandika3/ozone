@@ -40,6 +40,7 @@ import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +52,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.StorageTier;
 import org.apache.hadoop.hdds.client.StorageTypeUtils;
@@ -65,9 +67,12 @@ import org.apache.hadoop.hdds.protocol.proto.ReconfigureProtocolProtos.Reconfigu
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.StorageReportProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.ContainerBalancerStatusInfoResponseProto;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.DatanodeStorageTypeUsageInfoProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.DecommissionScmResponseProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.DecommissionScmResponseProto.Builder;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.ListStorageTypeUsageInfoRequestProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.StartContainerBalancerResponseProto;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.StorageTypeUsageInfoProto;
 import org.apache.hadoop.hdds.protocolPB.ReconfigureProtocolPB;
 import org.apache.hadoop.hdds.protocolPB.ReconfigureProtocolServerSideTranslatorPB;
 import org.apache.hadoop.hdds.ratis.RatisHelper;
@@ -111,6 +116,7 @@ import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.ipc_.ProtobufRpcEngine;
 import org.apache.hadoop.ipc_.RPC;
 import org.apache.hadoop.ipc_.Server;
+import org.apache.hadoop.ozone.ClientVersion;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.audit.AuditAction;
 import org.apache.hadoop.ozone.audit.AuditEventStatus;
@@ -1555,6 +1561,77 @@ public class SCMClientProtocolServer implements
           SCMAction.GET_DATANODE_USAGE_INFO, auditMap, ex));
       throw ex;
     }
+  }
+
+  @Override
+  public List<DatanodeStorageTypeUsageInfoProto> listStorageTypeUsageInfo(
+      ListStorageTypeUsageInfoRequestProto requestProto) throws IOException {
+    final Map<String, String> auditMap = Maps.newHashMap();
+    auditMap.put("opState",
+        requestProto.hasOpState() ? requestProto.getOpState().name() : "ALL");
+    auditMap.put("state",
+        requestProto.hasState() ? requestProto.getState().name() : "ALL");
+
+    try {
+      getScm().checkAdminAccess(getRemoteUser(), true);
+      List<DatanodeStorageTypeUsageInfoProto> usageInfoProtos =
+          new ArrayList<>();
+      HddsProtos.NodeOperationalState opState =
+          requestProto.hasOpState() ? requestProto.getOpState() : null;
+      HddsProtos.NodeState health =
+          requestProto.hasState() ? requestProto.getState() : null;
+
+      for (DatanodeDetails details : scm.getScmNodeManager()
+          .getNodes(opState, health)) {
+        if (!(details instanceof DatanodeInfo)) {
+          continue;
+        }
+        DatanodeStorageTypeUsageInfoProto usageInfo =
+            getStorageTypeUsageInfo((DatanodeInfo) details);
+        if (usageInfo != null) {
+          usageInfoProtos.add(usageInfo);
+        }
+      }
+
+      AUDIT.logReadSuccess(buildAuditMessageForSuccess(
+          SCMAction.LIST_STORAGE_TYPE_USAGE_INFO, auditMap));
+      return usageInfoProtos;
+    } catch (Exception ex) {
+      AUDIT.logReadFailure(buildAuditMessageForFailure(
+          SCMAction.LIST_STORAGE_TYPE_USAGE_INFO, auditMap, ex));
+      throw ex;
+    }
+  }
+
+  private DatanodeStorageTypeUsageInfoProto getStorageTypeUsageInfo(
+      DatanodeInfo datanodeInfo) {
+    EnumMap<StorageType, StorageTypeUsageInfoProto.Builder> usageByType =
+        new EnumMap<>(StorageType.class);
+    for (StorageReportProto reportProto : datanodeInfo.getStorageReports()) {
+      StorageType storageType =
+          StorageTypeUtils.getFromProtobuf(reportProto.getStorageTypeProto());
+      StorageTypeUsageInfoProto.Builder builder = usageByType.computeIfAbsent(
+          storageType, ignored -> StorageTypeUsageInfoProto.newBuilder()
+              .setStorageType(StorageTypeUtils.getStorageTypeProto(storageType)));
+      builder.setCapacity(builder.getCapacity() + reportProto.getCapacity());
+      builder.setUsed(builder.getUsed() + reportProto.getScmUsed());
+      builder.setRemaining(builder.getRemaining() + reportProto.getRemaining());
+      builder.setCommitted(builder.getCommitted() + reportProto.getCommitted());
+      builder.setFreeSpaceToSpare(
+          builder.getFreeSpaceToSpare() + reportProto.getFreeSpaceToSpare());
+    }
+
+    if (usageByType.isEmpty()) {
+      return null;
+    }
+
+    DatanodeStorageTypeUsageInfoProto.Builder builder =
+        DatanodeStorageTypeUsageInfoProto.newBuilder()
+            .setDatanodeDetails(datanodeInfo.toProto(
+                ClientVersion.CURRENT_VERSION));
+    usageByType.values().forEach(typeUsage ->
+        builder.addStorageTypeUsageInfo(typeUsage.build()));
+    return builder.build();
   }
 
   @Override

@@ -100,6 +100,8 @@ import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolPro
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.InSafeModeResponseProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.ListPipelineRequestProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.ListPipelineResponseProto;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.ListStorageTypeUsageInfoRequestProto;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.ListStorageTypeUsageInfoResponseProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.NodeQueryResponseProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.PipelineResponseProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerLocationProtocolProtos.QueryUpgradeFinalizationProgressRequestProto;
@@ -777,6 +779,14 @@ public final class StorageContainerLocationProtocolServerSideTranslatorPB
             .setStatus(Status.OK)
             .setSetContainerStorageTierResponse(
                 setContainerStorageTier(request.getSetContainerStorageTierRequest()))
+            .build();
+      case ListStorageTypeUsageInfo:
+        return ScmContainerLocationResponse.newBuilder()
+            .setCmdType(request.getCmdType())
+            .setStatus(Status.OK)
+            .setListStorageTypeUsageInfoResponseProto(
+                getListStorageTypeUsageInfo(
+                    request.getListStorageTypeUsageInfoRequestProto()))
             .build();
       default:
         throw new IllegalArgumentException(
@@ -1479,5 +1489,13 @@ public final class StorageContainerLocationProtocolServerSideTranslatorPB
     impl.setContainerStorageTier(request.getContainerIdsList(), storageTier,
         request.getUnsetStorageTier());
     return SetContainerStorageTierResponseProto.newBuilder().build();
+  }
+
+  public ListStorageTypeUsageInfoResponseProto getListStorageTypeUsageInfo(
+      ListStorageTypeUsageInfoRequestProto request) throws IOException {
+    return ListStorageTypeUsageInfoResponseProto.newBuilder()
+        .addAllDatanodeStorageTypeUsageInfoProto(
+            impl.listStorageTypeUsageInfo(request))
+        .build();
   }
 }

@@ -72,7 +72,8 @@ public enum SCMAction implements AuditAction {
   LIST_CONTAINER_IDS,
   SUPPRESS_CONTAINER,
   UNSUPPRESS_CONTAINER,
-  SET_CONTAINER_STORAGE_TIER;
+  SET_CONTAINER_STORAGE_TIER,
+  LIST_STORAGE_TYPE_USAGE_INFO;
 
   @Override
   public String getAction() {

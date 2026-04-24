@@ -90,6 +90,7 @@ message ScmContainerLocationRequest {
   optional SCMListContainerIDsRequestProto scmListContainerIDsRequest = 51;
   optional SuppressContainerRequestProto suppressContainerRequest = 52;
   optional SetContainerStorageTierRequestProto setContainerStorageTierRequest = 53;
+  optional ListStorageTypeUsageInfoRequestProto listStorageTypeUsageInfoRequestProto = 54;
 }
 
 message ScmContainerLocationResponse {
@@ -151,6 +152,7 @@ message ScmContainerLocationResponse {
   optional SCMListContainerIDsResponseProto scmListContainerIDsResponse = 51;
   optional SuppressContainerResponseProto suppressContainerResponse = 52;
   optional SetContainerStorageTierResponseProto setContainerStorageTierResponse = 53;
+  optional ListStorageTypeUsageInfoResponseProto listStorageTypeUsageInfoResponseProto = 54;
 
   enum Status {
     OK = 1;
@@ -211,6 +213,7 @@ enum Type {
   ListContainerIDs = 47;
   SuppressContainer = 48;
   SetContainerStorageTier = 49;
+  ListStorageTypeUsageInfo = 50;
 }
 
 /**
@@ -398,6 +401,29 @@ message DatanodeUsageInfoRequestProto {
 
 message DatanodeUsageInfoResponseProto {
   repeated DatanodeUsageInfoProto info = 1;
+}
+
+message StorageTypeUsageInfoProto {
+  required StorageType storageType = 1;
+  optional int64 capacity = 2;
+  optional int64 used = 3;
+  optional int64 remaining = 4;
+  optional int64 committed = 5;
+  optional int64 freeSpaceToSpare = 6;
+}
+
+message DatanodeStorageTypeUsageInfoProto {
+  required DatanodeDetailsProto datanodeDetails = 1;
+  repeated StorageTypeUsageInfoProto storageTypeUsageInfo = 2;
+}
+
+message ListStorageTypeUsageInfoRequestProto {
+  optional NodeState state = 1;
+  optional NodeOperationalState opState = 2;
+}
+
+message ListStorageTypeUsageInfoResponseProto {
+  repeated DatanodeStorageTypeUsageInfoProto datanodeStorageTypeUsageInfoProto = 1;
 }
 
 /*
