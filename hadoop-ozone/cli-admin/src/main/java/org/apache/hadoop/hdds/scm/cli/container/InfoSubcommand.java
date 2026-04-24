@@ -58,6 +58,12 @@ public class InfoSubcommand extends ScmSubcommand {
       description = "Format output as JSON")
   private boolean json;
 
+  @CommandLine.Option(
+      names = {"--with-storagetype", "--with-storage-type"},
+      defaultValue = "false",
+      description = "Include replica container and volume storage types")
+  private boolean withStorageType;
+
   @CommandLine.Mixin
   private ContainerIDParameters containerList;
 
@@ -173,7 +179,7 @@ public class InfoSubcommand extends ScmSubcommand {
       if (replicas != null) {
         String replicaStr = replicas.stream()
             .sorted(Comparator.comparing(ContainerReplicaInfo::getReplicaIndex))
-            .map(InfoSubcommand::buildReplicaDetails)
+            .map(replica -> buildReplicaDetails(replica, withStorageType))
             .collect(Collectors.joining(",\n"));
         System.out.printf("Replicas: [%s]%n", replicaStr);
       }
@@ -184,7 +190,8 @@ public class InfoSubcommand extends ScmSubcommand {
     return details.getUuidString() + "/" + details.getHostName();
   }
 
-  private static String buildReplicaDetails(ContainerReplicaInfo replica) {
+  private static String buildReplicaDetails(ContainerReplicaInfo replica,
+      boolean withStorageType) {
     StringBuilder sb = new StringBuilder()
         .append("State: ").append(replica.getState()).append(';');
     if (replica.getReplicaIndex() != -1) {
@@ -193,6 +200,11 @@ public class InfoSubcommand extends ScmSubcommand {
     sb.append(" SequenceId: ").append(replica.getSequenceId()).append(';')
         .append(" Origin: ").append(replica.getPlaceOfBirth().toString()).append(';')
         .append(" Location: ").append(buildDatanodeDetails(replica.getDatanodeDetails()));
+    if (withStorageType) {
+      sb.append("; ContainerStorageType: ").append(replica.getStorageType())
+          .append("; ContainerVolumeStorageType: ")
+          .append(replica.getVolumeStorageType());
+    }
     return sb.toString();
   }
 

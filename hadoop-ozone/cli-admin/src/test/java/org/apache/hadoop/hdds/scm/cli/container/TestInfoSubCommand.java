@@ -105,6 +105,19 @@ public class TestInfoSubCommand {
   }
 
   @Test
+  public void testReplicaStorageTypesIncludedInOutput() throws Exception {
+    when(scmClient.getContainerReplicas(anyLong())).thenReturn(getReplicas(true));
+    cmd = new InfoSubcommand();
+    CommandLine c = new CommandLine(cmd);
+    c.parseArgs("1", "--with-storagetype");
+    cmd.execute(scmClient);
+
+    String output = outContent.toString(DEFAULT_ENCODING);
+    assertThat(output).contains("ContainerStorageType: DISK");
+    assertThat(output).contains("ContainerVolumeStorageType: SSD");
+  }
+
+  @Test
   public void testErrorWhenNoContainerIDParam() throws Exception {
     cmd = new InfoSubcommand();
     assertThrows(CommandLine.MissingParameterException.class, () -> {
@@ -350,6 +363,8 @@ public class TestInfoSubCommand {
       if (includeIndex) {
         container.setReplicaIndex(index++);
       }
+      container.setStorageType(org.apache.hadoop.fs.StorageType.DISK);
+      container.setVolumeStorageType(org.apache.hadoop.fs.StorageType.SSD);
       replicas.add(container.build());
     }
     return replicas;
