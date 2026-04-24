@@ -238,6 +238,7 @@ message ContainerReplicaProto {
   optional bool isEmpty = 15 [default = false];
   optional int64 dataChecksum = 16;
   optional StorageType storageType = 1000;
+  optional StorageType volumeStorageType = 1001;
 }
 
 message CommandStatusReportsProto {
@@ -431,6 +432,7 @@ message ReplicateContainerCommandProto {
   optional int32 replicaIndex = 4;
   optional DatanodeDetailsProto target = 5;
   optional ReplicationCommandPriority priority = 6 [default = NORMAL];
+  optional StorageType volumeStorageType = 1000;
 }
 
 /**

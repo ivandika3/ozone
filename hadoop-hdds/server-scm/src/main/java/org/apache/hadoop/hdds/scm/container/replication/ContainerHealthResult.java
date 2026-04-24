@@ -393,6 +393,17 @@ public class ContainerHealthResult {
   }
 
   /**
+   * Class for containers whose replica storage type mismatches the hosting
+   * volume storage type.
+   */
+  public static class MisStorageTypeHealthResult extends ContainerHealthResult {
+
+    public MisStorageTypeHealthResult(ContainerInfo containerInfo) {
+      super(containerInfo, HealthState.MIS_STORAGE_TYPE);
+    }
+  }
+
+  /**
    * All possible container health states.
    */
   public enum HealthState {
@@ -400,6 +411,7 @@ public class ContainerHealthResult {
     UNHEALTHY,
     UNDER_REPLICATED,
     OVER_REPLICATED,
-    MIS_REPLICATED
+    MIS_REPLICATED,
+    MIS_STORAGE_TYPE
   }
 }

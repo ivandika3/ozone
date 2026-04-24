@@ -721,7 +721,7 @@ public abstract class SCMCommonPlacementPolicy implements
         Set<ContainerReplica> replicaSet =
                 placementGroupReplicaIdMap.get(rack).get(rid);
         if (!replicaSet.isEmpty()) {
-          ContainerReplica r = replicaSet.stream().findFirst().get();
+          ContainerReplica r = selectReplicaForDeletion(replicaSet);
           replicasToRemove.add(r);
           replicaSet.remove(r);
           replicaIdMap.get(rid).remove(r);
@@ -736,5 +736,15 @@ public abstract class SCMCommonPlacementPolicy implements
       }
     }
     return replicasToRemove;
+  }
+
+  private ContainerReplica selectReplicaForDeletion(
+      Set<ContainerReplica> replicaSet) {
+    return replicaSet.stream()
+        .filter(replica -> replica.getStorageType() != null
+            && replica.getVolumeStorageType() != null
+            && replica.getStorageType() != replica.getVolumeStorageType())
+        .findFirst()
+        .orElseGet(() -> replicaSet.stream().findFirst().get());
   }
 }

@@ -107,6 +107,14 @@ public enum ContainerHealthState {
       "Containers in OPEN state without any healthy Pipeline",
       "OpenContainersWithoutPipeline"),
 
+  /**
+   * Container has replicas whose logical storage type does not match the
+   * hosting volume storage type.
+   */
+  MIS_STORAGE_TYPE((short) 10,
+      "Containers with replicas on mismatched storage types",
+      "MisStorageTypeContainers"),
+
   // ========== Actual Combinations Found in Code (100+) ==========
 
   /**

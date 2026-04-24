@@ -48,6 +48,7 @@ public final class ContainerReplica implements Comparable<ContainerReplica> {
   private final boolean isEmpty;
   private final ContainerChecksums checksums;
   private final StorageType storageType;
+  private final StorageType volumeStorageType;
 
   private ContainerReplica(ContainerReplicaBuilder b) {
     this.containerID = Objects.requireNonNull(b.containerID, "containerID == null");
@@ -61,6 +62,7 @@ public final class ContainerReplica implements Comparable<ContainerReplica> {
     this.sequenceId = b.sequenceId;
     this.checksums = Objects.requireNonNull(b.checksums, "checksums == null");
     this.storageType = b.storageType;
+    this.volumeStorageType = b.volumeStorageType;
   }
 
   public ContainerID getContainerID() {
@@ -137,6 +139,10 @@ public final class ContainerReplica implements Comparable<ContainerReplica> {
     return storageType;
   }
 
+  public StorageType getVolumeStorageType() {
+    return volumeStorageType;
+  }
+
   @Override
   public int hashCode() {
     return new HashCodeBuilder(61, 71)
@@ -193,7 +199,8 @@ public final class ContainerReplica implements Comparable<ContainerReplica> {
         .setSequenceId(sequenceId)
         .setEmpty(isEmpty)
         .setChecksums(checksums)
-        .setStorageType(storageType);
+        .setStorageType(storageType)
+        .setVolumeStorageType(volumeStorageType);
   }
 
   @Override
@@ -209,6 +216,7 @@ public final class ContainerReplica implements Comparable<ContainerReplica> {
         + ", " + (isEmpty ? "empty" : "non-empty")
         + ", checksums=" + checksums
         + ", storageType=" + storageType
+        + ", volumeStorageType=" + volumeStorageType
         + '}';
   }
 
@@ -228,6 +236,7 @@ public final class ContainerReplica implements Comparable<ContainerReplica> {
     private boolean isEmpty;
     private ContainerChecksums checksums;
     private StorageType storageType;
+    private StorageType volumeStorageType;
 
     /**
      * Set Container Id.
@@ -309,6 +318,12 @@ public final class ContainerReplica implements Comparable<ContainerReplica> {
 
     public ContainerReplicaBuilder setStorageType(StorageType storageType) {
       this.storageType = storageType;
+      return this;
+    }
+
+    public ContainerReplicaBuilder setVolumeStorageType(
+        StorageType volumeStorageType) {
+      this.volumeStorageType = volumeStorageType;
       return this;
     }
 

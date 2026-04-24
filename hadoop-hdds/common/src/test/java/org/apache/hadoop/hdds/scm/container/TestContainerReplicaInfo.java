@@ -20,6 +20,8 @@ package org.apache.hadoop.hdds.scm.container;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.UUID;
+import org.apache.hadoop.fs.StorageType;
+import org.apache.hadoop.hdds.client.StorageTypeUtils;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.MockDatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
@@ -42,6 +44,10 @@ public class TestContainerReplicaInfo {
             .setDatanodeDetails(MockDatanodeDetails.randomDatanodeDetails()
                 .getProtoBufMessage())
             .setState("OPEN")
+            .setStorageType(StorageTypeUtils.getStorageTypeProto(
+                StorageType.SSD))
+            .setVolumeStorageType(StorageTypeUtils.getStorageTypeProto(
+                StorageType.SSD))
             .build();
 
     ContainerReplicaInfo info = ContainerReplicaInfo.fromProto(proto);
@@ -57,6 +63,8 @@ public class TestContainerReplicaInfo {
     assertEquals(proto.getState(), info.getState());
     // If replicaIndex is not in the proto, then -1 should be returned
     assertEquals(-1, info.getReplicaIndex());
+    assertEquals(StorageType.SSD, info.getStorageType());
+    assertEquals(StorageType.SSD, info.getVolumeStorageType());
   }
 
   @Test

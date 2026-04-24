@@ -26,6 +26,7 @@ import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.StorageUnit;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos;
@@ -90,6 +91,13 @@ public class ContainerImporter {
   public void importContainer(long containerID, Path tarFilePath,
       HddsVolume targetVolume, CopyContainerCompression compression)
       throws IOException {
+    importContainer(containerID, tarFilePath, targetVolume, compression, null);
+  }
+
+  public void importContainer(long containerID, Path tarFilePath,
+      HddsVolume targetVolume, CopyContainerCompression compression,
+      StorageType storageType)
+      throws IOException {
     if (!importContainerProgress.add(containerID)) {
       deleteFileQuietely(tarFilePath);
       String log = "Container import in progress with container Id " + containerID;
@@ -116,6 +124,9 @@ public class ContainerImporter {
       }
       ContainerUtils.verifyContainerFileChecksum(containerData, conf);
       containerData.setVolume(targetVolume);
+      if (storageType != null) {
+        containerData.setStorageType(storageType);
+      }
       // lastDataScanTime should be cleared for an imported container
       containerData.setDataScanTimestamp(null);
 
@@ -147,11 +158,16 @@ public class ContainerImporter {
   }
 
   HddsVolume chooseNextVolume(long spaceToReserve) throws IOException {
+    return chooseNextVolume(spaceToReserve, null);
+  }
+
+  HddsVolume chooseNextVolume(long spaceToReserve, StorageType storageType)
+      throws IOException {
     // Choose volume that can hold both container in tmp and dest directory
     LOG.debug("Choosing volume to reserve space : {}", spaceToReserve);
     return volumeChoosingPolicy.chooseVolume(
         StorageVolumeUtil.getHddsVolumesList(volumeSet.getVolumesList()),
-        spaceToReserve);
+        spaceToReserve, storageType);
   }
 
   public static Path getUntarDirectory(HddsVolume hddsVolume)

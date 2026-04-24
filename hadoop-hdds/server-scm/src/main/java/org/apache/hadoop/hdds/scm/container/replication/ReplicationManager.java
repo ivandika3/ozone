@@ -41,6 +41,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.HddsConfigKeys;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.conf.Config;
@@ -68,6 +69,7 @@ import org.apache.hadoop.hdds.scm.container.replication.health.ECMisReplicationC
 import org.apache.hadoop.hdds.scm.container.replication.health.ECReplicationCheckHandler;
 import org.apache.hadoop.hdds.scm.container.replication.health.EmptyContainerHandler;
 import org.apache.hadoop.hdds.scm.container.replication.health.HealthCheck;
+import org.apache.hadoop.hdds.scm.container.replication.health.MisStorageTypeCheckHandler;
 import org.apache.hadoop.hdds.scm.container.replication.health.MismatchedReplicasHandler;
 import org.apache.hadoop.hdds.scm.container.replication.health.OpenContainerHandler;
 import org.apache.hadoop.hdds.scm.container.replication.health.QuasiClosedContainerHandler;
@@ -183,12 +185,15 @@ public class ReplicationManager implements SCMService, ContainerReplicaPendingOp
   private final RatisUnderReplicationHandler ratisUnderReplicationHandler;
   private final RatisOverReplicationHandler ratisOverReplicationHandler;
   private final RatisMisReplicationHandler ratisMisReplicationHandler;
+  private final MisStorageTypeHandler misStorageTypeHandler;
   private final QuasiClosedStuckUnderReplicationHandler quasiClosedStuckUnderReplicationHandler;
   private final QuasiClosedStuckOverReplicationHandler quasiClosedStuckOverReplicationHandler;
   private Thread underReplicatedProcessorThread;
   private Thread overReplicatedProcessorThread;
+  private Thread misStorageTypeProcessorThread;
   private final UnderReplicatedProcessor underReplicatedProcessor;
   private final OverReplicatedProcessor overReplicatedProcessor;
+  private final MisStorageTypeProcessor misStorageTypeProcessor;
   private final HealthCheck containerCheckChain;
   private final ReplicationQueue noOpsReplicationQueue =
       new MonitoringReplicationQueue();
@@ -253,6 +258,8 @@ public class ReplicationManager implements SCMService, ContainerReplicaPendingOp
         new RatisOverReplicationHandler(ratisContainerPlacement, this);
     ratisMisReplicationHandler = new RatisMisReplicationHandler(
         ratisContainerPlacement, conf, this);
+    misStorageTypeHandler = new MisStorageTypeHandler(
+        ratisContainerPlacement, ecContainerPlacement, this);
     quasiClosedStuckUnderReplicationHandler =
         new QuasiClosedStuckUnderReplicationHandler(ratisContainerPlacement, conf, this);
     quasiClosedStuckOverReplicationHandler = new QuasiClosedStuckOverReplicationHandler(this);
@@ -260,6 +267,8 @@ public class ReplicationManager implements SCMService, ContainerReplicaPendingOp
         new UnderReplicatedProcessor(this, rmConf::getUnderReplicatedInterval);
     overReplicatedProcessor =
         new OverReplicatedProcessor(this, rmConf::getOverReplicatedInterval);
+    misStorageTypeProcessor =
+        new MisStorageTypeProcessor(this, rmConf::getMisStorageTypeInterval);
 
     // Chain together the series of checks that are needed to validate the
     // containers when they are checked by RM.
@@ -276,7 +285,8 @@ public class ReplicationManager implements SCMService, ContainerReplicaPendingOp
         .addNext(new ClosedWithUnhealthyReplicasHandler(this))
         .addNext(ecMisReplicationCheckHandler)
         .addNext(new RatisUnhealthyReplicationCheckHandler())
-        .addNext(new VulnerableUnhealthyReplicasHandler(this));
+        .addNext(new VulnerableUnhealthyReplicasHandler(this))
+        .addNext(new MisStorageTypeCheckHandler());
     start();
   }
 
@@ -320,6 +330,7 @@ public class ReplicationManager implements SCMService, ContainerReplicaPendingOp
       LOG.info("Stopping Replication Monitor Thread.");
       underReplicatedProcessorThread.interrupt();
       overReplicatedProcessorThread.interrupt();
+      misStorageTypeProcessorThread.interrupt();
       running = false;
       metrics.unRegister();
       replicationMonitor.interrupt();
@@ -349,6 +360,11 @@ public class ReplicationManager implements SCMService, ContainerReplicaPendingOp
     overReplicatedProcessorThread.setName(prefix + "OverReplicatedProcessor");
     overReplicatedProcessorThread.setDaemon(true);
     overReplicatedProcessorThread.start();
+
+    misStorageTypeProcessorThread = new Thread(misStorageTypeProcessor);
+    misStorageTypeProcessorThread.setName(prefix + "MisStorageTypeProcessor");
+    misStorageTypeProcessorThread.setDaemon(true);
+    misStorageTypeProcessorThread.start();
   }
 
   /**
@@ -517,6 +533,14 @@ public class ReplicationManager implements SCMService, ContainerReplicaPendingOp
   public void sendThrottledReplicationCommand(ContainerInfo containerInfo,
       List<DatanodeDetails> sources, DatanodeDetails target, int replicaIndex)
       throws CommandTargetOverloadedException, NotLeaderException {
+    sendThrottledReplicationCommand(
+        containerInfo, sources, target, replicaIndex, null);
+  }
+
+  public void sendThrottledReplicationCommand(ContainerInfo containerInfo,
+      List<DatanodeDetails> sources, DatanodeDetails target, int replicaIndex,
+      StorageType targetVolumeStorageType)
+      throws CommandTargetOverloadedException, NotLeaderException {
     long containerID = containerInfo.getContainerID();
     List<Pair<Integer, DatanodeDetails>> sourceWithCmds =
         getAvailableDatanodesForReplication(sources);
@@ -530,7 +554,8 @@ public class ReplicationManager implements SCMService, ContainerReplicaPendingOp
         1, sourceWithCmds);
 
     ReplicateContainerCommand cmd =
-        ReplicateContainerCommand.toTarget(containerID, target);
+        ReplicateContainerCommand.toTarget(
+            containerID, target, targetVolumeStorageType);
     cmd.setReplicaIndex(replicaIndex);
     sendDatanodeCommand(cmd, containerInfo, source);
   }
@@ -804,6 +829,20 @@ public class ReplicationManager implements SCMService, ContainerReplicaPendingOp
 
     return handler.processAndSendCommands(replicas,
           pendingOps, result, getRemainingMaintenanceRedundancy(isEC));
+  }
+
+  int processMisStorageTypeContainer(
+      final ContainerHealthResult.MisStorageTypeHealthResult result)
+      throws IOException {
+    ContainerID containerID = result.getContainerInfo().containerID();
+    Set<ContainerReplica> replicas = containerManager.getContainerReplicas(
+        containerID);
+    List<ContainerReplicaOp> pendingOps =
+        containerReplicaPendingOps.getPendingOps(containerID);
+
+    final boolean isEC = isEC(result.getContainerInfo().getReplicationConfig());
+    return misStorageTypeHandler.processAndSendCommands(
+        replicas, pendingOps, result, getRemainingMaintenanceRedundancy(isEC));
   }
 
   public long getScmTerm() throws NotLeaderException {
@@ -1145,6 +1184,15 @@ public class ReplicationManager implements SCMService, ContainerReplicaPendingOp
     )
     private Duration overReplicatedInterval = Duration.ofSeconds(30);
 
+    @Config(key = "hdds.scm.replication.mis.storage.type.interval",
+        type = ConfigType.TIME,
+        defaultValue = "60s",
+        reconfigurable = true,
+        tags = {SCM, OZONE},
+        description = "How frequently to process containers with replicas " +
+            "on mismatched storage types")
+    private Duration misStorageTypeInterval = Duration.ofSeconds(60);
+
     /**
      * Timeout for container replication & deletion command issued by
      * ReplicationManager.
@@ -1382,6 +1430,10 @@ public class ReplicationManager implements SCMService, ContainerReplicaPendingOp
 
     public Duration getOverReplicatedInterval() {
       return overReplicatedInterval;
+    }
+
+    public Duration getMisStorageTypeInterval() {
+      return misStorageTypeInterval;
     }
 
     public long getEventTimeout() {

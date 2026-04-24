@@ -53,6 +53,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.StorageTier;
+import org.apache.hadoop.hdds.client.StorageTypeUtils;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.conf.ReconfigurationHandler;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
@@ -354,7 +355,7 @@ public class SCMClientProtocolServer implements
       Set<ContainerReplica> replicas = getScm().getContainerManager()
           .getContainerReplicas(ContainerID.valueOf(containerId));
       for (ContainerReplica r : replicas) {
-        results.add(
+        HddsProtos.SCMContainerReplicaProto.Builder builder =
             HddsProtos.SCMContainerReplicaProto.newBuilder()
                 .setContainerID(containerId)
                 .setState(r.getState().toString())
@@ -364,9 +365,17 @@ public class SCMClientProtocolServer implements
                 .setKeyCount(r.getKeyCount())
                 .setSequenceID(r.getSequenceId())
                 .setReplicaIndex(r.getReplicaIndex())
-                .setDataChecksum(r.getDataChecksum())
-                .build()
-        );
+                .setDataChecksum(r.getDataChecksum());
+        if (r.getStorageType() != null) {
+          builder.setStorageType(
+              StorageTypeUtils.getStorageTypeProto(r.getStorageType()));
+        }
+        if (r.getVolumeStorageType() != null) {
+          builder.setVolumeStorageType(
+              StorageTypeUtils.getStorageTypeProto(
+                  r.getVolumeStorageType()));
+        }
+        results.add(builder.build());
       }
       AUDIT.logReadSuccess(buildAuditMessageForSuccess(
           SCMAction.GET_CONTAINER_WITH_PIPELINE_BATCH,

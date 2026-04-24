@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.ozone.container.common.impl.ContainerSet;
@@ -65,16 +66,19 @@ public class DownloadAndImportReplicator implements ContainerReplicator {
     }
 
     List<DatanodeDetails> sourceDatanodes = task.getSources();
+    StorageType targetVolumeStorageType = task.getTargetVolumeStorageType();
     CopyContainerCompression compression =
         CopyContainerCompression.getConf(conf);
 
-    LOG.info("Starting replication of container {} from {} using {}",
-        containerID, sourceDatanodes, compression);
+    LOG.info("Starting replication of container {} from {} using {} " +
+            "with target storage type {}",
+        containerID, sourceDatanodes, compression, targetVolumeStorageType);
     HddsVolume targetVolume = null;
 
     try {
       targetVolume = containerImporter.chooseNextVolume(
-          containerImporter.getDefaultReplicationSpace());
+          containerImporter.getDefaultReplicationSpace(),
+          targetVolumeStorageType);
 
       // Wait for the download. This thread pool is limiting the parallel
       // downloads, so it's ok to block here and wait for the full download.
@@ -86,14 +90,16 @@ public class DownloadAndImportReplicator implements ContainerReplicator {
         return;
       }
       long bytes = Files.size(tarFilePath);
-      LOG.info("Container {} is downloaded with size {}, starting to import.",
-              containerID, bytes);
+      LOG.info("Container {} is downloaded with size {}, starting to import " +
+              "to storage type {}.",
+              containerID, bytes, targetVolumeStorageType);
       task.setTransferredBytes(bytes);
 
       containerImporter.importContainer(containerID, tarFilePath, targetVolume,
-          compression);
+          compression, targetVolumeStorageType);
 
-      LOG.info("Container {} is replicated successfully", containerID);
+      LOG.info("Container {} is replicated successfully to storage type {}",
+          containerID, targetVolumeStorageType);
       task.setStatus(Status.DONE);
     } catch (IOException e) {
       LOG.error("Container {} replication was unsuccessful.", containerID, e);

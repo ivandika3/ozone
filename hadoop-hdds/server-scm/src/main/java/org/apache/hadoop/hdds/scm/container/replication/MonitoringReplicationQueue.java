@@ -36,4 +36,10 @@ public class MonitoringReplicationQueue extends ReplicationQueue {
     // Do nothing
   }
 
+  @Override
+  public void enqueue(ContainerHealthResult.MisStorageTypeHealthResult
+                          misStorageTypeHealthResult) {
+    // Do nothing
+  }
+
 }

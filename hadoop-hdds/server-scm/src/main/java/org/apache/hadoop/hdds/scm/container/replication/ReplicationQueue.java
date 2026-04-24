@@ -33,6 +33,8 @@ public class ReplicationQueue {
       underRepQueue;
   private final Queue<ContainerHealthResult.OverReplicatedHealthResult>
       overRepQueue;
+  private final Queue<ContainerHealthResult.MisStorageTypeHealthResult>
+      misStorageTypeQueue;
 
   public ReplicationQueue() {
     underRepQueue = Queues.synchronizedQueue(new PriorityQueue<>(
@@ -41,6 +43,7 @@ public class ReplicationQueue {
         .thenComparing(ContainerHealthResult
             .UnderReplicatedHealthResult::getRequeueCount)));
     overRepQueue = Queues.synchronizedQueue(new LinkedList<>());
+    misStorageTypeQueue = Queues.synchronizedQueue(new LinkedList<>());
   }
 
   /**
@@ -67,6 +70,11 @@ public class ReplicationQueue {
     overRepQueue.add(overReplicatedHealthResult);
   }
 
+  public void enqueue(ContainerHealthResult.MisStorageTypeHealthResult
+      misStorageTypeHealthResult) {
+    misStorageTypeQueue.add(misStorageTypeHealthResult);
+  }
+
   /**
    * Retrieve the new highest priority container to be replicated from the
    * under-replicated queue.
@@ -89,6 +97,11 @@ public class ReplicationQueue {
     return overRepQueue.poll();
   }
 
+  public ContainerHealthResult.MisStorageTypeHealthResult
+      dequeueMisStorageTypeContainer() {
+    return misStorageTypeQueue.poll();
+  }
+
   public int underReplicatedQueueSize() {
     return underRepQueue.size();
   }
@@ -97,8 +110,14 @@ public class ReplicationQueue {
     return overRepQueue.size();
   }
 
+  public int misStorageTypeQueueSize() {
+    return misStorageTypeQueue.size();
+  }
+
   public boolean isEmpty() {
-    return underRepQueue.isEmpty() && overRepQueue.isEmpty();
+    return underRepQueue.isEmpty()
+        && overRepQueue.isEmpty()
+        && misStorageTypeQueue.isEmpty();
   }
 
 }

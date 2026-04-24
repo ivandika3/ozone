@@ -235,8 +235,16 @@ public class RatisOverReplicationHandler
     }
 
     return replicas.stream()
-        .sorted(Comparator.comparingLong(ContainerReplica::hashCode))
+        .sorted(Comparator
+            .comparing(RatisOverReplicationHandler::isStorageTypeMatched)
+            .thenComparingLong(ContainerReplica::hashCode))
         .collect(Collectors.toList());
+  }
+
+  private static boolean isStorageTypeMatched(ContainerReplica replica) {
+    return replica.getStorageType() == null
+        || replica.getVolumeStorageType() == null
+        || replica.getStorageType() == replica.getVolumeStorageType();
   }
 
   private int createCommands(

@@ -22,6 +22,8 @@ import static java.util.Collections.emptyList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import org.apache.hadoop.fs.StorageType;
+import org.apache.hadoop.hdds.client.StorageTypeUtils;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.DatanodeDetailsProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.ReplicateContainerCommandProto;
@@ -42,36 +44,53 @@ public final class ReplicateContainerCommand
   private int replicaIndex = 0;
   private ReplicationCommandPriority priority =
       ReplicationCommandPriority.NORMAL;
+  private StorageType targetVolumeStorageType;
 
   public static ReplicateContainerCommand fromSources(long containerID,
       List<DatanodeDetails> sourceDatanodes) {
-    return new ReplicateContainerCommand(containerID, sourceDatanodes, null);
+    return fromSources(containerID, sourceDatanodes, null);
+  }
+
+  public static ReplicateContainerCommand fromSources(long containerID,
+      List<DatanodeDetails> sourceDatanodes,
+      StorageType targetVolumeStorageType) {
+    return new ReplicateContainerCommand(
+        containerID, sourceDatanodes, null, targetVolumeStorageType);
   }
 
   public static ReplicateContainerCommand toTarget(long containerID,
       DatanodeDetails target) {
-    return new ReplicateContainerCommand(containerID, emptyList(), target);
+    return toTarget(containerID, target, null);
+  }
+
+  public static ReplicateContainerCommand toTarget(long containerID,
+      DatanodeDetails target, StorageType targetVolumeStorageType) {
+    return new ReplicateContainerCommand(
+        containerID, emptyList(), target, targetVolumeStorageType);
   }
 
   public static ReplicateContainerCommand forTest(long containerID) {
-    return new ReplicateContainerCommand(containerID, emptyList(), null);
+    return new ReplicateContainerCommand(containerID, emptyList(), null, null);
   }
 
   private ReplicateContainerCommand(long containerID,
-      List<DatanodeDetails> sourceDatanodes, DatanodeDetails target) {
+      List<DatanodeDetails> sourceDatanodes, DatanodeDetails target,
+      StorageType targetVolumeStorageType) {
     this.containerID = containerID;
     this.sourceDatanodes = sourceDatanodes;
     this.targetDatanode = target;
+    this.targetVolumeStorageType = targetVolumeStorageType;
   }
 
   // Should be called only for protobuf conversion
   private ReplicateContainerCommand(long containerID,
       List<DatanodeDetails> sourceDatanodes, long id,
-      DatanodeDetails targetDatanode) {
+      DatanodeDetails targetDatanode, StorageType targetVolumeStorageType) {
     super(id);
     this.containerID = containerID;
     this.sourceDatanodes = sourceDatanodes;
     this.targetDatanode = targetDatanode;
+    this.targetVolumeStorageType = targetVolumeStorageType;
   }
 
   public void setReplicaIndex(int index) {
@@ -105,6 +124,10 @@ public final class ReplicateContainerCommand
       builder.setTarget(targetDatanode.getProtoBufMessage());
     }
     builder.setPriority(priority);
+    if (targetVolumeStorageType != null) {
+      builder.setVolumeStorageType(
+          StorageTypeUtils.getStorageTypeProto(targetVolumeStorageType));
+    }
     return builder.build();
   }
 
@@ -124,7 +147,11 @@ public final class ReplicateContainerCommand
 
     ReplicateContainerCommand cmd =
         new ReplicateContainerCommand(protoMessage.getContainerID(),
-            sourceNodes, protoMessage.getCmdId(), targetNode);
+            sourceNodes, protoMessage.getCmdId(), targetNode,
+            protoMessage.hasVolumeStorageType()
+                ? StorageTypeUtils.getFromProtobuf(
+                    protoMessage.getVolumeStorageType())
+                : null);
     if (protoMessage.hasReplicaIndex()) {
       cmd.setReplicaIndex(protoMessage.getReplicaIndex());
     }
@@ -154,6 +181,10 @@ public final class ReplicateContainerCommand
     return priority;
   }
 
+  public StorageType getTargetVolumeStorageType() {
+    return targetVolumeStorageType;
+  }
+
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
@@ -168,6 +199,9 @@ public final class ReplicateContainerCommand
       sb.append(", targetNode=").append(targetDatanode);
     } else {
       sb.append(", sourceNodes=").append(sourceDatanodes);
+    }
+    if (targetVolumeStorageType != null) {
+      sb.append(", targetVolumeStorageType=").append(targetVolumeStorageType);
     }
     sb.append(", priority=").append(priority);
     return sb.toString();
