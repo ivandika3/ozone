@@ -106,6 +106,7 @@ import org.apache.hadoop.ozone.s3.exception.OS3Exception;
 import org.apache.hadoop.ozone.s3.exception.S3ErrorTable;
 import org.apache.hadoop.ozone.s3.metrics.S3GatewayMetrics;
 import org.apache.hadoop.ozone.s3.signature.SignatureInfo;
+import org.apache.hadoop.ozone.s3.signature.SignatureInfo.Version;
 import org.apache.hadoop.ozone.s3.util.AuditUtils;
 import org.apache.hadoop.ozone.s3.util.S3Consts;
 import org.apache.hadoop.ozone.s3.util.S3Utils;
@@ -195,14 +196,19 @@ public abstract class EndpointBase {
     queryParams = RequestParameters.of(context.getUriInfo().getQueryParameters());
     // Note: userPrincipal is initialized to be the same value as accessId,
     //  could be updated later in RpcClient#getS3Volume
-    s3Auth = new S3Auth(signatureInfo.getStringToSign(),
-        signatureInfo.getSignature(),
-        signatureInfo.getAwsAccessId(), signatureInfo.getAwsAccessId());
-    LOG.debug("S3 access id: {}", s3Auth.getAccessID());
     ClientProtocol clientProtocol =
         getClient().getObjectStore().getClientProxy();
-    clientProtocol.setThreadLocalS3Auth(s3Auth);
     clientProtocol.setIsS3Request(true);
+    if (signatureInfo.getVersion() == Version.NONE
+        || StringUtils.isBlank(signatureInfo.getAwsAccessId())) {
+      clientProtocol.clearThreadLocalS3Auth();
+    } else {
+      s3Auth = new S3Auth(signatureInfo.getStringToSign(),
+          signatureInfo.getSignature(),
+          signatureInfo.getAwsAccessId(), signatureInfo.getAwsAccessId());
+      LOG.debug("S3 access id: {}", s3Auth.getAccessID());
+      clientProtocol.setThreadLocalS3Auth(s3Auth);
+    }
 
     bufferSize = (int) getOzoneConfiguration().getStorageSize(
         OZONE_S3G_CLIENT_BUFFER_SIZE_KEY,
