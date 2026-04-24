@@ -45,6 +45,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import javax.ws.rs.core.HttpHeaders;
+import javax.ws.rs.core.MultivaluedHashMap;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.ozone.OzoneConfigKeys;
 import org.apache.hadoop.ozone.client.ObjectStore;
@@ -94,6 +95,7 @@ public class TestPermissionCheck {
     headers = mock(HttpHeaders.class);
     when(headers.getHeaderString(X_AMZ_CONTENT_SHA256))
         .thenReturn("mockSignature");
+    when(headers.getRequestHeaders()).thenReturn(new MultivaluedHashMap<>());
     clientProtocol = mock(ClientProtocol.class);
     S3GatewayMetrics.create(conf);
     when(client.getProxy()).thenReturn(clientProtocol);
@@ -263,7 +265,8 @@ public class TestPermissionCheck {
     when(objectStore.getS3Volume()).thenReturn(volume);
     when(volume.getBucket("bucketName")).thenReturn(bucket);
     doThrow(exception).when(clientProtocol).createKey(
-            anyString(), anyString(), anyString(), anyLong(), any(), anyMap(), anyMap());
+        anyString(), anyString(), anyString(), anyLong(), any(),
+        anyMap(), anyMap(), any());
     ObjectEndpoint objectEndpoint = EndpointBuilder.newObjectEndpointBuilder()
         .setClient(client)
         .setHeaders(headers)
@@ -293,7 +296,8 @@ public class TestPermissionCheck {
     when(objectStore.getS3Volume()).thenReturn(volume);
     when(objectStore.getS3Bucket(anyString())).thenReturn(bucket);
     when(volume.getBucket(anyString())).thenReturn(bucket);
-    doThrow(exception).when(bucket).initiateMultipartUpload(anyString(), any(), anyMap(), anyMap());
+    doThrow(exception).when(bucket).initiateMultipartUpload(
+        anyString(), any(), anyMap(), anyMap(), any());
     ObjectEndpoint objectEndpoint = EndpointBuilder.newObjectEndpointBuilder()
         .setClient(client)
         .setHeaders(headers)
