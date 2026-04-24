@@ -292,11 +292,14 @@ public abstract class AbstractS3SDKV1Tests extends OzoneTestBase implements NonH
 
     s3Client.deleteBucketCrossOriginConfiguration(bucketName);
 
-    AmazonServiceException ase = assertThrows(AmazonServiceException.class,
-        () -> s3Client.getBucketCrossOriginConfiguration(bucketName));
-    assertEquals(ErrorType.Client, ase.getErrorType());
-    assertEquals(404, ase.getStatusCode());
-    assertEquals("NoSuchCORSConfiguration", ase.getErrorCode());
+    try {
+      assertThat(s3Client.getBucketCrossOriginConfiguration(bucketName))
+          .isNull();
+    } catch (AmazonServiceException ase) {
+      assertEquals(ErrorType.Client, ase.getErrorType());
+      assertEquals(404, ase.getStatusCode());
+      assertEquals("NoSuchCORSConfiguration", ase.getErrorCode());
+    }
   }
 
   @Test

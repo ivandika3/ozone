@@ -24,7 +24,6 @@ import static org.apache.hadoop.ozone.s3.util.S3Consts.CACHED_BUCKETS_CONTEXT_PR
 import static org.apache.hadoop.ozone.s3.util.S3Consts.ORIGIN_HEADER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
@@ -38,8 +37,6 @@ import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.UriInfo;
 import org.apache.hadoop.ozone.client.OzoneBucket;
-import org.apache.hadoop.ozone.client.OzoneClient;
-import org.apache.hadoop.ozone.client.OzoneClientStub;
 import org.apache.hadoop.ozone.om.helpers.CorsConfiguration;
 import org.apache.hadoop.ozone.om.helpers.CorsRule;
 import org.junit.jupiter.api.Test;
@@ -54,25 +51,19 @@ public class TestCommonHeadersContainerResponseFilter {
       throws Exception {
     String bucketName = "cors-filter-bucket";
     String origin = "https://example.com";
-    OzoneClient client = new OzoneClientStub();
-    client.getObjectStore().createS3Bucket(bucketName);
-    OzoneBucket bucket = client.getObjectStore().getS3Bucket(bucketName);
-    bucket.setCorsConfiguration(CorsConfiguration.newBuilder()
-        .addRule(CorsRule.newBuilder()
-            .setAllowedOrigins(Collections.singletonList(origin))
-            .setAllowedMethods(Arrays.asList("GET", "HEAD"))
-            .setExposeHeaders(Collections.singletonList("ETag"))
-            .build())
-        .build());
+    OzoneBucket bucket = mock(OzoneBucket.class);
+    when(bucket.getCorsConfiguration()).thenReturn(corsConfiguration(origin));
 
     CommonHeadersContainerResponseFilter filter =
         new CommonHeadersContainerResponseFilter();
     setField(filter, "requestIdentifier", new RequestIdentifier());
-    setField(filter, "ozoneClient", client);
     MultivaluedMap<String, Object> responseHeaders =
         new MultivaluedHashMap<>();
+    Map<String, OzoneBucket> cachedBuckets = new HashMap<>();
+    cachedBuckets.put(bucketName, bucket);
 
-    filter.filter(request("GET", "/" + bucketName + "/key", origin),
+    filter.filter(request("GET", "/" + bucketName + "/key", origin,
+            cachedBuckets),
         response(responseHeaders));
 
     assertThat(responseHeaders.getFirst(ACCESS_CONTROL_ALLOW_ORIGIN))
@@ -89,11 +80,9 @@ public class TestCommonHeadersContainerResponseFilter {
     String origin = "https://example.com";
     OzoneBucket bucket = mock(OzoneBucket.class);
     when(bucket.getCorsConfiguration()).thenReturn(corsConfiguration(origin));
-    OzoneClient client = mock(OzoneClient.class);
     CommonHeadersContainerResponseFilter filter =
         new CommonHeadersContainerResponseFilter();
     setField(filter, "requestIdentifier", new RequestIdentifier());
-    setField(filter, "ozoneClient", client);
     MultivaluedMap<String, Object> responseHeaders =
         new MultivaluedHashMap<>();
     Map<String, OzoneBucket> cachedBuckets = new HashMap<>();
@@ -107,7 +96,6 @@ public class TestCommonHeadersContainerResponseFilter {
         .isEqualTo(origin);
     assertThat(responseHeaders.getFirst(ACCESS_CONTROL_EXPOSE_HEADERS))
         .isEqualTo("ETag");
-    verifyNoInteractions(client);
   }
 
   private static ContainerRequestContext request(String method, String path,

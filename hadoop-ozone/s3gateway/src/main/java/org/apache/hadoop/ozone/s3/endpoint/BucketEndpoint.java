@@ -142,6 +142,7 @@ public class BucketEndpoint extends BucketOperationHandler {
           && OZONE_URI_DELIMITER.equals(delimiter);
 
       bucket = context.getVolume().getBucket(bucketName);
+      cacheBucket(bucketName, bucket);
       S3Owner.verifyBucketOwnerCondition(getHeaders(), bucketName, bucket.getOwner());
 
       ozoneKeyIterator = bucket.listKeys(prefix, prevKey, shallow);
@@ -298,6 +299,7 @@ public class BucketEndpoint extends BucketOperationHandler {
     S3GAction s3GAction = S3GAction.HEAD_BUCKET;
     try {
       OzoneBucket bucket = getVolume().getBucket(bucketName);
+      cacheBucket(bucketName, bucket);
       S3Owner.verifyBucketOwnerCondition(getHeaders(), bucketName, bucket.getOwner());
       auditReadSuccess(s3GAction);
       getMetrics().updateHeadBucketSuccessStats(startNanos);
@@ -349,6 +351,7 @@ public class BucketEndpoint extends BucketOperationHandler {
     S3GAction s3GAction = S3GAction.MULTI_DELETE;
 
     OzoneBucket bucket = getVolume().getBucket(bucketName);
+    cacheBucket(bucketName, bucket);
     MultiDeleteResponse result = new MultiDeleteResponse();
     List<String> deleteKeys = new ArrayList<>();
 

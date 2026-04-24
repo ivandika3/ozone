@@ -45,10 +45,10 @@ public class BucketCrudHandler extends BucketOperationHandler {
    * Handle only plain PUT bucket (create bucket), not subresources.
    */
   private boolean shouldHandle() {
-    return queryParams().get(QueryParams.ACL) == null
-        && queryParams().get(QueryParams.UPLOADS) == null
-        && queryParams().get(QueryParams.DELETE) == null
-        && queryParams().get(QueryParams.CORS) == null;
+    return !queryParams().contains(QueryParams.ACL)
+        && !queryParams().contains(QueryParams.UPLOADS)
+        && !queryParams().contains(QueryParams.DELETE)
+        && !queryParams().contains(QueryParams.CORS);
   }
 
   /**
@@ -92,6 +92,7 @@ public class BucketCrudHandler extends BucketOperationHandler {
     try {
       if (S3Owner.hasBucketOwnershipVerificationConditions(getHeaders())) {
         OzoneBucket bucket = context.getVolume().getBucket(bucketName);
+        cacheBucket(bucketName, bucket);
         S3Owner.verifyBucketOwnerCondition(getHeaders(), bucketName, bucket.getOwner());
       }
       context.getVolume().deleteBucket(bucketName);

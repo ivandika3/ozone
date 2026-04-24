@@ -27,7 +27,6 @@ import javax.ws.rs.container.ContainerResponseFilter;
 import javax.ws.rs.ext.Provider;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.ozone.client.OzoneBucket;
-import org.apache.hadoop.ozone.client.OzoneClient;
 import org.apache.hadoop.ozone.om.helpers.CorsRule;
 import org.apache.hadoop.ozone.s3.util.S3Consts;
 import org.slf4j.Logger;
@@ -45,9 +44,6 @@ public class CommonHeadersContainerResponseFilter implements
 
   @Inject
   private RequestIdentifier requestIdentifier;
-
-  @Inject
-  private OzoneClient ozoneClient;
 
   @Override
   public void filter(ContainerRequestContext containerRequestContext,
@@ -78,7 +74,7 @@ public class CommonHeadersContainerResponseFilter implements
     try {
       OzoneBucket bucket = getCachedBucket(requestContext, bucketName);
       if (bucket == null) {
-        bucket = ozoneClient.getObjectStore().getS3Bucket(bucketName);
+        return;
       }
       Optional<CorsRule> rule = S3CorsHeaders.findMatchingRule(
           bucket.getCorsConfiguration(), origin, requestContext.getMethod(),
