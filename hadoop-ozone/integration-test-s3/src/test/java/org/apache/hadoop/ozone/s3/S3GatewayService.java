@@ -17,8 +17,8 @@
 
 package org.apache.hadoop.ozone.s3;
 
-import static org.apache.ozone.test.GenericTestUtils.PortAllocator.localhostWithFreePort;
 import static org.apache.ozone.test.GenericTestUtils.PortAllocator.HOST_ADDRESS;
+import static org.apache.ozone.test.GenericTestUtils.PortAllocator.localhostWithFreePort;
 
 import java.net.InetSocketAddress;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
