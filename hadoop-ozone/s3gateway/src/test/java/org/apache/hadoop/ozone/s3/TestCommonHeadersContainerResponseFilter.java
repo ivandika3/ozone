@@ -99,11 +99,6 @@ public class TestCommonHeadersContainerResponseFilter {
   }
 
   private static ContainerRequestContext request(String method, String path,
-      String origin) {
-    return request(method, path, origin, null);
-  }
-
-  private static ContainerRequestContext request(String method, String path,
       String origin, Map<String, OzoneBucket> cachedBuckets) {
     ContainerRequestContext request = mock(ContainerRequestContext.class);
     UriInfo uriInfo = mock(UriInfo.class);
