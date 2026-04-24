@@ -184,7 +184,7 @@ public class BlockManagerImpl implements BlockManager, BlockmanagerMXBean {
     try {
       containerInfo = writableContainerFactory.getContainer(
           size, replicationConfig, owner, excludeList, preferredTier);
-    } catch (SCMException ex) {
+    } catch (IOException ex) {
       preferredFailure = ex;
     }
 
@@ -196,7 +196,7 @@ public class BlockManagerImpl implements BlockManager, BlockmanagerMXBean {
         containerInfo = writableContainerFactory.getContainer(
             size, replicationConfig, owner, excludeList, fallbackTier);
         fallbackUsed = containerInfo != null;
-      } catch (SCMException ex) {
+      } catch (IOException ex) {
         if (preferredFailure != null) {
           ex.addSuppressed(preferredFailure);
         }
