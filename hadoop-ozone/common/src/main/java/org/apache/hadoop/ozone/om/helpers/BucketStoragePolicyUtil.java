@@ -34,6 +34,9 @@ public final class BucketStoragePolicyUtil {
     if (storageType == null) {
       return null;
     }
+    if (storageType == StorageType.DEFAULT) {
+      return null;
+    }
     switch (storageType) {
     case SSD:
     case RAM_DISK:
