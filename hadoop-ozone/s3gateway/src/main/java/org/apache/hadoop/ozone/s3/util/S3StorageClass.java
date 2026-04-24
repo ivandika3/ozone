@@ -24,6 +24,7 @@ import org.apache.hadoop.hdds.client.StoragePolicy;
  * Maps S3 storage classes to Ozone storage policies.
  */
 public enum S3StorageClass {
+  REDUCED_REDUNDANCY(OzoneStoragePolicy.HOT),
   STANDARD(OzoneStoragePolicy.HOT),
   STANDARD_IA(OzoneStoragePolicy.WARM),
   GLACIER(OzoneStoragePolicy.COLD),

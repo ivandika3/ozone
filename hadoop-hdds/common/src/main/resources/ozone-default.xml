@@ -820,6 +820,24 @@
     </description>
   </property>
   <property>
+    <name>ozone.default.storagepolicy</name>
+    <value>WARM</value>
+    <tag>OZONE</tag>
+    <description>
+      The default storage policy used for Ozone key allocation when no
+      storage policy is specified by the caller or bucket.
+    </description>
+  </property>
+  <property>
+    <name>ozone.scm.container.allow.null.storage.tier</name>
+    <value>false</value>
+    <tag>OZONE, SCM</tag>
+    <description>
+      Allow SCM to accept container metadata without a storage tier. This
+      is intended only for compatibility with older metadata during upgrades.
+    </description>
+  </property>
+  <property>
     <name>ozone.scm.sequence.id.batch.size</name>
     <value>1000</value>
     <tag>OZONE, SCM</tag>
@@ -1883,6 +1901,33 @@
     <description>
       The bucket layout that will be used when buckets are created through
       the S3 API.
+    </description>
+  </property>
+  <property>
+    <name>ozone.s3.default.storagepolicy</name>
+    <value>STANDARD</value>
+    <tag>OZONE, S3GATEWAY</tag>
+    <description>
+      The default S3 storage class used when a request does not provide
+      x-amz-storage-class and the bucket has no explicit storage policy.
+    </description>
+  </property>
+  <property>
+    <name>ozone.s3.deep.archive.ec.replication.config</name>
+    <value>rs-6-3-1024k</value>
+    <tag>OZONE, S3GATEWAY</tag>
+    <description>
+      The EC replication config to use for DEEP_ARCHIVE writes when the
+      deep-archive EC threshold is enabled.
+    </description>
+  </property>
+  <property>
+    <name>ozone.s3.deep.archive.ec.size.threshold</name>
+    <value>0B</value>
+    <tag>OZONE, S3GATEWAY</tag>
+    <description>
+      Objects larger than this size use the configured deep-archive EC
+      replication for S3 DEEP_ARCHIVE writes. A value of 0B always uses it.
     </description>
   </property>
   <property>

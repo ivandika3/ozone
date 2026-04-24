@@ -184,7 +184,7 @@ public final class OzoneConfigKeys {
   public static final String OZONE_S3_DEFAULT_STORAGE_POLICY_KEY =
       "ozone.s3.default.storagepolicy";
   public static final String OZONE_S3_DEFAULT_STORAGE_POLICY_DEFAULT =
-      "STANDARD_IA";
+      "STANDARD";
   public static final String OZONE_S3_DEEP_ARCHIVE_EC_REPLICATION_CONFIG_KEY =
       "ozone.s3.deep.archive.ec.replication.config";
   public static final String
