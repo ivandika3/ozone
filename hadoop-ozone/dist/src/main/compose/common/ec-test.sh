@@ -17,8 +17,9 @@
 
 start_docker_env 5
 
-## Exclude virtual-host tests. This is tested separately as it requires additional config.
-execute_robot_test scm -v BUCKET:erasure --exclude virtual-host s3
+## Exclude no-bucket-type tests here as well; they should not run against
+## the erasure-coded bucket variant sweep.
+execute_robot_test scm -v BUCKET:erasure --exclude virtual-host --exclude no-bucket-type s3
 
 execute_robot_test scm ec/rewrite.robot
 
