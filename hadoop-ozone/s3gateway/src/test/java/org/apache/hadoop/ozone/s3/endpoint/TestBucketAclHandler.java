@@ -266,11 +266,9 @@ public class TestBucketAclHandler {
     OzoneVolume volume = mock(OzoneVolume.class);
     OzoneBucket bucket = client.getObjectStore().getS3Bucket(BUCKET_NAME);
     when(endpoint.getVolume()).thenReturn(volume);
-    when(endpoint.loadBucket(BUCKET_NAME))
+    when(volume.getBucket(BUCKET_NAME))
         .thenReturn(bucket);
     when(volume.getBucket("nonexistent-bucket"))
-        .thenThrow(new OMException("", OMException.ResultCodes.BUCKET_NOT_FOUND));
-    when(endpoint.loadBucket("nonexistent-bucket"))
         .thenThrow(new OMException("", OMException.ResultCodes.BUCKET_NOT_FOUND));
     return new S3RequestContext(endpoint, null);
   }
