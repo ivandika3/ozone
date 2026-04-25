@@ -256,6 +256,12 @@ public abstract class EndpointBase {
     return bucket;
   }
 
+  protected OzoneBucket loadBucket(String bucketName) throws IOException {
+    OzoneBucket bucket = getVolume().getBucket(bucketName);
+    cacheBucket(bucketName, bucket);
+    return bucket;
+  }
+
   @SuppressWarnings("unchecked")
   protected void cacheBucket(String bucketName, OzoneBucket bucket) {
     if (context == null || StringUtils.isBlank(bucketName) || bucket == null) {

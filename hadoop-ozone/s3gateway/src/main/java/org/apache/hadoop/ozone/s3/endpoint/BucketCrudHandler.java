@@ -91,8 +91,7 @@ public class BucketCrudHandler extends BucketOperationHandler {
 
     try {
       if (S3Owner.hasBucketOwnershipVerificationConditions(getHeaders())) {
-        OzoneBucket bucket = context.getVolume().getBucket(bucketName);
-        cacheBucket(bucketName, bucket);
+        OzoneBucket bucket = context.getBucket(bucketName);
         S3Owner.verifyBucketOwnerCondition(getHeaders(), bucketName, bucket.getOwner());
       }
       context.getVolume().deleteBucket(bucketName);

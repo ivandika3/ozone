@@ -66,8 +66,7 @@ public class BucketCorsHandler extends BucketOperationHandler {
     }
     context.setAction(S3GAction.GET_BUCKET_CORS);
 
-    OzoneBucket bucket = context.getVolume().getBucket(bucketName);
-    cacheBucket(bucketName, bucket);
+    OzoneBucket bucket = context.getBucket(bucketName);
     S3Owner.verifyBucketOwnerCondition(getHeaders(), bucketName,
         bucket.getOwner());
     CorsConfiguration corsConfiguration = bucket.getCorsConfiguration();
@@ -87,8 +86,7 @@ public class BucketCorsHandler extends BucketOperationHandler {
     }
     context.setAction(S3GAction.PUT_BUCKET_CORS);
 
-    OzoneBucket bucket = context.getVolume().getBucket(bucketName);
-    cacheBucket(bucketName, bucket);
+    OzoneBucket bucket = context.getBucket(bucketName);
     S3Owner.verifyBucketOwnerCondition(getHeaders(), bucketName,
         bucket.getOwner());
     S3BucketCors cors;
@@ -112,8 +110,7 @@ public class BucketCorsHandler extends BucketOperationHandler {
     }
     context.setAction(S3GAction.DELETE_BUCKET_CORS);
 
-    OzoneBucket bucket = context.getVolume().getBucket(bucketName);
-    cacheBucket(bucketName, bucket);
+    OzoneBucket bucket = context.getBucket(bucketName);
     S3Owner.verifyBucketOwnerCondition(getHeaders(), bucketName,
         bucket.getOwner());
     bucket.deleteCorsConfiguration();
