@@ -623,6 +623,9 @@ public class RpcClient implements ClientProtocol {
             + " not support Erasure Coded replication.");
       }
     }
+    if (bucketArgs.getCorsConfiguration() != null) {
+      checkBucketCorsFeatureEnabled();
+    }
 
     final String owner;
     // If S3 auth exists, set owner name to the short user name derived from the
@@ -1240,6 +1243,7 @@ public class RpcClient implements ClientProtocol {
     verifyVolumeName(volumeName);
     verifyBucketName(bucketName);
     Objects.requireNonNull(corsConfiguration, "corsConfiguration == null");
+    checkBucketCorsFeatureEnabled();
     OmBucketArgs.Builder builder = OmBucketArgs.newBuilder();
     builder.setVolumeName(volumeName)
         .setBucketName(bucketName)
@@ -1252,11 +1256,19 @@ public class RpcClient implements ClientProtocol {
       throws IOException {
     verifyVolumeName(volumeName);
     verifyBucketName(bucketName);
+    checkBucketCorsFeatureEnabled();
     OmBucketArgs.Builder builder = OmBucketArgs.newBuilder();
     builder.setVolumeName(volumeName)
         .setBucketName(bucketName)
         .setClearCorsConfiguration(true);
     ozoneManagerClient.setBucketProperty(builder.build());
+  }
+
+  private void checkBucketCorsFeatureEnabled() throws IOException {
+    if (omVersion.compareTo(OzoneManagerVersion.S3_BUCKET_CORS) < 0) {
+      throw new IOException("OzoneManager does not support bucket CORS "
+          + "configuration.");
+    }
   }
 
   @Override
