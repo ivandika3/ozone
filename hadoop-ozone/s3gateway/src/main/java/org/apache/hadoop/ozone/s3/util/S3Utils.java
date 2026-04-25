@@ -316,6 +316,9 @@ public final class S3Utils {
       if (ozoneBucket.getStoragePolicy() != null) {
         return ozoneBucket.getStoragePolicy();
       }
+      if (ozoneBucket.getReplicationConfig() instanceof ECReplicationConfig) {
+        return S3StorageClass.STANDARD_IA.getStoragePolicy();
+      }
       String defaultStorageClass = configuration.get(
           OZONE_S3_DEFAULT_STORAGE_POLICY_KEY,
           OZONE_S3_DEFAULT_STORAGE_POLICY_DEFAULT);

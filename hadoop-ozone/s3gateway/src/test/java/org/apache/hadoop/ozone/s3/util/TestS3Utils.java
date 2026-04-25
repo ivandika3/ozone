@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -32,12 +34,15 @@ import java.util.stream.Stream;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
+import org.apache.hadoop.hdds.client.OzoneStoragePolicy;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.conf.StorageUnit;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.ozone.OzoneConfigKeys;
+import org.apache.hadoop.ozone.client.OzoneBucket;
 import org.apache.hadoop.ozone.s3.endpoint.S3Owner;
 import org.apache.hadoop.ozone.s3.exception.OS3Exception;
 import org.apache.hadoop.ozone.s3.exception.S3ErrorTable;
@@ -185,6 +190,32 @@ public class TestS3Utils {
     assertEquals(new ECReplicationConfig(
         OzoneConfigKeys.OZONE_S3_DEEP_ARCHIVE_EC_REPLICATION_CONFIG_DEFAULT),
         largeKeyConfig);
+  }
+
+  @Test
+  public void testGetS3StoragePolicyDefaultsEcBucketToWarm()
+      throws OS3Exception {
+    OzoneBucket bucket = mock(OzoneBucket.class);
+    when(bucket.getStoragePolicy()).thenReturn(null);
+    when(bucket.getReplicationConfig()).thenReturn(EC32REPLICATIONCONFIG);
+
+    StoragePolicy policy = S3Utils.getS3StoragePolicy(
+        null, CONFIGURATION, bucket);
+
+    assertEquals(OzoneStoragePolicy.WARM, policy);
+  }
+
+  @Test
+  public void testGetS3StoragePolicyKeepsBucketPolicyWhenPresent()
+      throws OS3Exception {
+    OzoneBucket bucket = mock(OzoneBucket.class);
+    when(bucket.getStoragePolicy()).thenReturn(OzoneStoragePolicy.COLD);
+    when(bucket.getReplicationConfig()).thenReturn(EC32REPLICATIONCONFIG);
+
+    StoragePolicy policy = S3Utils.getS3StoragePolicy(
+        null, CONFIGURATION, bucket);
+
+    assertEquals(OzoneStoragePolicy.COLD, policy);
   }
 
   @Test
