@@ -25,6 +25,7 @@ import static org.mockito.Mockito.when;
 
 import org.apache.hadoop.ozone.audit.S3GAction;
 import org.apache.hadoop.ozone.client.OzoneBucket;
+import org.apache.hadoop.ozone.client.OzoneVolume;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -35,13 +36,17 @@ public class TestS3RequestContext {
   @Test
   public void getBucketCachesLoadedBuckets() throws Exception {
     EndpointBase endpoint = mock(EndpointBase.class);
+    OzoneVolume volume = mock(OzoneVolume.class);
     OzoneBucket bucket = mock(OzoneBucket.class);
-    when(endpoint.loadBucket("bucket")).thenReturn(bucket);
+    when(endpoint.getVolume()).thenReturn(volume);
+    when(volume.getBucket("bucket")).thenReturn(bucket);
 
     S3RequestContext context = new S3RequestContext(endpoint, S3GAction.GET_BUCKET);
 
     assertSame(bucket, context.getBucket("bucket"));
     assertSame(bucket, context.getBucket("bucket"));
-    verify(endpoint, times(1)).loadBucket("bucket");
+    verify(endpoint, times(1)).getVolume();
+    verify(volume, times(1)).getBucket("bucket");
+    verify(endpoint, times(1)).cacheBucket("bucket", bucket);
   }
 }

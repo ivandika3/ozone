@@ -60,7 +60,8 @@ class S3RequestContext {
   OzoneBucket getBucket(String bucketName) throws IOException {
     OzoneBucket bucket = buckets.get(bucketName);
     if (bucket == null) {
-      bucket = endpoint.loadBucket(bucketName);
+      bucket = getVolume().getBucket(bucketName);
+      endpoint.cacheBucket(bucketName, bucket);
       buckets.put(bucketName, bucket);
     }
     return bucket;
