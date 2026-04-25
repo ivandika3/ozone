@@ -1734,6 +1734,27 @@ public abstract class AbstractS3SDKV2Tests extends OzoneTestBase implements NonH
       }
 
       @Test
+      public void testPutBucketCors() {
+        CORSRule rule = CORSRule.builder()
+            .allowedOrigins("https://example.com")
+            .allowedMethods("GET")
+            .build();
+        CORSConfiguration configuration = CORSConfiguration.builder()
+            .corsRules(rule)
+            .build();
+
+        verifyPassBucketOwnershipVerification(() -> s3Client.putBucketCors(
+            b -> b.bucket(DEFAULT_BUCKET_NAME)
+                .expectedBucketOwner(correctOwner)
+                .corsConfiguration(configuration)));
+
+        verifyBucketOwnershipVerificationAccessDenied(() -> s3Client.putBucketCors(
+            b -> b.bucket(DEFAULT_BUCKET_NAME)
+                .expectedBucketOwner(WRONG_OWNER)
+                .corsConfiguration(configuration)));
+      }
+
+      @Test
       public void testHeadBucket() {
         HeadBucketRequest correctRequest = HeadBucketRequest.builder()
             .bucket(DEFAULT_BUCKET_NAME)

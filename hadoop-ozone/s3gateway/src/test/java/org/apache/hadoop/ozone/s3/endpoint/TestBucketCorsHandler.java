@@ -22,6 +22,7 @@ import static java.net.HttpURLConnection.HTTP_OK;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -31,6 +32,8 @@ import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.client.OzoneClient;
 import org.apache.hadoop.ozone.client.OzoneClientStub;
 import org.apache.hadoop.ozone.s3.exception.OS3Exception;
+import org.apache.hadoop.ozone.s3.exception.S3ErrorTable;
+import org.apache.hadoop.ozone.s3.util.S3Consts;
 import org.apache.hadoop.ozone.s3.util.S3Consts.QueryParams;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -92,5 +95,34 @@ public class TestBucketCorsHandler {
     OS3Exception noCors = assertThrows(OS3Exception.class,
         () -> bucketEndpoint.get(BUCKET_NAME));
     assertEquals("NoSuchCORSConfiguration", noCors.getCode());
+  }
+
+  @Test
+  public void putCorsFailsWhenExpectedBucketOwnerDoesNotMatch()
+      throws Exception {
+    HttpHeaders headers = Mockito.mock(HttpHeaders.class);
+    when(headers.getHeaderString(S3Consts.EXPECTED_BUCKET_OWNER_HEADER))
+        .thenReturn("wrong-owner");
+
+    bucketEndpoint = EndpointBuilder.newBucketEndpointBuilder()
+        .setClient(client)
+        .setHeaders(headers)
+        .build();
+    bucketEndpoint.queryParamsForTest().set(QueryParams.CORS, "");
+
+    String xml = "<CORSConfiguration>"
+        + "<CORSRule>"
+        + "<AllowedOrigin>https://example.com</AllowedOrigin>"
+        + "<AllowedMethod>GET</AllowedMethod>"
+        + "</CORSRule>"
+        + "</CORSConfiguration>";
+
+    OS3Exception ex = assertThrows(OS3Exception.class,
+        () -> bucketEndpoint.put(BUCKET_NAME,
+            new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8))));
+    assertEquals(S3ErrorTable.BUCKET_OWNER_MISMATCH.getCode(),
+        ex.getCode());
+    assertEquals(S3ErrorTable.BUCKET_OWNER_MISMATCH.getErrorMessage(),
+        ex.getErrorMessage());
   }
 }
