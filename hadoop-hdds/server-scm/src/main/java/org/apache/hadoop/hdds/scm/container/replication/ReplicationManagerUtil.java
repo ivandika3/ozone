@@ -71,6 +71,21 @@ public final class ReplicationManagerUtil {
         .collect(Collectors.toList()).toString();
   }
 
+  private static List<DatanodeDetails> normalizeTargets(PlacementPolicy policy,
+      List<DatanodeDetails> targets) {
+    if (!(policy instanceof SCMCommonPlacementPolicy)) {
+      return targets;
+    }
+
+    NodeManager nodeManager = ((SCMCommonPlacementPolicy) policy).getNodeManager();
+    return targets.stream()
+        .map(dn -> {
+          DatanodeDetails current = nodeManager.getDatanodeInfo(dn);
+          return current != null ? current : dn;
+        })
+        .collect(Collectors.toList());
+  }
+
   /**
    * Using the passed placement policy attempt to select a list of datanodes to
    * use as new targets. If the placement policy is unable to select enough
@@ -142,7 +157,8 @@ public final class ReplicationManagerUtil {
           targets = policy.chooseDatanodes(usedNodes, excludedNodes, null,
               mutableRequiredNodes, 0, dataSizeRequired);
         }
-        List<DatanodeDetails> targetsWithSpace = targets.stream()
+        List<DatanodeDetails> targetsWithSpace = normalizeTargets(policy, targets)
+            .stream()
             .filter(dn -> SCMCommonPlacementPolicy.hasEnoughSpace(dn, 0,
                 dataSizeRequired, storageType))
             .collect(Collectors.toList());
