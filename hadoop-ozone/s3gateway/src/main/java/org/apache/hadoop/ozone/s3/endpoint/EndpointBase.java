@@ -270,6 +270,7 @@ public abstract class EndpointBase {
     }
     buckets.put(bucketName, bucket);
   }
+
   protected OzoneVolume getVolume() throws IOException {
     return client.getObjectStore().getS3Volume();
   }
