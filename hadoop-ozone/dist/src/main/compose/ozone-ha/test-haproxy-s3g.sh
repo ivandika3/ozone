@@ -30,9 +30,10 @@ source "$COMPOSE_DIR/../testlib.sh"
 
 start_docker_env
 
-## Exclude no-bucket-type tests here as well; they should not run against
-## special bucket variants like generated buckets.
-exclude="--exclude virtual-host --exclude no-bucket-type"
+## Exclude virtual-host tests. This is tested separately as it requires additional config.
+exclude="--exclude virtual-host --exclude bucket-cors"
 for bucket in generated; do
   execute_robot_test ${SCM} -v BUCKET:${bucket} -N s3-${bucket} ${exclude} s3
+  # some tests are independent of the bucket type, only need to be run once
+  exclude="--exclude virtual-host --exclude bucket-cors --exclude no-bucket-type"
 done

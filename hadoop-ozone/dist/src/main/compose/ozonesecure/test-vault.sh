@@ -30,6 +30,5 @@ export COMPOSE_FILE=docker-compose.yaml:vault.yaml
 
 start_docker_env
 
-## Exclude no-bucket-type tests here as well; they should not run against
-## the vault-backed variant bucket sweep.
-execute_robot_test scm --exclude virtual-host --exclude no-bucket-type s3
+## Exclude virtual-host tests. This is tested separately as it requires additional config.
+execute_robot_test scm --exclude virtual-host --exclude bucket-cors s3
