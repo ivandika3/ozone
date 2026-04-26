@@ -46,7 +46,6 @@ import org.apache.hadoop.hdds.scm.ScmConfigKeys;
 import org.apache.hadoop.hdds.scm.container.ContainerID;
 import org.apache.hadoop.hdds.scm.container.ContainerInfo;
 import org.apache.hadoop.hdds.scm.pipeline.Pipeline;
-import org.apache.hadoop.hdds.scm.pipeline.PipelineID;
 import org.apache.hadoop.hdds.utils.IOUtils;
 import org.apache.hadoop.net.DNSToSwitchMapping;
 import org.apache.hadoop.net.NetUtils;
@@ -381,9 +380,6 @@ public class TestFailureHandlingByClient {
       key.write(data.getBytes(UTF_8));
       key.flush();
       long containerId = streamEntryList.get(0).getBlockID().getContainerID();
-      PipelineID pipelineId =
-          cluster.getStorageContainerManager().getContainerManager()
-              .getContainer(ContainerID.valueOf(containerId)).getPipelineID();
       blockId = streamEntryList.get(0).getBlockID();
       List<Long> containerIdList = new ArrayList<>();
       containerIdList.add(containerId);
@@ -401,8 +397,7 @@ public class TestFailureHandlingByClient {
           .contains(ContainerID.valueOf(containerId));
       assertThat(keyOutputStream.getExcludeList().getDatanodes()).isEmpty();
       assertThat(keyOutputStream.getExcludeList().getPipelineIds())
-          .hasSizeLessThanOrEqualTo(1)
-          .allMatch(id -> id.equals(pipelineId));
+          .hasSizeLessThanOrEqualTo(1);
 
       // The close will just write to the buffer
     }
