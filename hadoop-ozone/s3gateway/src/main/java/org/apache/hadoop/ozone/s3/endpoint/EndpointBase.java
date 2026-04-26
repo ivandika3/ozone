@@ -264,7 +264,9 @@ public abstract class EndpointBase {
 
   @SuppressWarnings("unchecked")
   protected void cacheBucket(String bucketName, OzoneBucket bucket) {
-    if (context == null || StringUtils.isBlank(bucketName) || bucket == null) {
+    if (context == null || StringUtils.isBlank(bucketName) || bucket == null
+        || StringUtils.isBlank(
+            context.getHeaderString(S3Consts.ORIGIN_HEADER))) {
       return;
     }
     Map<String, OzoneBucket> buckets =

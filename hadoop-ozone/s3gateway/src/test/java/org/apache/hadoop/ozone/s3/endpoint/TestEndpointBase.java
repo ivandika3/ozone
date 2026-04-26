@@ -17,11 +17,14 @@
 
 package org.apache.hadoop.ozone.s3.endpoint;
 
+import static org.apache.hadoop.ozone.s3.util.S3Consts.CACHED_BUCKETS_CONTEXT_PROPERTY;
 import static org.apache.hadoop.ozone.s3.util.S3Consts.CUSTOM_METADATA_HEADER_PREFIX;
+import static org.apache.hadoop.ozone.s3.util.S3Consts.ORIGIN_HEADER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -30,10 +33,14 @@ import static org.mockito.Mockito.when;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Map;
+import javax.ws.rs.container.ContainerRequestContext;
+import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.MultivaluedMap;
+import javax.ws.rs.core.UriInfo;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.client.ObjectStore;
+import org.apache.hadoop.ozone.client.OzoneBucket;
 import org.apache.hadoop.ozone.client.OzoneClient;
 import org.apache.hadoop.ozone.client.protocol.ClientProtocol;
 import org.apache.hadoop.ozone.om.protocol.S3Auth;
@@ -141,6 +148,58 @@ public class TestEndpointBase {
     verify(proxy, never()).clearThreadLocalS3Auth();
     assertEquals("testuser", authCaptor.getValue().getAccessID());
     assertEquals("testuser", authCaptor.getValue().getUserPrincipal());
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void cacheBucketPublishesBucketForCorsRequests() {
+    ContainerRequestContext requestContext = mock(ContainerRequestContext.class);
+    HttpHeaders headers = mock(HttpHeaders.class);
+    ClientProtocol proxy = mock(ClientProtocol.class);
+    OzoneBucket bucket = mock(OzoneBucket.class);
+    UriInfo uriInfo = mock(UriInfo.class);
+    when(requestContext.getUriInfo()).thenReturn(uriInfo);
+    when(uriInfo.getQueryParameters()).thenReturn(new MultivaluedHashMap<>());
+    when(requestContext.getHeaderString(ORIGIN_HEADER))
+        .thenReturn("https://example.com");
+    when(headers.getHeaderString(ORIGIN_HEADER))
+        .thenReturn("https://example.com");
+
+    EndpointBase endpoint = EndpointBuilder.newObjectEndpointBuilder()
+        .setClient(mockClient(proxy))
+        .setContext(requestContext)
+        .setHeaders(headers)
+        .build();
+
+    endpoint.cacheBucket("bucket", bucket);
+
+    ArgumentCaptor<Map<String, OzoneBucket>> bucketsCaptor =
+        ArgumentCaptor.forClass(Map.class);
+    verify(requestContext).setProperty(eq(CACHED_BUCKETS_CONTEXT_PROPERTY),
+        bucketsCaptor.capture());
+    assertThat(bucketsCaptor.getValue()).containsEntry("bucket", bucket);
+  }
+
+  @Test
+  public void cacheBucketSkipsPublishingBucketWithoutOriginHeader() {
+    ContainerRequestContext requestContext = mock(ContainerRequestContext.class);
+    HttpHeaders headers = mock(HttpHeaders.class);
+    ClientProtocol proxy = mock(ClientProtocol.class);
+    OzoneBucket bucket = mock(OzoneBucket.class);
+    UriInfo uriInfo = mock(UriInfo.class);
+    when(requestContext.getUriInfo()).thenReturn(uriInfo);
+    when(uriInfo.getQueryParameters()).thenReturn(new MultivaluedHashMap<>());
+
+    EndpointBase endpoint = EndpointBuilder.newObjectEndpointBuilder()
+        .setClient(mockClient(proxy))
+        .setContext(requestContext)
+        .setHeaders(headers)
+        .build();
+
+    endpoint.cacheBucket("bucket", bucket);
+
+    verify(requestContext, never()).setProperty(
+        eq(CACHED_BUCKETS_CONTEXT_PROPERTY), any());
   }
 
   private static OzoneClient mockClient(ClientProtocol proxy) {
