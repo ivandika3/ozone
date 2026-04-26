@@ -263,6 +263,21 @@ public abstract class AbstractS3SDKV2Tests extends OzoneTestBase implements NonH
   }
 
   @Test
+  public void testDeleteBucketCORSWithoutConfiguration() {
+    final String bucketName = getBucketName();
+    s3Client.createBucket(b -> b.bucket(bucketName));
+
+    s3Client.deleteBucketCors(b -> b.bucket(bucketName));
+    s3Client.deleteBucketCors(b -> b.bucket(bucketName));
+
+    S3Exception exception = assertThrows(S3Exception.class,
+        () -> s3Client.getBucketCors(b -> b.bucket(bucketName)));
+    assertEquals(404, exception.statusCode());
+    assertEquals("NoSuchCORSConfiguration",
+        exception.awsErrorDetails().errorCode());
+  }
+
+  @Test
   public void testPutObject() {
     final String bucketName = getBucketName();
     final String keyName = getKeyName();

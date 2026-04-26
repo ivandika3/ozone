@@ -98,6 +98,19 @@ public class TestBucketCorsHandler {
   }
 
   @Test
+  public void deleteCorsWithoutConfigurationIsIdempotent() throws Exception {
+    Response firstDeleteResponse = bucketEndpoint.delete(BUCKET_NAME);
+    assertEquals(HTTP_NO_CONTENT, firstDeleteResponse.getStatus());
+
+    Response secondDeleteResponse = bucketEndpoint.delete(BUCKET_NAME);
+    assertEquals(HTTP_NO_CONTENT, secondDeleteResponse.getStatus());
+
+    OS3Exception noCors = assertThrows(OS3Exception.class,
+        () -> bucketEndpoint.get(BUCKET_NAME));
+    assertEquals("NoSuchCORSConfiguration", noCors.getCode());
+  }
+
+  @Test
   public void putCorsFailsWhenExpectedBucketOwnerDoesNotMatch()
       throws Exception {
     HttpHeaders headers = Mockito.mock(HttpHeaders.class);
