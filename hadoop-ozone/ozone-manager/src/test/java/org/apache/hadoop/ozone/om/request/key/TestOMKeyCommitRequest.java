@@ -874,6 +874,54 @@ public class TestOMKeyCommitRequest extends TestOMKeyRequest {
   }
 
   @Test
+  public void testValidateAndUpdateCacheForkLocalKeyUpdatesQuota()
+      throws Exception {
+    setupForkBucketWithEmptyBaseSnapshot(UUID.randomUUID().toString(),
+        UUID.randomUUID().toString(), UUID.randomUUID());
+
+    OMRequest modifiedOmRequest = doPreExecute(createCommitKeyRequest());
+    OMKeyCommitRequest omKeyCommitRequest =
+        getOmKeyCommitRequest(modifiedOmRequest);
+    KeyArgs keyArgs = modifiedOmRequest.getCommitKeyRequest().getKeyArgs();
+
+    OmBucketInfo forkBucketInfo = OmBucketInfo.newBuilder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setBucketLayout(omKeyCommitRequest.getBucketLayout())
+        .setUsedBytes(500L)
+        .setUsedNamespace(2L)
+        .build();
+    OMRequestTestUtils.addVolumeAndBucketToDB(volumeName, omMetadataManager,
+        forkBucketInfo.toBuilder());
+    omMetadataManager.getBucketTable().addCacheEntry(
+        new CacheKey<>(omMetadataManager.getBucketKey(volumeName, bucketName)),
+        CacheValue.get(1L, forkBucketInfo));
+
+    List<OmKeyLocationInfo> allocatedLocationList =
+        keyArgs.getKeyLocationsList().stream()
+            .map(OmKeyLocationInfo::getFromProtobuf)
+            .collect(Collectors.toList());
+    String openKey = addKeyToOpenKeyTable(allocatedLocationList);
+    String ozoneKey = getOzonePathKey();
+
+    OMClientResponse omClientResponse =
+        omKeyCommitRequest.validateAndUpdateCache(ozoneManager, 102L);
+
+    assertEquals(OK, omClientResponse.getOMResponse().getStatus());
+    assertNull(omMetadataManager.getOpenKeyTable(
+        omKeyCommitRequest.getBucketLayout()).get(openKey));
+    assertNotNull(omMetadataManager.getKeyTable(
+        omKeyCommitRequest.getBucketLayout()).get(ozoneKey));
+
+    OmBucketInfo bucketInfo = omMetadataManager.getBucketTable().get(
+        omMetadataManager.getBucketKey(volumeName, bucketName));
+    assertEquals(1500L, bucketInfo.getUsedBytes());
+    assertEquals(3L, bucketInfo.getUsedNamespace());
+    assertNull(omMetadataManager.getBucketForkTombstoneTable().get(
+        BucketForkTombstoneInfo.getTableKey(volumeName, bucketName, keyName)));
+  }
+
+  @Test
   public void testValidateAndUpdateCacheOnOverwriteWithUncommittedBlocks() throws Exception {
     // Do a normal commit key (this will allocate 5 blocks
     testValidateAndUpdateCache();

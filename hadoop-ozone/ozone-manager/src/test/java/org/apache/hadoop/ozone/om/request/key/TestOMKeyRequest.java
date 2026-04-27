@@ -370,6 +370,32 @@ public class TestOMKeyRequest {
     when(ozoneManager.getOmSnapshotManager()).thenReturn(snapshotManager);
   }
 
+  protected void setupForkBucketWithEmptyBaseSnapshot(String sourceBucketName,
+      String snapshotName, UUID snapshotId) throws Exception {
+    BucketForkInfo forkInfo = BucketForkInfo.newBuilder()
+        .setForkId(UUID.randomUUID())
+        .setSourceVolumeName(volumeName)
+        .setSourceBucketName(sourceBucketName)
+        .setTargetVolumeName(volumeName)
+        .setTargetBucketName(bucketName)
+        .setBaseSnapshotId(snapshotId)
+        .setBaseSnapshotName(snapshotName)
+        .setStatus(BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE)
+        .build();
+    omMetadataManager.getBucketForkTable().put(
+        BucketForkInfo.getTableKey(volumeName, bucketName), forkInfo);
+
+    OmSnapshot baseSnapshot = Mockito.mock(OmSnapshot.class);
+    Mockito.when(baseSnapshot.lookupKey(Mockito.any())).thenReturn(null);
+    Mockito.when(baseSnapshot.getFileStatus(Mockito.any())).thenReturn(null);
+    UncheckedAutoCloseableSupplier<OmSnapshot> snapshotSupplier =
+        mock(UncheckedAutoCloseableSupplier.class);
+    when(snapshotSupplier.get()).thenReturn(baseSnapshot);
+    OmSnapshotManager snapshotManager = mock(OmSnapshotManager.class);
+    when(snapshotManager.getSnapshot(snapshotId)).thenReturn(snapshotSupplier);
+    when(ozoneManager.getOmSnapshotManager()).thenReturn(snapshotManager);
+  }
+
   @AfterEach
   public void stop() {
     omMetrics.unRegister();

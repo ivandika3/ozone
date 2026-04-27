@@ -26,6 +26,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.util.Collections;
 import java.util.UUID;
 import org.apache.hadoop.hdds.client.BlockID;
+import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
+import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
 import org.apache.hadoop.ozone.om.OmSnapshot;
 import org.apache.hadoop.ozone.om.OmSnapshotManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
@@ -221,6 +223,41 @@ public class TestOMKeyDeleteRequest extends TestOMKeyRequest {
     } else {
       Mockito.verify(baseSnapshot).lookupKey(Mockito.any(OmKeyArgs.class));
     }
+  }
+
+  @Test
+  public void testDeleteForkLocalKeyUpdatesQuotaWithoutTombstone()
+      throws Exception {
+    setupForkBucketWithEmptyBaseSnapshot(bucketName + "-source", "snap",
+        UUID.randomUUID());
+
+    OmBucketInfo forkBucketInfo = OmBucketInfo.newBuilder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setBucketLayout(getBucketLayout())
+        .setUsedNamespace(5L)
+        .build();
+    OMRequestTestUtils.addVolumeAndBucketToDB(volumeName, omMetadataManager,
+        forkBucketInfo.toBuilder());
+    omMetadataManager.getBucketTable().addCacheEntry(
+        new CacheKey<>(omMetadataManager.getBucketKey(volumeName, bucketName)),
+        CacheValue.get(1L, forkBucketInfo));
+    String ozoneKey = addKeyToTable();
+
+    OMKeyDeleteRequest omKeyDeleteRequest =
+        getOmKeyDeleteRequest(createDeleteKeyRequest());
+
+    OMClientResponse omClientResponse =
+        omKeyDeleteRequest.validateAndUpdateCache(ozoneManager, 100L);
+
+    assertEquals(OzoneManagerProtocolProtos.Status.OK,
+        omClientResponse.getOMResponse().getStatus());
+    assertNull(omMetadataManager.getKeyTable(getBucketLayout()).get(ozoneKey));
+    assertNull(omMetadataManager.getBucketForkTombstoneTable().get(
+        BucketForkTombstoneInfo.getTableKey(volumeName, bucketName, keyName)));
+    assertEquals(4L, omMetadataManager.getBucketTable().get(
+        omMetadataManager.getBucketKey(volumeName, bucketName))
+        .getUsedNamespace());
   }
 
   @Test
