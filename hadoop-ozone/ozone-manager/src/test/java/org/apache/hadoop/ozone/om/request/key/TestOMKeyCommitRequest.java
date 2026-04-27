@@ -43,11 +43,14 @@ import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
 import org.apache.hadoop.hdds.utils.db.Table;
+import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
+import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
 import org.apache.hadoop.ozone.OmUtils;
 import org.apache.hadoop.ozone.OzoneAcl;
 import org.apache.hadoop.ozone.OzoneConfigKeys;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
@@ -803,8 +806,18 @@ public class TestOMKeyCommitRequest extends TestOMKeyRequest {
         getOmKeyCommitRequest(modifiedOmRequest);
     KeyArgs keyArgs = modifiedOmRequest.getCommitKeyRequest().getKeyArgs();
 
-    OMRequestTestUtils.addVolumeAndBucketToDB(volumeName, bucketName,
-        omMetadataManager, omKeyCommitRequest.getBucketLayout());
+    OmBucketInfo forkBucketInfo = OmBucketInfo.newBuilder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setBucketLayout(omKeyCommitRequest.getBucketLayout())
+        .setUsedBytes(1000L)
+        .setUsedNamespace(1L)
+        .build();
+    OMRequestTestUtils.addVolumeAndBucketToDB(volumeName, omMetadataManager,
+        forkBucketInfo.toBuilder());
+    omMetadataManager.getBucketTable().addCacheEntry(
+        new CacheKey<>(omMetadataManager.getBucketKey(volumeName, bucketName)),
+        CacheValue.get(1L, forkBucketInfo));
 
     List<OmKeyLocationInfo> allocatedLocationList =
         keyArgs.getKeyLocationsList().stream()
@@ -833,6 +846,17 @@ public class TestOMKeyCommitRequest extends TestOMKeyRequest {
         omKeyInfo.getLatestVersionLocations().getLocationList());
     assertThat(omKeyInfo.getLatestVersionLocations().getLocationList())
         .doesNotContainAnyElementsOf(baseLocationList);
+    OmBucketInfo bucketInfo = omMetadataManager.getBucketTable().get(
+        omMetadataManager.getBucketKey(volumeName, bucketName));
+    assertEquals(1000L, bucketInfo.getUsedBytes());
+    assertEquals(1L, bucketInfo.getUsedNamespace());
+
+    BucketForkTombstoneInfo tombstoneInfo = omMetadataManager
+        .getBucketForkTombstoneTable()
+        .get(BucketForkTombstoneInfo.getTableKey(volumeName, bucketName,
+            keyName));
+    assertNotNull(tombstoneInfo);
+    assertEquals(keyName, tombstoneInfo.getLogicalPath());
 
     Map<String, RepeatedOmKeyInfo> toDeleteKeyList =
         ((OMKeyCommitResponse) omClientResponse).getKeysToDelete();

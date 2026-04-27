@@ -6,7 +6,7 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 
 - Branch: `research-bucket-forks-feasibility`
 - Remote: `origin/research-bucket-forks-feasibility`
-- Last completed slice: bucket fork base-visible delete byte quota.
+- Last completed slice: bucket fork base-visible overwrite quota.
 - Capability state: early MVP skeleton, not yet end-to-end ready.
 
 ## Completed
@@ -37,6 +37,8 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
   base-visible keys with fork tombstones.
 - [x] Decrement fork visible byte quota when OBS/FSO deletes hide
   base-visible keys with fork tombstones.
+- [x] Preserve fork visible namespace and byte quota when OBS/FSO overwrites
+  shadow base-visible keys.
 - [x] Add unit/request tests for completed metadata, RPC, client, shell, lookup,
   list overlay, delete/tombstone, metadata mutation, OBS rename, FSO exact file
   lookup, FSO file listing, and FSO rename slices.
@@ -74,6 +76,7 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
   - [ ] Adjust usage for fork-local writes and deletes.
   - [x] Adjust visible namespace usage for base-entry tombstones.
   - [x] Adjust visible byte usage for base-entry tombstones.
+  - [x] Adjust visible usage for base-visible overwrite shadowing.
   - [ ] Add quota tests for OBS and FSO flows.
 
 - [ ] Harden listing and pagination semantics.
