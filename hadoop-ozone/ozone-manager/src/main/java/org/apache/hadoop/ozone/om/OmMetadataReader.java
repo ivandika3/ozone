@@ -45,6 +45,7 @@ import org.apache.hadoop.ozone.audit.Auditor;
 import org.apache.hadoop.ozone.audit.OMAction;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.BasicOmKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.KeyInfoWithVolumeContext;
 import org.apache.hadoop.ozone.om.helpers.ListKeysLightResult;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
@@ -65,6 +66,7 @@ import org.apache.hadoop.ozone.security.acl.OzoneObjInfo;
 import org.apache.hadoop.ozone.security.acl.RequestContext;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.Time;
+import org.apache.ratis.util.function.UncheckedAutoCloseableSupplier;
 import org.slf4j.Logger;
 
 /**
@@ -85,6 +87,7 @@ public class OmMetadataReader implements IOmMetadataReader, Auditor {
   private final Logger log;
   private final AuditLogger audit;
   private final OMPerformanceMetrics perfMetrics;
+  private final BucketForkManager bucketForkManager;
 
   public OmMetadataReader(KeyManager keyManager,
                           PrefixManager prefixManager,
@@ -103,6 +106,8 @@ public class OmMetadataReader implements IOmMetadataReader, Auditor {
     this.audit = audit;
     this.metrics = omMetadataReaderMetrics;
     this.perfMetrics = ozoneManager.getPerfMetrics();
+    this.bucketForkManager = new BucketForkManager(
+        ozoneManager.getMetadataManager());
     this.accessAuthorizer = accessAuthorizer != null ? accessAuthorizer
         : OzoneAccessAuthorizer.get();
   }
@@ -135,11 +140,21 @@ public class OmMetadataReader implements IOmMetadataReader, Auditor {
       metrics.incNumKeyLookups();
       return keyManager.lookupKey(resolvedArgs, bucket, getClientAddress());
     } catch (Exception ex) {
+      Exception failure = ex;
+      try {
+        OmKeyInfo forkBaseKeyInfo =
+            lookupForkBaseKeyIfNeeded(resolvedArgs, ex);
+        if (forkBaseKeyInfo != null) {
+          return forkBaseKeyInfo;
+        }
+      } catch (Exception forkEx) {
+        failure = forkEx;
+      }
       metrics.incNumKeyLookupFails();
       auditSuccess = false;
       audit.logReadFailure(buildAuditMessageForFailure(OMAction.READ_KEY,
-          auditMap, ex));
-      throw ex;
+          auditMap, failure));
+      throw asIOException(failure);
     } finally {
       if (auditSuccess) {
         audit.logReadSuccess(buildAuditMessageForSuccess(OMAction.READ_KEY,
@@ -198,11 +213,28 @@ public class OmMetadataReader implements IOmMetadataReader, Auditor {
       });
       return builder.build();
     } catch (Exception ex) {
+      Exception failure = ex;
+      try {
+        OmKeyInfo forkBaseKeyInfo =
+            lookupForkBaseKeyIfNeeded(resolvedArgs, ex);
+        if (forkBaseKeyInfo != null) {
+          KeyInfoWithVolumeContext.Builder builder = KeyInfoWithVolumeContext
+              .newBuilder()
+              .setKeyInfo(forkBaseKeyInfo);
+          s3VolumeContext.ifPresent(context -> {
+            builder.setVolumeArgs(context.getOmVolumeArgs());
+            builder.setUserPrincipal(context.getUserPrincipal());
+          });
+          return builder.build();
+        }
+      } catch (Exception forkEx) {
+        failure = forkEx;
+      }
       metrics.incNumGetKeyInfoFails();
       auditSuccess = false;
       audit.logReadFailure(buildAuditMessageForFailure(OMAction.READ_KEY,
-          bucket.audit(resolvedVolumeArgs.toAuditMap()), ex));
-      throw ex;
+          bucket.audit(resolvedVolumeArgs.toAuditMap()), failure));
+      throw asIOException(failure);
     } finally {
       if (auditSuccess) {
         audit.logReadSuccess(buildAuditMessageForSuccess(OMAction.READ_KEY,
@@ -210,6 +242,38 @@ public class OmMetadataReader implements IOmMetadataReader, Auditor {
       }
       perfMetrics.addGetKeyInfoLatencyNs(Time.monotonicNowNanos() - start);
     }
+  }
+
+  private OmKeyInfo lookupForkBaseKeyIfNeeded(OmKeyArgs args, Exception ex)
+      throws IOException {
+    if (!isKeyNotFound(ex)) {
+      return null;
+    }
+    BucketForkInfo forkInfo = bucketForkManager.getActiveForkInfo(
+        args.getVolumeName(), args.getBucketName());
+    if (forkInfo == null) {
+      return null;
+    }
+    try (UncheckedAutoCloseableSupplier<OmSnapshot> snapshot =
+             ozoneManager.getOmSnapshotManager().getSnapshot(
+                 forkInfo.getBaseSnapshotId())) {
+      return bucketForkManager.lookupBaseKey(forkInfo, args, snapshot.get());
+    }
+  }
+
+  private boolean isKeyNotFound(Exception ex) {
+    return ex instanceof OMException
+        && ((OMException) ex).getResult() == ResultCodes.KEY_NOT_FOUND;
+  }
+
+  private IOException asIOException(Exception ex) {
+    if (ex instanceof IOException) {
+      return (IOException) ex;
+    }
+    if (ex instanceof RuntimeException) {
+      throw (RuntimeException) ex;
+    }
+    return new IOException(ex);
   }
 
   @Override

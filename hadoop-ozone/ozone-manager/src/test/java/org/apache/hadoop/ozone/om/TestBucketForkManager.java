@@ -20,13 +20,17 @@ package org.apache.hadoop.ozone.om;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.util.UUID;
 import org.apache.hadoop.hdds.utils.db.Table;
+import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
+import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
+import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -86,6 +90,65 @@ public class TestBucketForkManager {
         manager.getTombstoneInfo(forkInfo, "dir/key"));
   }
 
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testLookupBaseKeyRewritesSnapshotInfoToForkNamespace()
+      throws IOException {
+    OMMetadataManager metadataManager = Mockito.mock(OMMetadataManager.class);
+    Table<String, BucketForkTombstoneInfo> tombstoneTable =
+        Mockito.mock(Table.class);
+    Mockito.when(metadataManager.getBucketForkTombstoneTable())
+        .thenReturn(tombstoneTable);
+    BucketForkInfo forkInfo = createForkInfo(
+        BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE);
+    IOmMetadataReader baseReader = Mockito.mock(IOmMetadataReader.class);
+    OmKeyInfo baseKeyInfo = createKeyInfo("vol", "source",
+        ".snapshot/snap/dir/key");
+    Mockito.when(baseReader.lookupKey(Mockito.argThat(args ->
+        "vol".equals(args.getVolumeName())
+            && "source".equals(args.getBucketName())
+            && "dir/key".equals(args.getKeyName()))))
+        .thenReturn(baseKeyInfo);
+
+    OmKeyInfo result = new BucketForkManager(metadataManager)
+        .lookupBaseKey(forkInfo, createKeyArgs("vol", "fork", "dir/key"),
+            baseReader);
+
+    assertEquals("vol", result.getVolumeName());
+    assertEquals("fork", result.getBucketName());
+    assertEquals("dir/key", result.getKeyName());
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testLookupBaseKeyHonorsForkTombstone() throws IOException {
+    OMMetadataManager metadataManager = Mockito.mock(OMMetadataManager.class);
+    Table<String, BucketForkTombstoneInfo> tombstoneTable =
+        Mockito.mock(Table.class);
+    Mockito.when(metadataManager.getBucketForkTombstoneTable())
+        .thenReturn(tombstoneTable);
+    BucketForkInfo forkInfo = createForkInfo(
+        BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE);
+    Mockito.when(tombstoneTable.get("/vol/fork/dir/key"))
+        .thenReturn(BucketForkTombstoneInfo.newBuilder()
+            .setForkId(forkInfo.getForkId())
+            .setTargetVolumeName("vol")
+            .setTargetBucketName("fork")
+            .setBaseSnapshotId(forkInfo.getBaseSnapshotId())
+            .setLogicalPath("dir/key")
+            .setType(BucketForkTombstoneInfo.BucketForkTombstoneType.KEY)
+            .build());
+    IOmMetadataReader baseReader = Mockito.mock(IOmMetadataReader.class);
+
+    OMException ex = assertThrows(OMException.class,
+        () -> new BucketForkManager(metadataManager)
+            .lookupBaseKey(forkInfo, createKeyArgs("vol", "fork", "dir/key"),
+                baseReader));
+
+    assertEquals(OMException.ResultCodes.KEY_NOT_FOUND, ex.getResult());
+    Mockito.verifyNoInteractions(baseReader);
+  }
+
   private static BucketForkInfo createForkInfo(
       BucketForkInfo.BucketForkStatus status) {
     return BucketForkInfo.newBuilder()
@@ -99,6 +162,24 @@ public class TestBucketForkManager {
         .setBaseSnapshotId(UUID.randomUUID())
         .setBaseSnapshotName("snap")
         .setStatus(status)
+        .build();
+  }
+
+  private static OmKeyArgs createKeyArgs(String volumeName,
+      String bucketName, String keyName) {
+    return new OmKeyArgs.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setKeyName(keyName)
+        .build();
+  }
+
+  private static OmKeyInfo createKeyInfo(String volumeName,
+      String bucketName, String keyName) {
+    return new OmKeyInfo.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setKeyName(keyName)
         .build();
   }
 }

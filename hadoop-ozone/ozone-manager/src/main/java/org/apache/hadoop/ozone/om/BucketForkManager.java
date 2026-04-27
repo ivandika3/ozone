@@ -18,8 +18,11 @@
 package org.apache.hadoop.ozone.om;
 
 import java.io.IOException;
+import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
+import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
+import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 
 /**
  * Coordinates bucket-fork metadata lookups for future overlay reads.
@@ -53,5 +56,24 @@ public class BucketForkManager {
             forkInfo.getTargetVolumeName(),
             forkInfo.getTargetBucketName(),
             logicalPath));
+  }
+
+  public OmKeyInfo lookupBaseKey(BucketForkInfo forkInfo,
+      OmKeyArgs targetArgs, IOmMetadataReader baseReader) throws IOException {
+    if (getTombstoneInfo(forkInfo, targetArgs.getKeyName()) != null) {
+      throw new OMException("Key:" + targetArgs.getKeyName() + " not found",
+          OMException.ResultCodes.KEY_NOT_FOUND);
+    }
+
+    OmKeyArgs sourceArgs = targetArgs.toBuilder()
+        .setVolumeName(forkInfo.getSourceVolumeName())
+        .setBucketName(forkInfo.getSourceBucketName())
+        .build();
+    OmKeyInfo baseKeyInfo = baseReader.lookupKey(sourceArgs);
+    return baseKeyInfo.toBuilder()
+        .setVolumeName(forkInfo.getTargetVolumeName())
+        .setBucketName(forkInfo.getTargetBucketName())
+        .setKeyName(targetArgs.getKeyName())
+        .build();
   }
 }
