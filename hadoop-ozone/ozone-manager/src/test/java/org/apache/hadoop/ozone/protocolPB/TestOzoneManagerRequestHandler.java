@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.apache.hadoop.crypto.CipherSuite;
@@ -37,6 +38,7 @@ import org.apache.hadoop.ozone.om.OmConfig;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.execution.flowcontrol.ExecutionContext;
 import org.apache.hadoop.ozone.om.helpers.BasicOmKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.ListKeysLightResult;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
@@ -66,6 +68,82 @@ public class TestOzoneManagerRequestHandler {
     OzoneManager ozoneManager = Mockito.mock(OzoneManager.class);
     Mockito.when(ozoneManager.getConfig()).thenReturn(config);
     return new OzoneManagerRequestHandler(ozoneManager);
+  }
+
+  @Test
+  public void testGetBucketForkInfoReadRequest() throws IOException {
+    OzoneManagerRequestHandler requestHandler = getRequestHandler(10);
+    OzoneManager ozoneManager = requestHandler.getOzoneManager();
+    BucketForkInfo forkInfo = createBucketForkInfo("fork-bucket");
+    Mockito.when(ozoneManager.getBucketForkInfo("vol", "fork-bucket"))
+        .thenReturn(forkInfo);
+
+    OzoneManagerProtocolProtos.OMRequest request =
+        OzoneManagerProtocolProtos.OMRequest.newBuilder()
+            .setCmdType(OzoneManagerProtocolProtos.Type.GetBucketForkInfo)
+            .setClientId(UUID.randomUUID().toString())
+            .setGetBucketForkInfoRequest(
+                OzoneManagerProtocolProtos.GetBucketForkInfoRequest
+                    .newBuilder()
+                    .setVolumeName("vol")
+                    .setBucketName("fork-bucket")
+                    .build())
+            .build();
+
+    OzoneManagerProtocolProtos.OMResponse response =
+        requestHandler.handleReadRequest(request);
+
+    Assertions.assertTrue(response.getSuccess());
+    Assertions.assertEquals(forkInfo.getForkId(),
+        org.apache.hadoop.hdds.HddsUtils.fromProtobuf(
+            response.getGetBucketForkInfoResponse()
+                .getBucketForkInfo().getForkID()));
+  }
+
+  @Test
+  public void testListBucketForksReadRequest() throws IOException {
+    OzoneManagerRequestHandler requestHandler = getRequestHandler(10);
+    OzoneManager ozoneManager = requestHandler.getOzoneManager();
+    List<BucketForkInfo> forkInfos = Arrays.asList(
+        createBucketForkInfo("fork-a"),
+        createBucketForkInfo("fork-b"));
+    Mockito.when(ozoneManager.listBucketForks("vol", "fork", "fork-0", 5))
+        .thenReturn(forkInfos);
+
+    OzoneManagerProtocolProtos.OMRequest request =
+        OzoneManagerProtocolProtos.OMRequest.newBuilder()
+            .setCmdType(OzoneManagerProtocolProtos.Type.ListBucketForks)
+            .setClientId(UUID.randomUUID().toString())
+            .setListBucketForksRequest(
+                OzoneManagerProtocolProtos.ListBucketForksRequest.newBuilder()
+                    .setVolumeName("vol")
+                    .setBucketNamePrefix("fork")
+                    .setPrevBucketName("fork-0")
+                    .setMaxListResult(5)
+                    .build())
+            .build();
+
+    OzoneManagerProtocolProtos.OMResponse response =
+        requestHandler.handleReadRequest(request);
+
+    Assertions.assertTrue(response.getSuccess());
+    Assertions.assertEquals(2,
+        response.getListBucketForksResponse().getBucketForkInfoCount());
+    Assertions.assertEquals("fork-b",
+        response.getListBucketForksResponse().getLastBucketName());
+  }
+
+  private BucketForkInfo createBucketForkInfo(String targetBucketName) {
+    return BucketForkInfo.newBuilder()
+        .setForkId(UUID.randomUUID())
+        .setSourceVolumeName("vol")
+        .setSourceBucketName("source-bucket")
+        .setTargetVolumeName("vol")
+        .setTargetBucketName(targetBucketName)
+        .setBaseSnapshotId(UUID.randomUUID())
+        .setBaseSnapshotName("base-snapshot")
+        .setStatus(BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE)
+        .build();
   }
 
   private OmKeyInfo getMockedOmKeyInfo() {

@@ -66,6 +66,7 @@ import org.apache.hadoop.ozone.om.OzoneManagerPrepareState;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.execution.flowcontrol.ExecutionContext;
 import org.apache.hadoop.ozone.om.helpers.BasicOmKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.DBUpdates;
 import org.apache.hadoop.ozone.om.helpers.KeyInfoWithVolumeContext;
@@ -382,6 +383,14 @@ public class OzoneManagerRequestHandler implements RequestHandler {
         OzoneManagerProtocolProtos.SnapshotInfoResponse snapshotInfoResponse =
             getSnapshotInfo(request.getSnapshotInfoRequest());
         responseBuilder.setSnapshotInfoResponse(snapshotInfoResponse);
+        break;
+      case GetBucketForkInfo:
+        responseBuilder.setGetBucketForkInfoResponse(
+            getBucketForkInfo(request.getGetBucketForkInfoRequest()));
+        break;
+      case ListBucketForks:
+        responseBuilder.setListBucketForksResponse(
+            listBucketForks(request.getListBucketForksRequest()));
         break;
       case GetQuotaRepairStatus:
         OzoneManagerProtocolProtos.GetQuotaRepairStatusResponse quotaRepairStatusRsp =
@@ -1553,6 +1562,38 @@ public class OzoneManagerRequestHandler implements RequestHandler {
         OzoneManagerProtocolProtos.ListSnapshotResponse.newBuilder().addAllSnapshotInfo(snapshotInfoList);
     if (StringUtils.isNotEmpty(implResponse.getLastSnapshot())) {
       builder.setLastSnapshot(implResponse.getLastSnapshot());
+    }
+    return builder.build();
+  }
+
+  private OzoneManagerProtocolProtos.GetBucketForkInfoResponse
+      getBucketForkInfo(
+          OzoneManagerProtocolProtos.GetBucketForkInfoRequest request)
+      throws IOException {
+    BucketForkInfo bucketForkInfo = impl.getBucketForkInfo(
+        request.getVolumeName(), request.getBucketName());
+    return OzoneManagerProtocolProtos.GetBucketForkInfoResponse.newBuilder()
+        .setBucketForkInfo(bucketForkInfo.getProtobuf())
+        .build();
+  }
+
+  private OzoneManagerProtocolProtos.ListBucketForksResponse listBucketForks(
+      OzoneManagerProtocolProtos.ListBucketForksRequest request)
+      throws IOException {
+    List<BucketForkInfo> bucketForkInfos = impl.listBucketForks(
+        request.getVolumeName(), request.getBucketNamePrefix(),
+        request.getPrevBucketName(),
+        limitListSizeInt(request.getMaxListResult()));
+    List<OzoneManagerProtocolProtos.BucketForkInfo> protoInfos =
+        bucketForkInfos.stream()
+            .map(BucketForkInfo::getProtobuf)
+            .collect(Collectors.toList());
+    OzoneManagerProtocolProtos.ListBucketForksResponse.Builder builder =
+        OzoneManagerProtocolProtos.ListBucketForksResponse.newBuilder()
+            .addAllBucketForkInfo(protoInfos);
+    if (!bucketForkInfos.isEmpty()) {
+      builder.setLastBucketName(bucketForkInfos.get(
+          bucketForkInfos.size() - 1).getTargetBucketName());
     }
     return builder.build();
   }
