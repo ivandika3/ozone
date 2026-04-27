@@ -6,7 +6,7 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 
 - Branch: `research-bucket-forks-feasibility`
 - Remote: `origin/research-bucket-forks-feasibility`
-- Last completed slice: bucket fork copy-on-write metadata mutations.
+- Last completed slice: bucket fork OBS rename behavior.
 - Capability state: early MVP skeleton, not yet end-to-end ready.
 
 ## Completed
@@ -26,8 +26,9 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 - [x] Add multi-key delete tombstones for base-visible fork keys.
 - [x] Add OBS copy-on-write metadata mutations for base-visible fork keys.
 - [x] Add overwrite-shadowing coverage for base-visible fork keys.
+- [x] Add OBS rename support for base-visible fork keys.
 - [x] Add unit/request tests for completed metadata, RPC, client, shell, lookup,
-  list overlay, delete/tombstone, and metadata mutation slices.
+  list overlay, delete/tombstone, metadata mutation, and OBS rename slices.
 
 ## Next Major Slices
 
@@ -44,11 +45,11 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
   - [x] Ensure overwrites shadow base entries without copying base data blocks.
   - [x] Add request tests for COW mutation paths.
 
-- [ ] Implement rename behavior for fork buckets.
-  - [ ] Rename fork-local entries through existing OM flows.
-  - [ ] For base-visible entries, copy metadata into the fork namespace, create
+- [x] Implement rename behavior for fork buckets.
+  - [x] Rename fork-local entries through existing OM flows.
+  - [x] For base-visible entries, copy metadata into the fork namespace, create
     tombstones for old logical paths, then apply rename semantics.
-  - [ ] Add OBS rename tests.
+  - [x] Add OBS rename tests.
 
 - [ ] Extend overlay support to FSO/file APIs.
   - [ ] Add `lookupFile` and `getFileStatus` fall-through behavior.

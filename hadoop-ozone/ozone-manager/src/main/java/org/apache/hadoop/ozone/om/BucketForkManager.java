@@ -78,6 +78,10 @@ public class BucketForkManager {
         .setBucketName(forkInfo.getSourceBucketName())
         .build();
     OmKeyInfo baseKeyInfo = baseReader.lookupKey(sourceArgs);
+    if (baseKeyInfo == null) {
+      throw new OMException("Key:" + targetArgs.getKeyName() + " not found",
+          OMException.ResultCodes.KEY_NOT_FOUND);
+    }
     return rewriteBaseKeyInfo(forkInfo, baseKeyInfo, targetArgs.getKeyName());
   }
 
