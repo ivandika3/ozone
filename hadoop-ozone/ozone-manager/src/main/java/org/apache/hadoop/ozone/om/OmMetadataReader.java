@@ -412,8 +412,21 @@ public class OmMetadataReader implements IOmMetadataReader, Auditor {
         );
       }
       metrics.incNumKeyLists();
-      return keyManager.listKeys(bucket.realVolume(), bucket.realBucket(),
-          startKey, keyPrefix, maxKeys);
+      BucketForkInfo forkInfo = bucketForkManager.getActiveForkInfo(
+          bucket.realVolume(), bucket.realBucket());
+      ListKeysResult forkLocalKeys = keyManager.listKeys(
+          bucket.realVolume(), bucket.realBucket(), startKey, keyPrefix,
+          forkInfo == null ? maxKeys
+              : bucketForkManager.getListKeysReadLimit(maxKeys));
+      if (forkInfo == null) {
+        return forkLocalKeys;
+      }
+      try (UncheckedAutoCloseableSupplier<OmSnapshot> snapshot =
+               ozoneManager.getOmSnapshotManager().getSnapshot(
+                   forkInfo.getBaseSnapshotId())) {
+        return bucketForkManager.listKeys(forkInfo, forkLocalKeys, startKey,
+            keyPrefix, maxKeys, snapshot.get());
+      }
     } catch (IOException ex) {
       metrics.incNumKeyListFails();
       auditSuccess = false;

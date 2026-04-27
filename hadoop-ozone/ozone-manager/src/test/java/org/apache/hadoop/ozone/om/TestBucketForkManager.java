@@ -24,11 +24,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
+import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.junit.jupiter.api.Test;
@@ -149,6 +153,71 @@ public class TestBucketForkManager {
     Mockito.verifyNoInteractions(baseReader);
   }
 
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testListKeysMergesForkLocalAndBaseSnapshotKeys()
+      throws IOException {
+    OMMetadataManager metadataManager = Mockito.mock(OMMetadataManager.class);
+    Table<String, BucketForkTombstoneInfo> tombstoneTable =
+        Mockito.mock(Table.class);
+    Mockito.when(metadataManager.getBucketForkTombstoneTable())
+        .thenReturn(tombstoneTable);
+    BucketForkInfo forkInfo = createForkInfo(
+        BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE);
+    Mockito.when(tombstoneTable.get("/vol/fork/c"))
+        .thenReturn(BucketForkTombstoneInfo.newBuilder()
+            .setForkId(forkInfo.getForkId())
+            .setTargetVolumeName("vol")
+            .setTargetBucketName("fork")
+            .setBaseSnapshotId(forkInfo.getBaseSnapshotId())
+            .setLogicalPath("c")
+            .setType(BucketForkTombstoneInfo.BucketForkTombstoneType.KEY)
+            .build());
+    IOmMetadataReader baseReader = Mockito.mock(IOmMetadataReader.class);
+    Mockito.when(baseReader.listKeys("vol", "source", "", "", 4))
+        .thenReturn(new ListKeysResult(Arrays.asList(
+            createKeyInfo("vol", "source", ".snapshot/snap/a"),
+            createKeyInfo("vol", "source", ".snapshot/snap/b"),
+            createKeyInfo("vol", "source", ".snapshot/snap/c")), false));
+    ListKeysResult forkLocalKeys = new ListKeysResult(Arrays.asList(
+        createKeyInfo("vol", "fork", "b"),
+        createKeyInfo("vol", "fork", "d")), false);
+
+    ListKeysResult result = new BucketForkManager(metadataManager)
+        .listKeys(forkInfo, forkLocalKeys, "", "", 3, baseReader);
+
+    assertEquals(Arrays.asList("a", "b", "d"), keyNames(result.getKeys()));
+    assertEquals("fork", result.getKeys().get(0).getBucketName());
+    assertEquals("fork", result.getKeys().get(1).getBucketName());
+    assertFalse(result.isTruncated());
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testListKeysReturnsStableTruncatedPage() throws IOException {
+    OMMetadataManager metadataManager = Mockito.mock(OMMetadataManager.class);
+    Table<String, BucketForkTombstoneInfo> tombstoneTable =
+        Mockito.mock(Table.class);
+    Mockito.when(metadataManager.getBucketForkTombstoneTable())
+        .thenReturn(tombstoneTable);
+    BucketForkInfo forkInfo = createForkInfo(
+        BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE);
+    IOmMetadataReader baseReader = Mockito.mock(IOmMetadataReader.class);
+    Mockito.when(baseReader.listKeys("vol", "source", "a", "dir/", 3))
+        .thenReturn(new ListKeysResult(Arrays.asList(
+            createKeyInfo("vol", "source", ".snapshot/snap/dir/b"),
+            createKeyInfo("vol", "source", ".snapshot/snap/dir/d")), true));
+    ListKeysResult forkLocalKeys = new ListKeysResult(Arrays.asList(
+        createKeyInfo("vol", "fork", "dir/c"),
+        createKeyInfo("vol", "fork", "dir/e")), false);
+
+    ListKeysResult result = new BucketForkManager(metadataManager)
+        .listKeys(forkInfo, forkLocalKeys, "a", "dir/", 2, baseReader);
+
+    assertEquals(Arrays.asList("dir/b", "dir/c"), keyNames(result.getKeys()));
+    assertTrue(result.isTruncated());
+  }
+
   private static BucketForkInfo createForkInfo(
       BucketForkInfo.BucketForkStatus status) {
     return BucketForkInfo.newBuilder()
@@ -181,5 +250,11 @@ public class TestBucketForkManager {
         .setBucketName(bucketName)
         .setKeyName(keyName)
         .build();
+  }
+
+  private static List<String> keyNames(List<OmKeyInfo> keyInfos) {
+    return keyInfos.stream()
+        .map(OmKeyInfo::getKeyName)
+        .collect(Collectors.toList());
   }
 }
