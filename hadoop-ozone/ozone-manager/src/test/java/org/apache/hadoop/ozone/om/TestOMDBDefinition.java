@@ -17,7 +17,10 @@
 
 package org.apache.hadoop.ozone.om;
 
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_TABLE;
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_TOMBSTONE_TABLE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
@@ -51,11 +54,19 @@ public class TestOMDBDefinition {
     final Collection<DBColumnFamilyDefinition<?, ?>> columnFamilyDefinitions = dbDef.getColumnFamilies();
     final int countOmDefTables = columnFamilyDefinitions.size();
     List<String> missingDBDefTables = new ArrayList<>();
+    List<String> dbDefTableNames = new ArrayList<>();
+    for (DBColumnFamilyDefinition<?, ?> definition : columnFamilyDefinitions) {
+      dbDefTableNames.add(definition.getName());
+    }
+    assertTrue(dbDefTableNames.contains(BUCKET_FORK_TABLE));
+    assertTrue(dbDefTableNames.contains(BUCKET_FORK_TOMBSTONE_TABLE));
 
     try (DBStore store = OmMetadataManagerImpl.loadDB(configuration, metaDir, -1, new OmReadOnlyLock())) {
       // Get list of tables from the RocksDB Store
       final Collection<String> missingOmDBTables = new ArrayList<>(store.getTableNames().values());
       missingOmDBTables.remove("default");
+      assertTrue(missingOmDBTables.contains(BUCKET_FORK_TABLE));
+      assertTrue(missingOmDBTables.contains(BUCKET_FORK_TOMBSTONE_TABLE));
       int countOmDBTables = missingOmDBTables.size();
       // Remove the file if it is found in both the datastructures
       for (DBColumnFamilyDefinition definition : columnFamilyDefinitions) {

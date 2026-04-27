@@ -97,6 +97,7 @@ import org.apache.hadoop.ozone.common.DeletedBlock;
 import org.apache.hadoop.ozone.om.codec.OMDBDefinition;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.ListOpenFilesResult;
@@ -183,6 +184,8 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
 
   private Table<String, SnapshotInfo> snapshotInfoTable;
   private Table<String, String> snapshotRenamedTable;
+  private Table<String, BucketForkInfo> bucketForkTable;
+  private Table<String, String> bucketForkTombstoneTable;
   private Table<String, CompactionLogEntry> compactionLogTable;
 
   private OzoneManager ozoneManager;
@@ -505,6 +508,12 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
     // volumeName/bucketName/objectID -> renamedKey or renamedDir
     snapshotRenamedTable = initializer.get(OMDBDefinition.SNAPSHOT_RENAMED_TABLE_DEF);
     // TODO: [SNAPSHOT] Initialize table lock for snapshotRenamedTable.
+
+    // target volume/bucket -> bucket fork metadata
+    bucketForkTable = initializer.get(OMDBDefinition.BUCKET_FORK_TABLE_DEF);
+
+    // fork logical key -> tombstoned base logical key
+    bucketForkTombstoneTable = initializer.get(OMDBDefinition.BUCKET_FORK_TOMBSTONE_TABLE_DEF);
 
     compactionLogTable = initializer.get(OMDBDefinition.COMPACTION_LOG_TABLE_DEF);
   }
@@ -1702,6 +1711,16 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
   @Override
   public Table<String, String> getSnapshotRenamedTable() {
     return snapshotRenamedTable;
+  }
+
+  @Override
+  public Table<String, BucketForkInfo> getBucketForkTable() {
+    return bucketForkTable;
+  }
+
+  @Override
+  public Table<String, String> getBucketForkTombstoneTable() {
+    return bucketForkTombstoneTable;
   }
 
   @Override

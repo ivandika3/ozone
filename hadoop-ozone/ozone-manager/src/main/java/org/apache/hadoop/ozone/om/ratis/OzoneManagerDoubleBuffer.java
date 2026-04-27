@@ -469,7 +469,8 @@ public final class OzoneManagerDoubleBuffer {
     }
     final OzoneManagerProtocolProtos.Type type = response.getCmdType();
     return type == OzoneManagerProtocolProtos.Type.SnapshotPurge
-        || type == OzoneManagerProtocolProtos.Type.CreateSnapshot;
+        || type == OzoneManagerProtocolProtos.Type.CreateSnapshot
+        || type == OzoneManagerProtocolProtos.Type.CreateBucketFork;
   }
 
   private void addCleanupEntry(Entry entry, Map<String, List<Long>> cleanupEpochs) {

@@ -157,6 +157,10 @@ enum Type {
   GetObjectTagging = 141;
   DeleteObjectTagging = 142;
   SubmitSnapshotDiff = 143;
+  CreateBucketFork = 145;
+  DeleteBucketFork = 146;
+  GetBucketForkInfo = 147;
+  ListBucketForks = 148;
 }
 
 enum SafeMode {
@@ -309,6 +313,10 @@ message OMRequest {
   repeated SetSnapshotPropertyRequest       SetSnapshotPropertyRequests    = 143;
 
   optional SubmitSnapshotDiffRequest        submitSnapshotDiffRequest       = 144;
+  optional CreateBucketForkRequest          createBucketForkRequest         = 145;
+  optional DeleteBucketForkRequest          deleteBucketForkRequest         = 146;
+  optional GetBucketForkInfoRequest         getBucketForkInfoRequest        = 147;
+  optional ListBucketForksRequest           listBucketForksRequest          = 148;
 }
 
 message OMResponse {
@@ -444,6 +452,10 @@ message OMResponse {
   optional DeleteObjectTaggingResponse       deleteObjectTaggingResponse   = 142;
 
   optional SubmitSnapshotDiffResponse        submitSnapshotDiffResponse    = 143;
+  optional CreateBucketForkResponse          createBucketForkResponse      = 145;
+  optional DeleteBucketForkResponse          deleteBucketForkResponse      = 146;
+  optional GetBucketForkInfoResponse         getBucketForkInfoResponse     = 147;
+  optional ListBucketForksResponse           listBucketForksResponse       = 148;
 }
 
 enum Status {
@@ -880,6 +892,14 @@ enum SnapshotStatusProto {
 }
 
 /**
+ * BucketForkStatus - bucket fork states.
+ */
+enum BucketForkStatusProto {
+  BUCKET_FORK_ACTIVE = 1;
+  BUCKET_FORK_DELETED = 2;
+}
+
+/**
  * SnapshotInfo table entry for Bucket/Volume snapshot metadata
  */
 message SnapshotInfo {
@@ -912,6 +932,27 @@ message SnapshotInfo {
   // snapshot exclusive size after replication
   optional uint64 exclusiveReplicatedSizeDeltaFromDirDeepCleaning = 22;
   optional bytes createTransactionInfo = 23;
+}
+
+/**
+ * BucketForkInfo table entry for mutable bucket forks.
+ */
+message BucketForkInfo {
+  optional hadoop.hdds.UUID forkID = 1;
+  optional string sourceVolumeName = 2;
+  optional string sourceBucketName = 3;
+  optional string targetVolumeName = 4;
+  optional string targetBucketName = 5;
+  optional hadoop.hdds.UUID baseSnapshotID = 6;
+  optional string baseSnapshotName = 7;
+  optional uint64 sourceBucketObjectID = 8;
+  optional uint64 targetBucketObjectID = 9;
+  optional uint64 creationTime = 10;
+  optional uint64 deletionTime = 11;
+  optional BucketForkStatusProto status = 12;
+  optional uint64 quotaBaselineBytes = 13;
+  optional uint64 quotaBaselineNamespace = 14;
+  optional bool createdFromActiveBucket = 15;
 }
 
 message SnapshotDiffJobProto {
@@ -2090,6 +2131,34 @@ message SnapshotInfoRequest {
   optional string snapshotName = 3;
 }
 
+message CreateBucketForkRequest {
+  optional string sourceVolumeName = 1;
+  optional string sourceBucketName = 2;
+  optional string targetVolumeName = 3;
+  optional string targetBucketName = 4;
+  optional string baseSnapshotName = 5;
+  optional hadoop.hdds.UUID forkId = 6;
+  optional uint64 creationTime = 7;
+}
+
+message DeleteBucketForkRequest {
+  optional string volumeName = 1;
+  optional string bucketName = 2;
+  optional uint64 deletionTime = 3;
+}
+
+message GetBucketForkInfoRequest {
+  optional string volumeName = 1;
+  optional string bucketName = 2;
+}
+
+message ListBucketForksRequest {
+  optional string volumeName = 1;
+  optional string bucketNamePrefix = 2;
+  optional string prevBucketName = 3;
+  optional uint32 maxListResult = 4;
+}
+
 message PrintCompactionLogDagRequest {
   optional string fileNamePrefix = 1;
   optional string graphType = 2;
@@ -2237,6 +2306,22 @@ message RenameSnapshotResponse {
 
 message SnapshotInfoResponse {
   optional SnapshotInfo snapshotInfo = 1;
+}
+
+message CreateBucketForkResponse {
+  optional BucketForkInfo bucketForkInfo = 1;
+}
+
+message DeleteBucketForkResponse {
+}
+
+message GetBucketForkInfoResponse {
+  optional BucketForkInfo bucketForkInfo = 1;
+}
+
+message ListBucketForksResponse {
+  repeated BucketForkInfo bucketForkInfo = 1;
+  optional string lastBucketName = 2;
 }
 
 message PrintCompactionLogDagResponse {

@@ -28,6 +28,7 @@ import org.apache.hadoop.hdds.utils.db.Proto2Codec;
 import org.apache.hadoop.hdds.utils.db.StringCodec;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.om.OMConfigKeys;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmDBAccessIdInfo;
 import org.apache.hadoop.ozone.om.helpers.OmDBTenantState;
@@ -326,8 +327,26 @@ public final class OMDBDefinition extends DBDefinition.WithMap {
           CompactionLogEntry.getCodec());
 
   //---------------------------------------------------------------------------
+  // Bucket Fork Tables
+  public static final String BUCKET_FORK_TABLE = "bucketForkTable";
+  /** bucketForkTable: /targetVolume/targetBucket :- BucketForkInfo. */
+  public static final DBColumnFamilyDefinition<String, BucketForkInfo> BUCKET_FORK_TABLE_DEF
+      = new DBColumnFamilyDefinition<>(BUCKET_FORK_TABLE,
+          StringCodec.get(),
+          BucketForkInfo.getCodec());
+
+  public static final String BUCKET_FORK_TOMBSTONE_TABLE = "bucketForkTombstoneTable";
+  /** bucketForkTombstoneTable: /targetVolume/targetBucket/key :- base key. */
+  public static final DBColumnFamilyDefinition<String, String> BUCKET_FORK_TOMBSTONE_TABLE_DEF
+      = new DBColumnFamilyDefinition<>(BUCKET_FORK_TOMBSTONE_TABLE,
+          StringCodec.get(),
+          StringCodec.get());
+
+  //---------------------------------------------------------------------------
   private static final Map<String, DBColumnFamilyDefinition<?, ?>> COLUMN_FAMILIES
       = DBColumnFamilyDefinition.newUnmodifiableMap(
+          BUCKET_FORK_TABLE_DEF,
+          BUCKET_FORK_TOMBSTONE_TABLE_DEF,
           BUCKET_TABLE_DEF,
           DELETED_DIR_TABLE_DEF,
           DELETED_TABLE_DEF,
