@@ -61,11 +61,52 @@ public class BucketForkManager {
 
   public BucketForkTombstoneInfo getTombstoneInfo(
       BucketForkInfo forkInfo, String logicalPath) throws IOException {
+    BucketForkTombstoneInfo exactTombstoneInfo =
+        getExactTombstoneInfo(forkInfo, logicalPath);
+    if (exactTombstoneInfo != null) {
+      return exactTombstoneInfo;
+    }
+
+    String parentPath = normalizeLogicalPath(logicalPath);
+    int slashIndex = parentPath.lastIndexOf('/');
+    while (slashIndex > 0) {
+      parentPath = parentPath.substring(0, slashIndex);
+      BucketForkTombstoneInfo ancestorTombstoneInfo =
+          getExactTombstoneInfo(forkInfo, parentPath);
+      if (isSubtreeTombstone(ancestorTombstoneInfo)) {
+        return ancestorTombstoneInfo;
+      }
+      slashIndex = parentPath.lastIndexOf('/');
+    }
+    return null;
+  }
+
+  private BucketForkTombstoneInfo getExactTombstoneInfo(
+      BucketForkInfo forkInfo, String logicalPath) throws IOException {
     return metadataManager.getBucketForkTombstoneTable().get(
         BucketForkTombstoneInfo.getTableKey(
             forkInfo.getTargetVolumeName(),
             forkInfo.getTargetBucketName(),
             logicalPath));
+  }
+
+  private boolean isSubtreeTombstone(
+      BucketForkTombstoneInfo tombstoneInfo) {
+    if (tombstoneInfo == null) {
+      return false;
+    }
+    return tombstoneInfo.getType()
+        == BucketForkTombstoneInfo.BucketForkTombstoneType.DIRECTORY
+        || tombstoneInfo.getType()
+        == BucketForkTombstoneInfo.BucketForkTombstoneType.PREFIX;
+  }
+
+  private String normalizeLogicalPath(String logicalPath) {
+    String normalizedPath = logicalPath;
+    while (normalizedPath.startsWith("/")) {
+      normalizedPath = normalizedPath.substring(1);
+    }
+    return normalizedPath;
   }
 
   public OmKeyInfo lookupBaseKey(BucketForkInfo forkInfo,

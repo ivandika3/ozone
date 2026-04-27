@@ -156,6 +156,38 @@ public class TestBucketForkManager {
 
   @Test
   @SuppressWarnings("unchecked")
+  public void testLookupBaseKeyHonorsForkDirectoryTombstone()
+      throws IOException {
+    OMMetadataManager metadataManager = Mockito.mock(OMMetadataManager.class);
+    Table<String, BucketForkTombstoneInfo> tombstoneTable =
+        Mockito.mock(Table.class);
+    Mockito.when(metadataManager.getBucketForkTombstoneTable())
+        .thenReturn(tombstoneTable);
+    BucketForkInfo forkInfo = createForkInfo(
+        BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE);
+    Mockito.when(tombstoneTable.get("/vol/fork/dir"))
+        .thenReturn(BucketForkTombstoneInfo.newBuilder()
+            .setForkId(forkInfo.getForkId())
+            .setTargetVolumeName("vol")
+            .setTargetBucketName("fork")
+            .setBaseSnapshotId(forkInfo.getBaseSnapshotId())
+            .setLogicalPath("dir")
+            .setType(BucketForkTombstoneInfo.BucketForkTombstoneType.DIRECTORY)
+            .build());
+    IOmMetadataReader baseReader = Mockito.mock(IOmMetadataReader.class);
+
+    OMException ex = assertThrows(OMException.class,
+        () -> new BucketForkManager(metadataManager)
+            .lookupBaseKey(forkInfo,
+                createKeyArgs("vol", "fork", "dir/child/file"),
+                baseReader));
+
+    assertEquals(OMException.ResultCodes.KEY_NOT_FOUND, ex.getResult());
+    Mockito.verifyNoInteractions(baseReader);
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
   public void testLookupBaseFileStatusRewritesSnapshotInfoToForkNamespace()
       throws IOException {
     OMMetadataManager metadataManager = Mockito.mock(OMMetadataManager.class);
