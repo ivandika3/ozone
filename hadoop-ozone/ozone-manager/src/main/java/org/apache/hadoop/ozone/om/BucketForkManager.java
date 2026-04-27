@@ -207,25 +207,37 @@ public class BucketForkManager {
       return new ListKeysResult(result, false);
     }
 
-    int readLimit = getListKeysReadLimit(maxKeys);
-    ListKeysResult baseKeys = baseReader.listKeys(
-        forkInfo.getSourceVolumeName(), forkInfo.getSourceBucketName(),
-        startKey, keyPrefix, readLimit);
-
     TreeMap<String, OmKeyInfo> mergedKeys = new TreeMap<>();
     for (OmKeyInfo forkLocalKey : forkLocalKeys.getKeys()) {
       mergedKeys.put(forkLocalKey.getKeyName(), forkLocalKey);
     }
 
-    for (OmKeyInfo baseKey : baseKeys.getKeys()) {
-      String logicalKeyName = logicalBaseKeyName(forkInfo,
-          baseKey.getKeyName());
-      if (!mergedKeys.containsKey(logicalKeyName)
-          && getTombstoneInfo(forkInfo, logicalKeyName) == null) {
-        mergedKeys.put(logicalKeyName,
-            rewriteBaseKeyInfo(forkInfo, baseKey, logicalKeyName));
+    int readLimit = getListKeysReadLimit(maxKeys);
+    String baseStartKey = startKey;
+    boolean baseTruncated = false;
+    boolean baseMayHaveMore;
+    do {
+      ListKeysResult baseKeys = baseReader.listKeys(
+          forkInfo.getSourceVolumeName(), forkInfo.getSourceBucketName(),
+          baseStartKey, keyPrefix, readLimit);
+      baseTruncated = baseKeys.isTruncated();
+
+      String lastLogicalKeyName = null;
+      for (OmKeyInfo baseKey : baseKeys.getKeys()) {
+        String logicalKeyName = logicalBaseKeyName(forkInfo,
+            baseKey.getKeyName());
+        lastLogicalKeyName = logicalKeyName;
+        if (!mergedKeys.containsKey(logicalKeyName)
+            && getTombstoneInfo(forkInfo, logicalKeyName) == null) {
+          mergedKeys.put(logicalKeyName,
+              rewriteBaseKeyInfo(forkInfo, baseKey, logicalKeyName));
+        }
       }
-    }
+
+      baseMayHaveMore = baseTruncated && lastLogicalKeyName != null
+          && !lastLogicalKeyName.equals(baseStartKey);
+      baseStartKey = lastLogicalKeyName;
+    } while (baseMayHaveMore && mergedKeys.size() <= maxKeys);
 
     int currentCount = 0;
     for (Map.Entry<String, OmKeyInfo> entry : mergedKeys.entrySet()) {
@@ -237,7 +249,7 @@ public class BucketForkManager {
     }
 
     boolean isTruncated = mergedKeys.size() > maxKeys
-        || forkLocalKeys.isTruncated() || baseKeys.isTruncated();
+        || forkLocalKeys.isTruncated() || baseTruncated;
     return new ListKeysResult(result, isTruncated);
   }
 
@@ -252,33 +264,44 @@ public class BucketForkManager {
         .setVolumeName(forkInfo.getSourceVolumeName())
         .setBucketName(forkInfo.getSourceBucketName())
         .build();
-    List<OzoneFileStatus> baseStatuses;
-    try {
-      baseStatuses = baseReader.listStatus(sourceArgs, context.recursive,
-          context.startKey, getListStatusReadLimit(context.maxEntries),
-          context.allowPartialPrefixes);
-    } catch (OMException ex) {
-      if (!isFileOrKeyNotFound(ex) || context.forkLocalMissing) {
-        throw ex;
-      }
-      baseStatuses = Collections.emptyList();
-    }
-
     TreeMap<String, OzoneFileStatus> mergedStatuses = new TreeMap<>();
     for (OzoneFileStatus forkLocalStatus : forkLocalStatuses) {
       mergedStatuses.put(statusKeyName(forkLocalStatus,
           context.targetArgs.getKeyName()), forkLocalStatus);
     }
 
-    for (OzoneFileStatus baseStatus : baseStatuses) {
-      String logicalKeyName = logicalStatusKeyName(forkInfo, baseStatus,
-          context.targetArgs.getKeyName());
-      if (!mergedStatuses.containsKey(logicalKeyName)
-          && getTombstoneInfo(forkInfo, logicalKeyName) == null) {
-        mergedStatuses.put(logicalKeyName,
-            rewriteBaseFileStatus(forkInfo, baseStatus));
+    long readLimit = getListStatusReadLimit(context.maxEntries);
+    String baseStartKey = context.startKey;
+    boolean baseMayHaveMore;
+    do {
+      List<OzoneFileStatus> baseStatuses;
+      try {
+        baseStatuses = baseReader.listStatus(sourceArgs, context.recursive,
+            baseStartKey, readLimit, context.allowPartialPrefixes);
+      } catch (OMException ex) {
+        if (!isFileOrKeyNotFound(ex) || context.forkLocalMissing) {
+          throw ex;
+        }
+        baseStatuses = Collections.emptyList();
       }
-    }
+
+      String lastLogicalKeyName = null;
+      for (OzoneFileStatus baseStatus : baseStatuses) {
+        String logicalKeyName = logicalStatusKeyName(forkInfo, baseStatus,
+            context.targetArgs.getKeyName());
+        lastLogicalKeyName = logicalKeyName;
+        if (!mergedStatuses.containsKey(logicalKeyName)
+            && getTombstoneInfo(forkInfo, logicalKeyName) == null) {
+          mergedStatuses.put(logicalKeyName,
+              rewriteBaseFileStatus(forkInfo, baseStatus));
+        }
+      }
+
+      baseMayHaveMore = baseStatuses.size() == readLimit
+          && lastLogicalKeyName != null
+          && !lastLogicalKeyName.equals(baseStartKey);
+      baseStartKey = lastLogicalKeyName;
+    } while (baseMayHaveMore && mergedStatuses.size() <= context.maxEntries);
 
     List<OzoneFileStatus> result = new ArrayList<>();
     long currentCount = 0;

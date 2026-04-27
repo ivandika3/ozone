@@ -6,7 +6,7 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 
 - Branch: `research-bucket-forks-feasibility`
 - Remote: `origin/research-bucket-forks-feasibility`
-- Last completed slice: bucket fork fork-local quota coverage.
+- Last completed slice: bucket fork listing pagination hardening.
 - Capability state: early MVP skeleton, not yet end-to-end ready.
 
 ## Completed
@@ -40,6 +40,8 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 - [x] Preserve fork visible namespace and byte quota when OBS/FSO overwrites
   shadow base-visible keys.
 - [x] Add OBS/FSO quota coverage for fork-local writes and deletes.
+- [x] Harden OBS/FSO overlay listing pagination when base pages contain dense
+  tombstones or fork-shadowed entries.
 - [x] Add unit/request tests for completed metadata, RPC, client, shell, lookup,
   list overlay, delete/tombstone, metadata mutation, OBS rename, FSO exact file
   lookup, FSO file listing, and FSO rename slices.
@@ -80,10 +82,10 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
   - [x] Adjust visible usage for base-visible overwrite shadowing.
   - [x] Add quota tests for OBS and FSO flows.
 
-- [ ] Harden listing and pagination semantics.
-  - [ ] Add tests for duplicate names, tombstoned entries near page boundaries,
+- [x] Harden listing and pagination semantics.
+  - [x] Add tests for duplicate names, tombstoned entries near page boundaries,
     non-empty `startKey`, non-empty `keyPrefix`, and truncated base/fork pages.
-  - [ ] Revisit overfetch strategy if one extra item is insufficient for dense
+  - [x] Revisit overfetch strategy if one extra item is insufficient for dense
     tombstone or duplicate cases.
 
 - [ ] Add MiniOzoneCluster integration coverage.

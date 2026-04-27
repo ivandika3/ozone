@@ -297,6 +297,60 @@ public class TestBucketForkManager {
 
   @Test
   @SuppressWarnings("unchecked")
+  public void testListStatusFetchesPastHiddenBasePage() throws IOException {
+    OMMetadataManager metadataManager = Mockito.mock(OMMetadataManager.class);
+    Table<String, BucketForkTombstoneInfo> tombstoneTable =
+        Mockito.mock(Table.class);
+    Mockito.when(metadataManager.getBucketForkTombstoneTable())
+        .thenReturn(tombstoneTable);
+    BucketForkInfo forkInfo = createForkInfo(
+        BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE);
+    Mockito.when(tombstoneTable.get("/vol/fork/dir/base-a"))
+        .thenReturn(createTombstone(forkInfo, "dir/base-a"));
+    Mockito.when(tombstoneTable.get("/vol/fork/dir/base-b"))
+        .thenReturn(createTombstone(forkInfo, "dir/base-b"));
+    Mockito.when(tombstoneTable.get("/vol/fork/dir/base-c"))
+        .thenReturn(createTombstone(forkInfo, "dir/base-c"));
+    IOmMetadataReader baseReader = Mockito.mock(IOmMetadataReader.class);
+    Mockito.when(baseReader.listStatus(Mockito.argThat(args -> args != null
+            && "vol".equals(args.getVolumeName())
+            && "source".equals(args.getBucketName())
+            && "dir".equals(args.getKeyName())),
+        Mockito.eq(false), Mockito.eq(""), Mockito.eq(3L),
+        Mockito.eq(false)))
+        .thenReturn(Arrays.asList(
+            createFileStatus("vol", "source", ".snapshot/snap/dir/base-a"),
+            createFileStatus("vol", "source", ".snapshot/snap/dir/base-b"),
+            createFileStatus("vol", "source", ".snapshot/snap/dir/base-c")));
+    Mockito.when(baseReader.listStatus(Mockito.argThat(args -> args != null
+            && "vol".equals(args.getVolumeName())
+            && "source".equals(args.getBucketName())
+            && "dir".equals(args.getKeyName())),
+        Mockito.eq(false), Mockito.eq("dir/base-c"), Mockito.eq(3L),
+        Mockito.eq(false)))
+        .thenReturn(Arrays.asList(
+            createFileStatus("vol", "source", ".snapshot/snap/dir/base-d"),
+            createFileStatus("vol", "source", ".snapshot/snap/dir/base-e")));
+
+    List<OzoneFileStatus> result = new BucketForkManager(metadataManager)
+        .listStatus(forkInfo, Arrays.asList(),
+            new BucketForkManager.ListStatusContext(
+                createKeyArgs("vol", "fork", "dir"), false, "", 2L, false,
+                false),
+            baseReader);
+
+    assertEquals(Arrays.asList("dir/base-d", "dir/base-e"),
+        statusKeyNames(result));
+    Mockito.verify(baseReader).listStatus(Mockito.argThat(args -> args != null
+            && "vol".equals(args.getVolumeName())
+            && "source".equals(args.getBucketName())
+            && "dir".equals(args.getKeyName())),
+        Mockito.eq(false), Mockito.eq("dir/base-c"), Mockito.eq(3L),
+        Mockito.eq(false));
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
   public void testListKeysMergesForkLocalAndBaseSnapshotKeys()
       throws IOException {
     OMMetadataManager metadataManager = Mockito.mock(OMMetadataManager.class);
@@ -360,6 +414,42 @@ public class TestBucketForkManager {
     assertTrue(result.isTruncated());
   }
 
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testListKeysFetchesPastHiddenBasePage() throws IOException {
+    OMMetadataManager metadataManager = Mockito.mock(OMMetadataManager.class);
+    Table<String, BucketForkTombstoneInfo> tombstoneTable =
+        Mockito.mock(Table.class);
+    Mockito.when(metadataManager.getBucketForkTombstoneTable())
+        .thenReturn(tombstoneTable);
+    BucketForkInfo forkInfo = createForkInfo(
+        BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE);
+    Mockito.when(tombstoneTable.get("/vol/fork/a"))
+        .thenReturn(createTombstone(forkInfo, "a"));
+    Mockito.when(tombstoneTable.get("/vol/fork/b"))
+        .thenReturn(createTombstone(forkInfo, "b"));
+    Mockito.when(tombstoneTable.get("/vol/fork/c"))
+        .thenReturn(createTombstone(forkInfo, "c"));
+    IOmMetadataReader baseReader = Mockito.mock(IOmMetadataReader.class);
+    Mockito.when(baseReader.listKeys("vol", "source", "", "", 3))
+        .thenReturn(new ListKeysResult(Arrays.asList(
+            createKeyInfo("vol", "source", ".snapshot/snap/a"),
+            createKeyInfo("vol", "source", ".snapshot/snap/b"),
+            createKeyInfo("vol", "source", ".snapshot/snap/c")), true));
+    Mockito.when(baseReader.listKeys("vol", "source", "c", "", 3))
+        .thenReturn(new ListKeysResult(Arrays.asList(
+            createKeyInfo("vol", "source", ".snapshot/snap/d"),
+            createKeyInfo("vol", "source", ".snapshot/snap/e")), false));
+
+    ListKeysResult result = new BucketForkManager(metadataManager)
+        .listKeys(forkInfo, new ListKeysResult(Arrays.asList(), false),
+            "", "", 2, baseReader);
+
+    assertEquals(Arrays.asList("d", "e"), keyNames(result.getKeys()));
+    assertFalse(result.isTruncated());
+    Mockito.verify(baseReader).listKeys("vol", "source", "c", "", 3);
+  }
+
   private static BucketForkInfo createForkInfo(
       BucketForkInfo.BucketForkStatus status) {
     return BucketForkInfo.newBuilder()
@@ -398,6 +488,18 @@ public class TestBucketForkManager {
       String bucketName, String keyName) {
     return new OzoneFileStatus(createKeyInfo(volumeName, bucketName, keyName),
         1024L, false);
+  }
+
+  private static BucketForkTombstoneInfo createTombstone(
+      BucketForkInfo forkInfo, String logicalPath) {
+    return BucketForkTombstoneInfo.newBuilder()
+        .setForkId(forkInfo.getForkId())
+        .setTargetVolumeName(forkInfo.getTargetVolumeName())
+        .setTargetBucketName(forkInfo.getTargetBucketName())
+        .setBaseSnapshotId(forkInfo.getBaseSnapshotId())
+        .setLogicalPath(logicalPath)
+        .setType(BucketForkTombstoneInfo.BucketForkTombstoneType.KEY)
+        .build();
   }
 
   private static List<String> keyNames(List<OmKeyInfo> keyInfos) {
