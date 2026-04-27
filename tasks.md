@@ -161,6 +161,9 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 - Merge, rebase, conflict resolution, and fork-aware snapshot diff are outside
   the MVP. Future work can layer those semantics on top of the explicit base
   snapshot plus fork-delta model.
+- Recursive fork support should be implemented as explicit base-view lineage,
+  not as accidental snapshots of fork buckets. The approved design is captured
+  in `docs/superpowers/specs/2026-04-27-recursive-bucket-forks-design.md`.
 
 ## Verification Checklist Per Slice
 
