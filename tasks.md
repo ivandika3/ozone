@@ -6,7 +6,7 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 
 - Branch: `research-bucket-forks-feasibility`
 - Remote: `origin/research-bucket-forks-feasibility`
-- Last completed slice: bucket fork FSO exact file lookup/status fallback.
+- Last completed slice: bucket fork FSO file listing overlay merge.
 - Capability state: early MVP skeleton, not yet end-to-end ready.
 
 ## Completed
@@ -28,9 +28,10 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 - [x] Add overwrite-shadowing coverage for base-visible fork keys.
 - [x] Add OBS rename support for base-visible fork keys.
 - [x] Add FSO exact file lookup/status fallback to base snapshots.
+- [x] Add FSO file listing overlay merge for fork-local and base statuses.
 - [x] Add unit/request tests for completed metadata, RPC, client, shell, lookup,
-  list overlay, delete/tombstone, metadata mutation, OBS rename, and FSO exact
-  file lookup slices.
+  list overlay, delete/tombstone, metadata mutation, OBS rename, FSO exact file
+  lookup, and FSO file listing slices.
 
 ## Next Major Slices
 
@@ -55,7 +56,7 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 
 - [ ] Extend overlay support to FSO/file APIs.
   - [x] Add `lookupFile` and `getFileStatus` fall-through behavior.
-  - [ ] Add directory/file listing merge behavior.
+  - [x] Add directory/file listing merge behavior.
   - [ ] Define directory tombstone behavior for base-visible directories.
   - [ ] Add FSO tests for file lookup, directory listing, delete, and rename.
 

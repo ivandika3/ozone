@@ -216,6 +216,55 @@ public class TestBucketForkManager {
 
   @Test
   @SuppressWarnings("unchecked")
+  public void testListStatusMergesForkLocalAndBaseSnapshotStatuses()
+      throws IOException {
+    OMMetadataManager metadataManager = Mockito.mock(OMMetadataManager.class);
+    Table<String, BucketForkTombstoneInfo> tombstoneTable =
+        Mockito.mock(Table.class);
+    Mockito.when(metadataManager.getBucketForkTombstoneTable())
+        .thenReturn(tombstoneTable);
+    BucketForkInfo forkInfo = createForkInfo(
+        BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE);
+    Mockito.when(tombstoneTable.get("/vol/fork/dir/base-deleted"))
+        .thenReturn(BucketForkTombstoneInfo.newBuilder()
+            .setForkId(forkInfo.getForkId())
+            .setTargetVolumeName("vol")
+            .setTargetBucketName("fork")
+            .setBaseSnapshotId(forkInfo.getBaseSnapshotId())
+            .setLogicalPath("dir/base-deleted")
+            .setType(BucketForkTombstoneInfo.BucketForkTombstoneType.KEY)
+            .build());
+    IOmMetadataReader baseReader = Mockito.mock(IOmMetadataReader.class);
+    Mockito.when(baseReader.listStatus(Mockito.argThat(args ->
+        "vol".equals(args.getVolumeName())
+            && "source".equals(args.getBucketName())
+            && "dir".equals(args.getKeyName())),
+        Mockito.eq(false), Mockito.eq(""), Mockito.eq(4L),
+        Mockito.eq(false)))
+        .thenReturn(Arrays.asList(
+            createFileStatus("vol", "source", ".snapshot/snap/dir/base-a"),
+            createFileStatus("vol", "source", ".snapshot/snap/dir/local-b"),
+            createFileStatus("vol", "source",
+                ".snapshot/snap/dir/base-deleted")));
+    List<OzoneFileStatus> forkLocalStatuses = Arrays.asList(
+        createFileStatus("vol", "fork", "dir/local-b"),
+        createFileStatus("vol", "fork", "dir/local-c"));
+
+    List<OzoneFileStatus> result = new BucketForkManager(metadataManager)
+        .listStatus(forkInfo, forkLocalStatuses,
+            new BucketForkManager.ListStatusContext(
+                createKeyArgs("vol", "fork", "dir"), false, "", 3L, false,
+                false),
+            baseReader);
+
+    assertEquals(Arrays.asList("dir/base-a", "dir/local-b", "dir/local-c"),
+        statusKeyNames(result));
+    assertEquals("fork", result.get(0).getKeyInfo().getBucketName());
+    assertEquals("fork", result.get(1).getKeyInfo().getBucketName());
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
   public void testListKeysMergesForkLocalAndBaseSnapshotKeys()
       throws IOException {
     OMMetadataManager metadataManager = Mockito.mock(OMMetadataManager.class);
@@ -313,9 +362,21 @@ public class TestBucketForkManager {
         .build();
   }
 
+  private static OzoneFileStatus createFileStatus(String volumeName,
+      String bucketName, String keyName) {
+    return new OzoneFileStatus(createKeyInfo(volumeName, bucketName, keyName),
+        1024L, false);
+  }
+
   private static List<String> keyNames(List<OmKeyInfo> keyInfos) {
     return keyInfos.stream()
         .map(OmKeyInfo::getKeyName)
+        .collect(Collectors.toList());
+  }
+
+  private static List<String> statusKeyNames(List<OzoneFileStatus> statuses) {
+    return statuses.stream()
+        .map(status -> status.getKeyInfo().getKeyName())
         .collect(Collectors.toList());
   }
 }

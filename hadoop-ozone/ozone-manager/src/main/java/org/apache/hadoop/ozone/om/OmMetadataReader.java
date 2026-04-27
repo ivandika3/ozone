@@ -29,6 +29,7 @@ import static org.apache.hadoop.ozone.util.MetricUtil.captureLatencyNs;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -342,8 +343,36 @@ public class OmMetadataReader implements IOmMetadataReader, Auditor {
             bucket, args.getKeyName());
       }
       metrics.incNumListStatus();
-      return keyManager.listStatus(args, recursive, startKey,
-          maxListingPageSize, getClientAddress(), allowPartialPrefixes);
+      BucketForkInfo forkInfo = bucketForkManager.getActiveForkInfo(
+          args.getVolumeName(), args.getBucketName());
+      if (forkInfo == null) {
+        return keyManager.listStatus(args, recursive, startKey,
+            maxListingPageSize, getClientAddress(), allowPartialPrefixes);
+      }
+
+      boolean forkLocalMissing = false;
+      List<OzoneFileStatus> forkLocalStatuses;
+      try {
+        forkLocalStatuses = keyManager.listStatus(args, recursive, startKey,
+            bucketForkManager.getListStatusReadLimit(maxListingPageSize),
+            getClientAddress(), allowPartialPrefixes);
+      } catch (Exception localEx) {
+        if (!isFileOrKeyNotFound(localEx)) {
+          throw localEx;
+        }
+        forkLocalMissing = true;
+        forkLocalStatuses = Collections.emptyList();
+      }
+
+      try (UncheckedAutoCloseableSupplier<OmSnapshot> snapshot =
+               ozoneManager.getOmSnapshotManager().getSnapshot(
+                   forkInfo.getBaseSnapshotId())) {
+        BucketForkManager.ListStatusContext context =
+            new BucketForkManager.ListStatusContext(args, recursive, startKey,
+                maxListingPageSize, allowPartialPrefixes, forkLocalMissing);
+        return bucketForkManager.listStatus(forkInfo, forkLocalStatuses,
+            context, snapshot.get());
+      }
     } catch (Exception ex) {
       metrics.incNumListStatusFails();
       auditSuccess = false;

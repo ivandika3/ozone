@@ -19,6 +19,7 @@ package org.apache.hadoop.ozone.om;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -199,8 +200,68 @@ public class BucketForkManager {
     return new ListKeysResult(result, isTruncated);
   }
 
+  public List<OzoneFileStatus> listStatus(BucketForkInfo forkInfo,
+      List<OzoneFileStatus> forkLocalStatuses, ListStatusContext context,
+      IOmMetadataReader baseReader) throws IOException {
+    if (context.maxEntries <= 0) {
+      return Collections.emptyList();
+    }
+
+    OmKeyArgs sourceArgs = context.targetArgs.toBuilder()
+        .setVolumeName(forkInfo.getSourceVolumeName())
+        .setBucketName(forkInfo.getSourceBucketName())
+        .build();
+    List<OzoneFileStatus> baseStatuses;
+    try {
+      baseStatuses = baseReader.listStatus(sourceArgs, context.recursive,
+          context.startKey, getListStatusReadLimit(context.maxEntries),
+          context.allowPartialPrefixes);
+    } catch (OMException ex) {
+      if (!isFileOrKeyNotFound(ex) || context.forkLocalMissing) {
+        throw ex;
+      }
+      baseStatuses = Collections.emptyList();
+    }
+
+    TreeMap<String, OzoneFileStatus> mergedStatuses = new TreeMap<>();
+    for (OzoneFileStatus forkLocalStatus : forkLocalStatuses) {
+      mergedStatuses.put(statusKeyName(forkLocalStatus,
+          context.targetArgs.getKeyName()), forkLocalStatus);
+    }
+
+    for (OzoneFileStatus baseStatus : baseStatuses) {
+      String logicalKeyName = logicalStatusKeyName(forkInfo, baseStatus,
+          context.targetArgs.getKeyName());
+      if (!mergedStatuses.containsKey(logicalKeyName)
+          && getTombstoneInfo(forkInfo, logicalKeyName) == null) {
+        mergedStatuses.put(logicalKeyName,
+            rewriteBaseFileStatus(forkInfo, baseStatus));
+      }
+    }
+
+    List<OzoneFileStatus> result = new ArrayList<>();
+    long currentCount = 0;
+    for (OzoneFileStatus status : mergedStatuses.values()) {
+      result.add(status);
+      currentCount++;
+      if (currentCount == context.maxEntries) {
+        break;
+      }
+    }
+    return result;
+  }
+
   public int getListKeysReadLimit(int maxKeys) {
     return maxKeys == Integer.MAX_VALUE ? maxKeys : maxKeys + 1;
+  }
+
+  public long getListStatusReadLimit(long maxEntries) {
+    return maxEntries == Long.MAX_VALUE ? maxEntries : maxEntries + 1;
+  }
+
+  private boolean isFileOrKeyNotFound(OMException ex) {
+    return ex.getResult() == OMException.ResultCodes.KEY_NOT_FOUND
+        || ex.getResult() == OMException.ResultCodes.FILE_NOT_FOUND;
   }
 
   private OmKeyInfo rewriteBaseKeyInfo(BucketForkInfo forkInfo,
@@ -222,6 +283,16 @@ public class BucketForkManager {
         baseFileStatus.isDirectory());
   }
 
+  private String logicalStatusKeyName(BucketForkInfo forkInfo,
+      OzoneFileStatus status, String fallbackKeyName) {
+    return logicalBaseKeyName(forkInfo, statusKeyName(status, fallbackKeyName));
+  }
+
+  private String statusKeyName(OzoneFileStatus status, String fallbackKeyName) {
+    return status.getKeyInfo() == null ? fallbackKeyName
+        : status.getKeyInfo().getKeyName();
+  }
+
   private String logicalBaseKeyName(BucketForkInfo forkInfo, String keyName) {
     String snapshotPrefix = OmSnapshotManager.getSnapshotPrefix(
         forkInfo.getBaseSnapshotName());
@@ -229,5 +300,28 @@ public class BucketForkManager {
       return keyName.substring(snapshotPrefix.length());
     }
     return keyName;
+  }
+
+  /**
+   * Immutable arguments for merging fork-local and base snapshot file listings.
+   */
+  public static final class ListStatusContext {
+    private final OmKeyArgs targetArgs;
+    private final boolean recursive;
+    private final String startKey;
+    private final long maxEntries;
+    private final boolean allowPartialPrefixes;
+    private final boolean forkLocalMissing;
+
+    public ListStatusContext(OmKeyArgs targetArgs, boolean recursive,
+        String startKey, long maxEntries, boolean allowPartialPrefixes,
+        boolean forkLocalMissing) {
+      this.targetArgs = targetArgs;
+      this.recursive = recursive;
+      this.startKey = startKey;
+      this.maxEntries = maxEntries;
+      this.allowPartialPrefixes = allowPartialPrefixes;
+      this.forkLocalMissing = forkLocalMissing;
+    }
   }
 }
