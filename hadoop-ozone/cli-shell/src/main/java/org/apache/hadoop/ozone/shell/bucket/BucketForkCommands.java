@@ -21,28 +21,17 @@ import org.apache.hadoop.hdds.cli.HddsVersionProvider;
 import picocli.CommandLine.Command;
 
 /**
- * Subcommands for the bucket related operations.
+ * Subcommands for bucket fork operations.
  */
-@Command(name = "bucket",
-    description = "Bucket specific operations",
+@Command(name = "fork",
+    description = "Bucket fork operations",
     subcommands = {
-        InfoBucketHandler.class,
-        ListBucketHandler.class,
-        CreateBucketHandler.class,
-        SetQuotaHandler.class,
-        LinkBucketHandler.class,
-        DeleteBucketHandler.class,
-        AddAclBucketHandler.class,
-        RemoveAclBucketHandler.class,
-        GetAclBucketHandler.class,
-        SetAclBucketHandler.class,
-        ClearQuotaHandler.class,
-        BucketForkCommands.class,
-        SetReplicationConfigHandler.class,
-        UpdateBucketHandler.class,
-        SetEncryptionKey.class
+        CreateBucketForkHandler.class,
+        DeleteBucketForkHandler.class,
+        InfoBucketForkHandler.class,
+        ListBucketForkHandler.class
     },
     mixinStandardHelpOptions = true,
     versionProvider = HddsVersionProvider.class)
-public class BucketCommands {
+public class BucketForkCommands {
 }

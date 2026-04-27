@@ -17,32 +17,23 @@
 
 package org.apache.hadoop.ozone.shell.bucket;
 
-import org.apache.hadoop.hdds.cli.HddsVersionProvider;
+import java.io.IOException;
+import org.apache.hadoop.ozone.client.OzoneClient;
+import org.apache.hadoop.ozone.shell.OzoneAddress;
 import picocli.CommandLine.Command;
 
 /**
- * Subcommands for the bucket related operations.
+ * Info bucket fork handler.
  */
-@Command(name = "bucket",
-    description = "Bucket specific operations",
-    subcommands = {
-        InfoBucketHandler.class,
-        ListBucketHandler.class,
-        CreateBucketHandler.class,
-        SetQuotaHandler.class,
-        LinkBucketHandler.class,
-        DeleteBucketHandler.class,
-        AddAclBucketHandler.class,
-        RemoveAclBucketHandler.class,
-        GetAclBucketHandler.class,
-        SetAclBucketHandler.class,
-        ClearQuotaHandler.class,
-        BucketForkCommands.class,
-        SetReplicationConfigHandler.class,
-        UpdateBucketHandler.class,
-        SetEncryptionKey.class
-    },
-    mixinStandardHelpOptions = true,
-    versionProvider = HddsVersionProvider.class)
-public class BucketCommands {
+@Command(name = "info",
+    description = "returns information about a bucket fork")
+public class InfoBucketForkHandler extends BucketHandler {
+
+  @Override
+  protected void execute(OzoneClient client, OzoneAddress address)
+      throws IOException {
+    printObjectAsJson(BucketForkInfoJson.of(
+        client.getObjectStore().getBucketForkInfo(
+            address.getVolumeName(), address.getBucketName())));
+  }
 }
