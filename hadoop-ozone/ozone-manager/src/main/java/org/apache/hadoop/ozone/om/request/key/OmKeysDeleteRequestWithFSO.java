@@ -33,6 +33,7 @@ import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OzoneManager;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.ErrorInfo;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
@@ -165,7 +166,9 @@ public class OmKeysDeleteRequestWithFSO extends OMKeysDeleteRequest {
       OzoneManagerProtocolProtos.OMResponse.Builder omResponse,
       OzoneManagerProtocolProtos.DeleteKeyArgs.Builder unDeletedKeys,
       Map<String, ErrorInfo> keyToErrors,
-      boolean deleteStatus, OmBucketInfo omBucketInfo, long volumeId, Map<String, OmKeyInfo> openKeyInfoMap) {
+      boolean deleteStatus, OmBucketInfo omBucketInfo, long volumeId,
+      Map<String, OmKeyInfo> openKeyInfoMap,
+      List<BucketForkTombstoneInfo> bucketForkTombstoneInfoList) {
     OMClientResponse omClientResponse;
     List<OzoneManagerProtocolProtos.DeleteKeyError> deleteKeyErrors = new ArrayList<>();
     for (Map.Entry<String, ErrorInfo>  key : keyToErrors.entrySet()) {
@@ -179,7 +182,8 @@ public class OmKeysDeleteRequestWithFSO extends OMKeysDeleteRequest {
                 .setStatus(deleteStatus).setUnDeletedKeys(unDeletedKeys).addAllErrors(deleteKeyErrors))
         .setStatus(deleteStatus ? OK : PARTIAL_DELETE).setSuccess(deleteStatus)
         .build(), omKeyInfoList, dirList,
-        omBucketInfo.copyObject(), volumeId, openKeyInfoMap);
+        omBucketInfo.copyObject(), volumeId, openKeyInfoMap,
+        bucketForkTombstoneInfoList);
     return omClientResponse;
   }
 }

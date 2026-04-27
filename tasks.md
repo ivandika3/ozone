@@ -6,7 +6,7 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 
 - Branch: `research-bucket-forks-feasibility`
 - Remote: `origin/research-bucket-forks-feasibility`
-- Last completed slice: `1535dfe58a9 HDDS-15120. Add bucket fork key list overlay`
+- Last completed slice: bucket fork delete/tombstone write path.
 - Capability state: early MVP skeleton, not yet end-to-end ready.
 
 ## Completed
@@ -22,17 +22,19 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 - [x] Add key lookup overlay for fork buckets.
 - [x] Add `getKeyInfo` overlay for fork buckets.
 - [x] Add `listKeys` overlay merge for fork-local and base snapshot keys.
+- [x] Add key delete tombstones for base-visible fork keys.
+- [x] Add multi-key delete tombstones for base-visible fork keys.
 - [x] Add unit/request tests for completed metadata, RPC, client, shell, lookup,
-  and list overlay slices.
+  list overlay, and delete/tombstone slices.
 
 ## Next Major Slices
 
-- [ ] Implement fork delete/tombstone write path.
-  - [ ] Detect deletes against base-visible keys in fork buckets.
-  - [ ] Write `BucketForkTombstoneInfo` instead of queuing base blocks for
+- [x] Implement fork delete/tombstone write path.
+  - [x] Detect deletes against base-visible keys in fork buckets.
+  - [x] Write `BucketForkTombstoneInfo` instead of queuing base blocks for
     physical deletion.
-  - [ ] Preserve existing deleted-table flow for fork-local keys.
-  - [ ] Add OBS tests for deleting fork-local keys and tombstoning base keys.
+  - [x] Preserve existing deleted-table flow for fork-local keys.
+  - [x] Add OBS tests for deleting fork-local keys and tombstoning base keys.
 
 - [ ] Implement copy-on-write metadata mutations.
   - [ ] Clone base-visible key metadata into the fork namespace before mutation.

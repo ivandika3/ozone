@@ -148,7 +148,8 @@ public class TestOMKeyDeleteRequest extends TestOMKeyRequest {
 
     OmSnapshot baseSnapshot = Mockito.mock(OmSnapshot.class);
     Mockito.when(baseSnapshot.lookupKey(Mockito.argThat(args ->
-        volumeName.equals(args.getVolumeName())
+        args != null
+            && volumeName.equals(args.getVolumeName())
             && sourceBucketName.equals(args.getBucketName())
             && keyName.equals(args.getKeyName()))))
         .thenReturn(new OmKeyInfo.Builder()
