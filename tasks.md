@@ -6,7 +6,7 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 
 - Branch: `research-bucket-forks-feasibility`
 - Remote: `origin/research-bucket-forks-feasibility`
-- Last completed slice: bucket fork listing pagination hardening.
+- Last completed slice: bucket fork deletion cleanup coverage.
 - Capability state: early MVP skeleton, not yet end-to-end ready.
 
 ## Completed
@@ -42,6 +42,8 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 - [x] Add OBS/FSO quota coverage for fork-local writes and deletes.
 - [x] Harden OBS/FSO overlay listing pagination when base pages contain dense
   tombstones or fork-shadowed entries.
+- [x] Cover bucket fork deletion cleanup releasing snapshot references and
+  removing target bucket/tombstone metadata.
 - [x] Add unit/request tests for completed metadata, RPC, client, shell, lookup,
   list overlay, delete/tombstone, metadata mutation, OBS rename, FSO exact file
   lookup, FSO file listing, and FSO rename slices.
@@ -74,7 +76,7 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
   - [x] Add FSO tests for file lookup, directory listing, and delete.
   - [x] Add FSO rename tests and behavior.
 
-- [ ] Implement quota accounting for visible fork namespace.
+- [x] Implement quota accounting for visible fork namespace.
   - [x] Initialize fork usage from base snapshot visible usage.
   - [x] Adjust usage for fork-local writes and deletes.
   - [x] Adjust visible namespace usage for base-entry tombstones.
@@ -95,11 +97,10 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
   - [ ] Fork deletion releases base snapshot references.
   - [ ] Internal active-source base snapshots are hidden from normal listings.
 
-- [ ] Complete fork deletion cleanup.
-  - [ ] Release base snapshot reference.
-  - [ ] Delete fork metadata and tombstone metadata.
-  - [ ] Decide whether target bucket deletion is mandatory, deferred, or
-    separately controlled.
+- [x] Complete fork deletion cleanup.
+  - [x] Release base snapshot reference by deleting the active fork metadata.
+  - [x] Delete fork metadata and tombstone metadata.
+  - [x] Delete the target bucket as mandatory MVP fork deletion behavior.
 
 ## Design Follow-Ups
 

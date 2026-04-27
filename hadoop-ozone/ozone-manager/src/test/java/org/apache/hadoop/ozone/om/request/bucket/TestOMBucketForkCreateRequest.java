@@ -23,6 +23,7 @@ import static org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.
 import static org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.Status.OK;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.UUID;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
@@ -227,6 +228,77 @@ public class TestOMBucketForkCreateRequest extends TestBucketRequest {
         omMetadataManager.getVolumeKey(TARGET_VOLUME)).getUsedNamespace());
   }
 
+  @Test
+  public void testDeleteBucketForkReleasesSnapshotReference()
+      throws Exception {
+    ozoneManager.getConfiguration().setBoolean(OZONE_OM_BUCKET_FORK_ENABLED,
+        true);
+    OMRequestTestUtils.addVolumeToDB(SOURCE_VOLUME, omMetadataManager);
+    OMRequestTestUtils.addVolumeToDB(TARGET_VOLUME, omMetadataManager);
+    OMRequestTestUtils.addBucketToDB(SOURCE_VOLUME, SOURCE_BUCKET,
+        omMetadataManager, BucketLayout.DEFAULT);
+    OMRequestTestUtils.addBucketToDB(TARGET_VOLUME, TARGET_BUCKET,
+        omMetadataManager, BucketLayout.DEFAULT);
+    SnapshotInfo snapshotInfo = SnapshotInfo.newInstance(SOURCE_VOLUME,
+        SOURCE_BUCKET, SNAPSHOT_NAME, UUID.randomUUID(), Time.now());
+    omMetadataManager.getSnapshotInfoTable().put(snapshotInfo.getTableKey(),
+        snapshotInfo);
+    BucketForkInfo bucketForkInfo = BucketForkInfo.newBuilder()
+        .setForkId(UUID.randomUUID())
+        .setSourceVolumeName(SOURCE_VOLUME)
+        .setSourceBucketName(SOURCE_BUCKET)
+        .setTargetVolumeName(TARGET_VOLUME)
+        .setTargetBucketName(TARGET_BUCKET)
+        .setBaseSnapshotId(snapshotInfo.getSnapshotId())
+        .setBaseSnapshotName(snapshotInfo.getName())
+        .setStatus(BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE)
+        .build();
+    omMetadataManager.getBucketForkTable().put(bucketForkInfo.getTableKey(),
+        bucketForkInfo);
+    omMetadataManager.getBucketForkTombstoneTable().put(
+        BucketForkTombstoneInfo.getTableKey(TARGET_VOLUME, TARGET_BUCKET,
+            "deleted-key"),
+        BucketForkTombstoneInfo.newBuilder()
+            .setForkId(bucketForkInfo.getForkId())
+            .setTargetVolumeName(TARGET_VOLUME)
+            .setTargetBucketName(TARGET_BUCKET)
+            .setBaseSnapshotId(bucketForkInfo.getBaseSnapshotId())
+            .setLogicalPath("deleted-key")
+            .setType(BucketForkTombstoneInfo.BucketForkTombstoneType.KEY)
+            .setCreationTime(Time.now())
+            .setUpdateId(12L)
+            .build());
+
+    OMResponse blockedDeleteSnapshot =
+        new OMSnapshotDeleteRequest(createDeleteSnapshotRequest())
+            .validateAndUpdateCache(ozoneManager, 13L)
+            .getOMResponse();
+
+    assertEquals(CONTAINS_SNAPSHOT, blockedDeleteSnapshot.getStatus());
+
+    OMBucketForkDeleteResponse deleteForkResponse =
+        (OMBucketForkDeleteResponse) new OMBucketForkDeleteRequest(
+            createDeleteForkRequest())
+            .validateAndUpdateCache(ozoneManager, 14L);
+    assertEquals(OK, deleteForkResponse.getOMResponse().getStatus());
+    try (BatchOperation batchOperation =
+             omMetadataManager.getStore().initBatchOperation()) {
+      deleteForkResponse.addToDBBatch(omMetadataManager, batchOperation);
+      omMetadataManager.getStore().commitBatchOperation(batchOperation);
+    }
+    assertNull(omMetadataManager.getBucketForkTable().get(
+        bucketForkInfo.getTableKey()));
+    assertNull(omMetadataManager.getBucketForkTombstoneTable().get(
+        bucketForkInfo.getTableKey() + "/deleted-key"));
+
+    OMResponse allowedDeleteSnapshot =
+        new OMSnapshotDeleteRequest(createDeleteSnapshotRequest())
+            .validateAndUpdateCache(ozoneManager, 15L)
+            .getOMResponse();
+
+    assertEquals(OK, allowedDeleteSnapshot.getStatus());
+  }
+
   private OMRequest createForkRequest() {
     return OMRequest.newBuilder()
         .setClientId("client")
@@ -237,6 +309,31 @@ public class TestOMBucketForkCreateRequest extends TestBucketRequest {
             .setTargetVolumeName(TARGET_VOLUME)
             .setTargetBucketName(TARGET_BUCKET)
             .setBaseSnapshotName(SNAPSHOT_NAME)
+            .build())
+        .build();
+  }
+
+  private OMRequest createDeleteForkRequest() {
+    return OMRequest.newBuilder()
+        .setClientId("client")
+        .setCmdType(Type.DeleteBucketFork)
+        .setDeleteBucketForkRequest(DeleteBucketForkRequest.newBuilder()
+            .setVolumeName(TARGET_VOLUME)
+            .setBucketName(TARGET_BUCKET)
+            .setDeletionTime(Time.now())
+            .build())
+        .build();
+  }
+
+  private OMRequest createDeleteSnapshotRequest() {
+    return OMRequest.newBuilder()
+        .setClientId("client")
+        .setCmdType(Type.DeleteSnapshot)
+        .setDeleteSnapshotRequest(DeleteSnapshotRequest.newBuilder()
+            .setVolumeName(SOURCE_VOLUME)
+            .setBucketName(SOURCE_BUCKET)
+            .setSnapshotName(SNAPSHOT_NAME)
+            .setDeletionTime(Time.now())
             .build())
         .build();
   }
