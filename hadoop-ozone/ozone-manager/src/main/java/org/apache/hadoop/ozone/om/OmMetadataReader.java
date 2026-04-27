@@ -266,6 +266,47 @@ public class OmMetadataReader implements IOmMetadataReader, Auditor {
         && ((OMException) ex).getResult() == ResultCodes.KEY_NOT_FOUND;
   }
 
+  private boolean isFileOrKeyNotFound(Exception ex) {
+    return ex instanceof OMException
+        && (((OMException) ex).getResult() == ResultCodes.KEY_NOT_FOUND
+        || ((OMException) ex).getResult() == ResultCodes.FILE_NOT_FOUND);
+  }
+
+  private OzoneFileStatus lookupForkBaseFileStatusIfNeeded(OmKeyArgs args,
+      Exception ex) throws IOException {
+    if (!isFileOrKeyNotFound(ex)) {
+      return null;
+    }
+    BucketForkInfo forkInfo = bucketForkManager.getActiveForkInfo(
+        args.getVolumeName(), args.getBucketName());
+    if (forkInfo == null) {
+      return null;
+    }
+    try (UncheckedAutoCloseableSupplier<OmSnapshot> snapshot =
+             ozoneManager.getOmSnapshotManager().getSnapshot(
+                 forkInfo.getBaseSnapshotId())) {
+      return bucketForkManager.lookupBaseFileStatus(forkInfo, args,
+          snapshot.get());
+    }
+  }
+
+  private OmKeyInfo lookupForkBaseFileIfNeeded(OmKeyArgs args, Exception ex)
+      throws IOException {
+    if (!isFileOrKeyNotFound(ex)) {
+      return null;
+    }
+    BucketForkInfo forkInfo = bucketForkManager.getActiveForkInfo(
+        args.getVolumeName(), args.getBucketName());
+    if (forkInfo == null) {
+      return null;
+    }
+    try (UncheckedAutoCloseableSupplier<OmSnapshot> snapshot =
+             ozoneManager.getOmSnapshotManager().getSnapshot(
+                 forkInfo.getBaseSnapshotId())) {
+      return bucketForkManager.lookupBaseFile(forkInfo, args, snapshot.get());
+    }
+  }
+
   private IOException asIOException(Exception ex) {
     if (ex instanceof IOException) {
       return (IOException) ex;
@@ -346,11 +387,22 @@ public class OmMetadataReader implements IOmMetadataReader, Auditor {
       metrics.incNumGetFileStatus();
       return keyManager.getFileStatus(args, getClientAddress());
     } catch (Exception ex) {
+      Exception failure = ex;
+      try {
+        OzoneFileStatus forkBaseStatus =
+            lookupForkBaseFileStatusIfNeeded(args, ex);
+        if (forkBaseStatus != null) {
+          return forkBaseStatus;
+        }
+      } catch (Exception forkEx) {
+        failure = forkEx;
+      }
       metrics.incNumGetFileStatusFails();
       auditSuccess = false;
       audit.logReadFailure(
-          buildAuditMessageForFailure(OMAction.GET_FILE_STATUS, auditMap, ex));
-      throw ex;
+          buildAuditMessageForFailure(OMAction.GET_FILE_STATUS, auditMap,
+              failure));
+      throw asIOException(failure);
     } finally {
       if (auditSuccess) {
         audit.logReadSuccess(
@@ -376,11 +428,20 @@ public class OmMetadataReader implements IOmMetadataReader, Auditor {
       metrics.incNumLookupFile();
       return keyManager.lookupFile(args, getClientAddress());
     } catch (Exception ex) {
+      Exception failure = ex;
+      try {
+        OmKeyInfo forkBaseFile = lookupForkBaseFileIfNeeded(args, ex);
+        if (forkBaseFile != null) {
+          return forkBaseFile;
+        }
+      } catch (Exception forkEx) {
+        failure = forkEx;
+      }
       metrics.incNumLookupFileFails();
       auditSuccess = false;
       audit.logReadFailure(buildAuditMessageForFailure(OMAction.LOOKUP_FILE,
-          auditMap, ex));
-      throw ex;
+          auditMap, failure));
+      throw asIOException(failure);
     } finally {
       if (auditSuccess) {
         audit.logReadSuccess(buildAuditMessageForSuccess(

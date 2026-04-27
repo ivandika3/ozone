@@ -35,6 +35,7 @@ import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -151,6 +152,66 @@ public class TestBucketForkManager {
 
     assertEquals(OMException.ResultCodes.KEY_NOT_FOUND, ex.getResult());
     Mockito.verifyNoInteractions(baseReader);
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testLookupBaseFileStatusRewritesSnapshotInfoToForkNamespace()
+      throws IOException {
+    OMMetadataManager metadataManager = Mockito.mock(OMMetadataManager.class);
+    Table<String, BucketForkTombstoneInfo> tombstoneTable =
+        Mockito.mock(Table.class);
+    Mockito.when(metadataManager.getBucketForkTombstoneTable())
+        .thenReturn(tombstoneTable);
+    BucketForkInfo forkInfo = createForkInfo(
+        BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE);
+    IOmMetadataReader baseReader = Mockito.mock(IOmMetadataReader.class);
+    OmKeyInfo baseKeyInfo = createKeyInfo("vol", "source",
+        ".snapshot/snap/dir/file");
+    Mockito.when(baseReader.getFileStatus(Mockito.argThat(args ->
+        "vol".equals(args.getVolumeName())
+            && "source".equals(args.getBucketName())
+            && "dir/file".equals(args.getKeyName()))))
+        .thenReturn(new OzoneFileStatus(baseKeyInfo, 1024L, false));
+
+    OzoneFileStatus result = new BucketForkManager(metadataManager)
+        .lookupBaseFileStatus(forkInfo,
+            createKeyArgs("vol", "fork", "dir/file"), baseReader);
+
+    assertTrue(result.isFile());
+    assertEquals(1024L, result.getBlockSize());
+    assertEquals("vol", result.getKeyInfo().getVolumeName());
+    assertEquals("fork", result.getKeyInfo().getBucketName());
+    assertEquals("dir/file", result.getKeyInfo().getKeyName());
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testLookupBaseFileRewritesSnapshotInfoToForkNamespace()
+      throws IOException {
+    OMMetadataManager metadataManager = Mockito.mock(OMMetadataManager.class);
+    Table<String, BucketForkTombstoneInfo> tombstoneTable =
+        Mockito.mock(Table.class);
+    Mockito.when(metadataManager.getBucketForkTombstoneTable())
+        .thenReturn(tombstoneTable);
+    BucketForkInfo forkInfo = createForkInfo(
+        BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE);
+    IOmMetadataReader baseReader = Mockito.mock(IOmMetadataReader.class);
+    OmKeyInfo baseKeyInfo = createKeyInfo("vol", "source",
+        ".snapshot/snap/dir/file");
+    Mockito.when(baseReader.lookupFile(Mockito.argThat(args ->
+        "vol".equals(args.getVolumeName())
+            && "source".equals(args.getBucketName())
+            && "dir/file".equals(args.getKeyName()))))
+        .thenReturn(baseKeyInfo);
+
+    OmKeyInfo result = new BucketForkManager(metadataManager)
+        .lookupBaseFile(forkInfo, createKeyArgs("vol", "fork", "dir/file"),
+            baseReader);
+
+    assertEquals("vol", result.getVolumeName());
+    assertEquals("fork", result.getBucketName());
+    assertEquals("dir/file", result.getKeyName());
   }
 
   @Test

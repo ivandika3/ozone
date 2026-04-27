@@ -6,7 +6,7 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 
 - Branch: `research-bucket-forks-feasibility`
 - Remote: `origin/research-bucket-forks-feasibility`
-- Last completed slice: bucket fork OBS rename behavior.
+- Last completed slice: bucket fork FSO exact file lookup/status fallback.
 - Capability state: early MVP skeleton, not yet end-to-end ready.
 
 ## Completed
@@ -27,8 +27,10 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 - [x] Add OBS copy-on-write metadata mutations for base-visible fork keys.
 - [x] Add overwrite-shadowing coverage for base-visible fork keys.
 - [x] Add OBS rename support for base-visible fork keys.
+- [x] Add FSO exact file lookup/status fallback to base snapshots.
 - [x] Add unit/request tests for completed metadata, RPC, client, shell, lookup,
-  list overlay, delete/tombstone, metadata mutation, and OBS rename slices.
+  list overlay, delete/tombstone, metadata mutation, OBS rename, and FSO exact
+  file lookup slices.
 
 ## Next Major Slices
 
@@ -52,7 +54,7 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
   - [x] Add OBS rename tests.
 
 - [ ] Extend overlay support to FSO/file APIs.
-  - [ ] Add `lookupFile` and `getFileStatus` fall-through behavior.
+  - [x] Add `lookupFile` and `getFileStatus` fall-through behavior.
   - [ ] Add directory/file listing merge behavior.
   - [ ] Define directory tombstone behavior for base-visible directories.
   - [ ] Add FSO tests for file lookup, directory listing, delete, and rename.

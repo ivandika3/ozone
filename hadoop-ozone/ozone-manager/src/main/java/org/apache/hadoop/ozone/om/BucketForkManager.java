@@ -29,6 +29,7 @@ import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos;
 import org.apache.ratis.util.function.UncheckedAutoCloseableSupplier;
 
@@ -81,6 +82,44 @@ public class BucketForkManager {
     if (baseKeyInfo == null) {
       throw new OMException("Key:" + targetArgs.getKeyName() + " not found",
           OMException.ResultCodes.KEY_NOT_FOUND);
+    }
+    return rewriteBaseKeyInfo(forkInfo, baseKeyInfo, targetArgs.getKeyName());
+  }
+
+  public OzoneFileStatus lookupBaseFileStatus(BucketForkInfo forkInfo,
+      OmKeyArgs targetArgs, IOmMetadataReader baseReader) throws IOException {
+    if (getTombstoneInfo(forkInfo, targetArgs.getKeyName()) != null) {
+      throw new OMException("Key:" + targetArgs.getKeyName() + " not found",
+          OMException.ResultCodes.FILE_NOT_FOUND);
+    }
+
+    OmKeyArgs sourceArgs = targetArgs.toBuilder()
+        .setVolumeName(forkInfo.getSourceVolumeName())
+        .setBucketName(forkInfo.getSourceBucketName())
+        .build();
+    OzoneFileStatus baseFileStatus = baseReader.getFileStatus(sourceArgs);
+    if (baseFileStatus == null) {
+      throw new OMException("Key:" + targetArgs.getKeyName() + " not found",
+          OMException.ResultCodes.FILE_NOT_FOUND);
+    }
+    return rewriteBaseFileStatus(forkInfo, baseFileStatus);
+  }
+
+  public OmKeyInfo lookupBaseFile(BucketForkInfo forkInfo,
+      OmKeyArgs targetArgs, IOmMetadataReader baseReader) throws IOException {
+    if (getTombstoneInfo(forkInfo, targetArgs.getKeyName()) != null) {
+      throw new OMException("Key:" + targetArgs.getKeyName() + " not found",
+          OMException.ResultCodes.FILE_NOT_FOUND);
+    }
+
+    OmKeyArgs sourceArgs = targetArgs.toBuilder()
+        .setVolumeName(forkInfo.getSourceVolumeName())
+        .setBucketName(forkInfo.getSourceBucketName())
+        .build();
+    OmKeyInfo baseKeyInfo = baseReader.lookupFile(sourceArgs);
+    if (baseKeyInfo == null) {
+      throw new OMException("Key:" + targetArgs.getKeyName() + " not found",
+          OMException.ResultCodes.FILE_NOT_FOUND);
     }
     return rewriteBaseKeyInfo(forkInfo, baseKeyInfo, targetArgs.getKeyName());
   }
@@ -171,6 +210,16 @@ public class BucketForkManager {
         .setBucketName(forkInfo.getTargetBucketName())
         .setKeyName(logicalKeyName)
         .build();
+  }
+
+  private OzoneFileStatus rewriteBaseFileStatus(BucketForkInfo forkInfo,
+      OzoneFileStatus baseFileStatus) {
+    OmKeyInfo baseKeyInfo = baseFileStatus.getKeyInfo();
+    OmKeyInfo forkKeyInfo = baseKeyInfo == null ? null
+        : rewriteBaseKeyInfo(forkInfo, baseKeyInfo,
+            logicalBaseKeyName(forkInfo, baseKeyInfo.getKeyName()));
+    return new OzoneFileStatus(forkKeyInfo, baseFileStatus.getBlockSize(),
+        baseFileStatus.isDirectory());
   }
 
   private String logicalBaseKeyName(BucketForkInfo forkInfo, String keyName) {
