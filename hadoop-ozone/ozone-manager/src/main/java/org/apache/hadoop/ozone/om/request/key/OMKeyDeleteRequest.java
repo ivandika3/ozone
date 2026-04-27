@@ -156,12 +156,20 @@ public class OMKeyDeleteRequest extends OMKeyRequest {
         if (tombstoneInfo == null) {
           throw new OMException("Key not found", KEY_NOT_FOUND);
         }
+        OmBucketInfo omBucketInfo =
+            getBucketInfo(omMetadataManager, volumeName, bucketName);
+        omBucketInfo.decrUsedNamespace(1L, false);
+        omMetadataManager.getBucketTable().addCacheEntry(
+            new CacheKey<>(omMetadataManager.getBucketKey(volumeName,
+                bucketName)),
+            CacheValue.get(trxnLogIndex, omBucketInfo));
         omMetadataManager.getBucketForkTombstoneTable().addCacheEntry(
             new CacheKey<>(tombstoneInfo.getTableKey()),
             CacheValue.get(trxnLogIndex, tombstoneInfo));
         omClientResponse = new OMKeyDeleteResponse(
             omResponse.setDeleteKeyResponse(DeleteKeyResponse.newBuilder())
-                .build(), tombstoneInfo, getBucketLayout());
+                .build(), tombstoneInfo, getBucketLayout(),
+            omBucketInfo.copyObject());
         result = Result.SUCCESS;
         long endNanosDeleteKeySuccessLatencyNs = Time.monotonicNowNanos();
         perfMetrics.setDeleteKeySuccessLatencyNs(

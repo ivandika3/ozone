@@ -65,6 +65,14 @@ public class OMKeyDeleteResponse extends AbstractOMKeyDeleteResponse {
     this.bucketForkTombstoneInfo = bucketForkTombstoneInfo;
   }
 
+  public OMKeyDeleteResponse(@Nonnull OMResponse omResponse,
+      @Nonnull BucketForkTombstoneInfo bucketForkTombstoneInfo,
+      @Nonnull BucketLayout bucketLayout,
+      @Nonnull OmBucketInfo omBucketInfo) {
+    this(omResponse, bucketForkTombstoneInfo, bucketLayout);
+    this.omBucketInfo = omBucketInfo;
+  }
+
   /**
    * For when the request is not successful.
    * For a successful request, the other constructor should be used.
@@ -85,6 +93,11 @@ public class OMKeyDeleteResponse extends AbstractOMKeyDeleteResponse {
       omMetadataManager.getBucketForkTombstoneTable().putWithBatch(
           batchOperation, bucketForkTombstoneInfo.getTableKey(),
           bucketForkTombstoneInfo);
+      if (omBucketInfo != null) {
+        omMetadataManager.getBucketTable().putWithBatch(batchOperation,
+            omMetadataManager.getBucketKey(omBucketInfo.getVolumeName(),
+                omBucketInfo.getBucketName()), omBucketInfo);
+      }
       return;
     }
 

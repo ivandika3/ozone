@@ -125,12 +125,19 @@ public class OMKeyDeleteRequestWithFSO extends OMKeyDeleteRequest {
             getForkBaseFileTombstoneInfo(ozoneManager, omMetadataManager,
                 volumeName, bucketName, keyName, trxnLogIndex);
         if (tombstoneInfo != null) {
+          omBucketInfo = getBucketInfo(omMetadataManager, volumeName,
+              bucketName);
+          omBucketInfo.decrUsedNamespace(1L, false);
+          omMetadataManager.getBucketTable().addCacheEntry(
+              new CacheKey<>(omMetadataManager.getBucketKey(volumeName,
+                  bucketName)),
+              CacheValue.get(trxnLogIndex, omBucketInfo));
           omMetadataManager.getBucketForkTombstoneTable().addCacheEntry(
               new CacheKey<>(tombstoneInfo.getTableKey()),
               CacheValue.get(trxnLogIndex, tombstoneInfo));
           omClientResponse = new OMKeyDeleteResponse(omResponse
               .setDeleteKeyResponse(DeleteKeyResponse.newBuilder()).build(),
-              tombstoneInfo, getBucketLayout());
+              tombstoneInfo, getBucketLayout(), omBucketInfo.copyObject());
           result = Result.SUCCESS;
           long endNanosDeleteKeySuccessLatencyNs = Time.monotonicNowNanos();
           perfMetrics.setDeleteKeySuccessLatencyNs(

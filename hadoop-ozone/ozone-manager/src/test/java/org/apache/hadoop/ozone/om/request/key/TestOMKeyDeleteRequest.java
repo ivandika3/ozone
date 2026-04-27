@@ -30,6 +30,7 @@ import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
+import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
@@ -132,8 +133,12 @@ public class TestOMKeyDeleteRequest extends TestOMKeyRequest {
     String snapshotName = "snap";
     UUID snapshotId = UUID.randomUUID();
 
-    OMRequestTestUtils.addVolumeAndBucketToDB(volumeName, bucketName,
-        omMetadataManager, getBucketLayout());
+    OMRequestTestUtils.addVolumeAndBucketToDB(volumeName, omMetadataManager,
+        OmBucketInfo.newBuilder()
+            .setVolumeName(volumeName)
+            .setBucketName(bucketName)
+            .setBucketLayout(getBucketLayout())
+            .setUsedNamespace(5L));
     BucketForkInfo forkInfo = BucketForkInfo.newBuilder()
         .setForkId(UUID.randomUUID())
         .setSourceVolumeName(volumeName)
@@ -197,6 +202,9 @@ public class TestOMKeyDeleteRequest extends TestOMKeyRequest {
     assertEquals(keyName, tombstone.getLogicalPath());
     assertEquals(snapshotId, tombstone.getBaseSnapshotId());
     assertEquals(100L, tombstone.getUpdateId());
+    assertEquals(4L, omMetadataManager.getBucketTable().get(
+        omMetadataManager.getBucketKey(volumeName, bucketName))
+        .getUsedNamespace());
     assertEquals(0, omMetadataManager.countRowsInTable(
         omMetadataManager.getDeletedTable()));
     if (getBucketLayout() == BucketLayout.FILE_SYSTEM_OPTIMIZED) {
