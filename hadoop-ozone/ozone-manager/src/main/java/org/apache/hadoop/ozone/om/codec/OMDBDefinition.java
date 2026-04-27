@@ -29,6 +29,7 @@ import org.apache.hadoop.hdds.utils.db.StringCodec;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.om.OMConfigKeys;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmDBAccessIdInfo;
 import org.apache.hadoop.ozone.om.helpers.OmDBTenantState;
@@ -336,11 +337,11 @@ public final class OMDBDefinition extends DBDefinition.WithMap {
           BucketForkInfo.getCodec());
 
   public static final String BUCKET_FORK_TOMBSTONE_TABLE = "bucketForkTombstoneTable";
-  /** bucketForkTombstoneTable: /targetVolume/targetBucket/key :- base key. */
-  public static final DBColumnFamilyDefinition<String, String> BUCKET_FORK_TOMBSTONE_TABLE_DEF
+  /** bucketForkTombstoneTable: /targetVolume/targetBucket/key :- tombstone. */
+  public static final DBColumnFamilyDefinition<String, BucketForkTombstoneInfo> BUCKET_FORK_TOMBSTONE_TABLE_DEF
       = new DBColumnFamilyDefinition<>(BUCKET_FORK_TOMBSTONE_TABLE,
           StringCodec.get(),
-          StringCodec.get());
+          BucketForkTombstoneInfo.getCodec());
 
   //---------------------------------------------------------------------------
   private static final Map<String, DBColumnFamilyDefinition<?, ?>> COLUMN_FAMILIES

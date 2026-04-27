@@ -39,6 +39,7 @@ import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
 import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
 import org.apache.hadoop.ozone.common.BlockGroup;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.ListOpenFilesResult;
@@ -496,7 +497,7 @@ public interface OMMetadataManager extends DBStoreHAManager, AutoCloseable {
 
   Table<String, BucketForkInfo> getBucketForkTable();
 
-  Table<String, String> getBucketForkTombstoneTable();
+  Table<String, BucketForkTombstoneInfo> getBucketForkTombstoneTable();
 
   Table<String, CompactionLogEntry> getCompactionLogTable();
 

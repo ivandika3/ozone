@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import java.util.UUID;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmVolumeArgs;
@@ -182,7 +183,18 @@ public class TestOMBucketForkCreateRequest extends TestBucketRequest {
     omMetadataManager.getBucketForkTable().put(bucketForkInfo.getTableKey(),
         bucketForkInfo);
     omMetadataManager.getBucketForkTombstoneTable().put(
-        bucketForkInfo.getTableKey() + "/deleted-key", "true");
+        BucketForkTombstoneInfo.getTableKey(TARGET_VOLUME, TARGET_BUCKET,
+            "deleted-key"),
+        BucketForkTombstoneInfo.newBuilder()
+            .setForkId(bucketForkInfo.getForkId())
+            .setTargetVolumeName(TARGET_VOLUME)
+            .setTargetBucketName(TARGET_BUCKET)
+            .setBaseSnapshotId(bucketForkInfo.getBaseSnapshotId())
+            .setLogicalPath("deleted-key")
+            .setType(BucketForkTombstoneInfo.BucketForkTombstoneType.KEY)
+            .setCreationTime(Time.now())
+            .setUpdateId(12L)
+            .build());
 
     OMRequest deleteForkRequest = OMRequest.newBuilder()
         .setClientId("client")

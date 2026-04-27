@@ -900,6 +900,15 @@ enum BucketForkStatusProto {
 }
 
 /**
+ * BucketForkTombstoneType - fork-local delete marker types.
+ */
+enum BucketForkTombstoneTypeProto {
+  KEY = 1;
+  DIRECTORY = 2;
+  PREFIX = 3;
+}
+
+/**
  * SnapshotInfo table entry for Bucket/Volume snapshot metadata
  */
 message SnapshotInfo {
@@ -953,6 +962,21 @@ message BucketForkInfo {
   optional uint64 quotaBaselineBytes = 13;
   optional uint64 quotaBaselineNamespace = 14;
   optional bool createdFromActiveBucket = 15;
+}
+
+/**
+ * BucketForkTombstoneInfo table entry for fork-local delete markers.
+ */
+message BucketForkTombstoneInfo {
+  optional hadoop.hdds.UUID forkID = 1;
+  optional string targetVolumeName = 2;
+  optional string targetBucketName = 3;
+  optional hadoop.hdds.UUID baseSnapshotID = 4;
+  optional string logicalPath = 5;
+  optional uint64 objectID = 6;
+  optional uint64 creationTime = 7;
+  optional uint64 updateID = 8;
+  optional BucketForkTombstoneTypeProto type = 9;
 }
 
 message SnapshotDiffJobProto {

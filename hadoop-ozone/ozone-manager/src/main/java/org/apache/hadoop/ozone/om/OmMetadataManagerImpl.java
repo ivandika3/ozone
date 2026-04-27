@@ -98,6 +98,7 @@ import org.apache.hadoop.ozone.om.codec.OMDBDefinition;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.ListOpenFilesResult;
@@ -185,7 +186,7 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
   private Table<String, SnapshotInfo> snapshotInfoTable;
   private Table<String, String> snapshotRenamedTable;
   private Table<String, BucketForkInfo> bucketForkTable;
-  private Table<String, String> bucketForkTombstoneTable;
+  private Table<String, BucketForkTombstoneInfo> bucketForkTombstoneTable;
   private Table<String, CompactionLogEntry> compactionLogTable;
 
   private OzoneManager ozoneManager;
@@ -1719,7 +1720,7 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
   }
 
   @Override
-  public Table<String, String> getBucketForkTombstoneTable() {
+  public Table<String, BucketForkTombstoneInfo> getBucketForkTombstoneTable() {
     return bucketForkTombstoneTable;
   }
 
