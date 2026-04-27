@@ -22,12 +22,15 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import org.apache.hadoop.ozone.ClientVersion;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos;
+import org.apache.ratis.util.function.UncheckedAutoCloseableSupplier;
 
 /**
  * Coordinates bucket-fork metadata lookups for future overlay reads.
@@ -76,6 +79,39 @@ public class BucketForkManager {
         .build();
     OmKeyInfo baseKeyInfo = baseReader.lookupKey(sourceArgs);
     return rewriteBaseKeyInfo(forkInfo, baseKeyInfo, targetArgs.getKeyName());
+  }
+
+  public OmKeyInfo getForkBaseKeyForCopyOnWrite(OzoneManager ozoneManager,
+      String volumeName, String bucketName, String keyName,
+      long forkObjectId, long updateId) throws IOException {
+    BucketForkInfo forkInfo = getActiveForkInfo(volumeName, bucketName);
+    if (forkInfo == null) {
+      return null;
+    }
+
+    OmKeyArgs targetArgs = new OmKeyArgs.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setKeyName(keyName)
+        .build();
+    OmKeyInfo baseKeyInfo;
+    try (UncheckedAutoCloseableSupplier<? extends IOmMetadataReader> snapshot =
+             ozoneManager.getOmSnapshotManager().getSnapshot(
+                 forkInfo.getBaseSnapshotId())) {
+      baseKeyInfo = lookupBaseKey(forkInfo, targetArgs, snapshot.get());
+    } catch (OMException ex) {
+      if (ex.getResult() == OMException.ResultCodes.KEY_NOT_FOUND) {
+        return null;
+      }
+      throw ex;
+    }
+
+    OzoneManagerProtocolProtos.KeyInfo forkKeyProto =
+        baseKeyInfo.getProtobuf(ClientVersion.CURRENT_VERSION).toBuilder()
+            .setObjectID(forkObjectId)
+            .setUpdateID(updateId)
+            .build();
+    return OmKeyInfo.getFromProtobuf(forkKeyProto);
   }
 
   public ListKeysResult listKeys(BucketForkInfo forkInfo,

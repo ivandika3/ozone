@@ -20,6 +20,7 @@ package org.apache.hadoop.ozone.om.request.s3.tagging;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
@@ -92,6 +93,41 @@ public class TestS3PutObjectTaggingRequest extends TestOMKeyRequest {
       assertNotNull(value);
       assertEquals(tag.getValue(), value);
     }
+  }
+
+  @Test
+  public void testPutObjectTaggingOnBaseVisibleForkKeyClonesMetadata()
+      throws Exception {
+    String sourceBucketName = bucketName + "-source";
+    String snapshotName = "snap";
+    UUID snapshotId = UUID.randomUUID();
+    long forkObjectId = 999L;
+    Map<String, String> tags = getTags(3);
+
+    OMRequestTestUtils.addVolumeAndBucketToDB(volumeName, bucketName,
+        omMetadataManager, getBucketLayout());
+    setupBaseVisibleForkKey(sourceBucketName, snapshotName, snapshotId,
+        123L, forkObjectId);
+
+    String ozoneKey = omMetadataManager.getOzoneKey(volumeName, bucketName,
+        keyName);
+    assertNull(omMetadataManager.getKeyTable(getBucketLayout()).get(ozoneKey));
+
+    OMRequest modifiedOmRequest =
+        doPreExecute(volumeName, bucketName, keyName, tags);
+    S3PutObjectTaggingRequest request =
+        getPutObjectTaggingRequest(modifiedOmRequest);
+
+    OMClientResponse omClientResponse =
+        request.validateAndUpdateCache(ozoneManager, 2L);
+
+    assertEquals(OzoneManagerProtocolProtos.Status.OK,
+        omClientResponse.getOMResponse().getStatus());
+    OmKeyInfo forkLocalKeyInfo =
+        omMetadataManager.getKeyTable(getBucketLayout()).get(ozoneKey);
+    assertNotNull(forkLocalKeyInfo);
+    assertEquals(forkObjectId, forkLocalKeyInfo.getObjectID());
+    assertEquals(tags, forkLocalKeyInfo.getTags());
   }
 
   @Test

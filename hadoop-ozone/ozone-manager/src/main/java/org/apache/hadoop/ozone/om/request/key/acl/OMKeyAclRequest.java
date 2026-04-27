@@ -26,6 +26,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
 import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
 import org.apache.hadoop.ozone.audit.AuditLogger;
+import org.apache.hadoop.ozone.om.BucketForkManager;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.ResolvedBucket;
@@ -103,7 +104,12 @@ public abstract class OMKeyAclRequest extends OMClientRequest {
           .get(dbKey);
 
       if (omKeyInfo == null) {
-        throw new OMException(OMException.ResultCodes.KEY_NOT_FOUND);
+        omKeyInfo = new BucketForkManager(omMetadataManager)
+            .getForkBaseKeyForCopyOnWrite(ozoneManager, volume, bucket, key,
+                ozoneManager.getObjectIdFromTxId(trxnLogIndex), trxnLogIndex);
+        if (omKeyInfo == null) {
+          throw new OMException(OMException.ResultCodes.KEY_NOT_FOUND);
+        }
       }
 
       OmKeyInfo.Builder builder = omKeyInfo.toBuilder();
@@ -259,4 +265,3 @@ public abstract class OMKeyAclRequest extends OMClientRequest {
     return bucketLayout;
   }
 }
-

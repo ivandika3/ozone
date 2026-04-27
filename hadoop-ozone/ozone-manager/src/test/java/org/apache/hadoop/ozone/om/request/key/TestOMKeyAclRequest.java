@@ -20,6 +20,7 @@ package org.apache.hadoop.ozone.om.request.key;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.List;
 import java.util.UUID;
@@ -188,6 +189,40 @@ public class TestOMKeyAclRequest extends TestOMKeyRequest {
     OmKeyInfo newKeyInfo = omMetadataManager.getKeyTable(getBucketLayout()).get(ozoneKey);
     assertEquals(newKeyInfo.getAcls().get(0), acl);
     assertEquals(omKeyInfo.getKeyName(), newKeyInfo.getKeyName());
+  }
+
+  @Test
+  public void testSetAclOnBaseVisibleForkKeyClonesMetadata()
+      throws Exception {
+    String sourceBucketName = bucketName + "-source";
+    String snapshotName = "snap";
+    UUID snapshotId = UUID.randomUUID();
+    long forkObjectId = 999L;
+
+    OMRequestTestUtils.addVolumeAndBucketToDB(volumeName, bucketName,
+        omMetadataManager, getBucketLayout());
+    setupBaseVisibleForkKey(sourceBucketName, snapshotName, snapshotId,
+        123L, forkObjectId);
+    String ozoneKey = omMetadataManager.getOzoneKey(volumeName, bucketName,
+        keyName);
+    assertNull(omMetadataManager.getKeyTable(getBucketLayout()).get(ozoneKey));
+
+    OzoneAcl acl = OzoneAcl.parseAcl("user:bilbo:rwdlncxy[ACCESS]");
+    OMKeyAclRequest omKeySetAclRequest =
+        getOmKeySetAclRequest(createSetAclKeyRequest(acl));
+    OMRequest preExecuteRequest = omKeySetAclRequest.preExecute(ozoneManager);
+    omKeySetAclRequest = getOmKeySetAclRequest(preExecuteRequest);
+
+    OMClientResponse omClientResponse = omKeySetAclRequest
+        .validateAndUpdateCache(ozoneManager, 100L);
+
+    assertEquals(OzoneManagerProtocolProtos.Status.OK,
+        omClientResponse.getOMResponse().getStatus());
+    OmKeyInfo forkLocalKeyInfo =
+        omMetadataManager.getKeyTable(getBucketLayout()).get(ozoneKey);
+    assertNotNull(forkLocalKeyInfo);
+    assertEquals(forkObjectId, forkLocalKeyInfo.getObjectID());
+    assertEquals(acl, forkLocalKeyInfo.getAcls().get(0));
   }
 
   /**

@@ -19,9 +19,11 @@ package org.apache.hadoop.ozone.om.request.key;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.io.IOException;
 import java.util.UUID;
+import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.request.OMRequestTestUtils;
 import org.apache.hadoop.ozone.om.response.OMClientResponse;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos;
@@ -29,6 +31,7 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMReque
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMResponse;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.SetTimesRequest;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 /**
  * Test cases for OMSetTimesRequest.
@@ -59,6 +62,38 @@ public class TestOMSetTimesRequest extends TestOMKeyRequest {
         omMetadataManager.getKeyTable(getBucketLayout()).get(ozoneKey)
             .getModificationTime();
     assertEquals(mtime, keyMtime);
+  }
+
+  @Test
+  public void testSetTimesOnBaseVisibleForkKeyClonesMetadata()
+      throws Exception {
+    String sourceBucketName = bucketName + "-source";
+    String snapshotName = "snap";
+    UUID snapshotId = UUID.randomUUID();
+    long baseObjectId = 123L;
+    long forkObjectId = 999L;
+    long mtime = 2000L;
+
+    OMRequestTestUtils.addVolumeAndBucketToDB(volumeName, bucketName,
+        omMetadataManager, getBucketLayout());
+    setupBaseVisibleForkKey(sourceBucketName, snapshotName, snapshotId,
+        baseObjectId, forkObjectId);
+
+    String ozoneKey = omMetadataManager.getOzoneKey(volumeName, bucketName,
+        keyName);
+    assertNull(omMetadataManager.getKeyTable(getBucketLayout()).get(ozoneKey));
+
+    executeAndReturn(mtime);
+
+    OmKeyInfo forkLocalKeyInfo =
+        omMetadataManager.getKeyTable(getBucketLayout()).get(ozoneKey);
+    assertNotNull(forkLocalKeyInfo);
+    assertEquals(volumeName, forkLocalKeyInfo.getVolumeName());
+    assertEquals(bucketName, forkLocalKeyInfo.getBucketName());
+    assertEquals(keyName, forkLocalKeyInfo.getKeyName());
+    assertEquals(mtime, forkLocalKeyInfo.getModificationTime());
+    assertEquals(forkObjectId, forkLocalKeyInfo.getObjectID());
+    Mockito.verify(ozoneManager.getOmSnapshotManager()).getSnapshot(snapshotId);
   }
 
   protected void executeAndReturn(long mtime)

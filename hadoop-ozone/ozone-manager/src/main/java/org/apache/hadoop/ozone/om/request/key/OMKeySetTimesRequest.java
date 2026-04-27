@@ -28,6 +28,7 @@ import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.audit.AuditLogger;
 import org.apache.hadoop.ozone.audit.OMAction;
+import org.apache.hadoop.ozone.om.BucketForkManager;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
@@ -225,7 +226,11 @@ public class OMKeySetTimesRequest extends OMKeyRequest {
           .get(dbKey);
 
       if (omKeyInfo == null) {
-        throw new OMException(OMException.ResultCodes.KEY_NOT_FOUND);
+        omKeyInfo = getForkBaseKeyForCopyOnWrite(ozoneManager,
+            omMetadataManager, volume, bucket, key, trxnLogIndex);
+        if (omKeyInfo == null) {
+          throw new OMException(OMException.ResultCodes.KEY_NOT_FOUND);
+        }
       }
 
       operationResult = true;
@@ -259,5 +264,15 @@ public class OMKeySetTimesRequest extends OMKeyRequest {
 
     return omClientResponse;
   }
-}
 
+  private OmKeyInfo getForkBaseKeyForCopyOnWrite(OzoneManager ozoneManager,
+      OMMetadataManager omMetadataManager, String volume,
+      String bucket, String key, long trxnLogIndex)
+      throws IOException {
+    BucketForkManager bucketForkManager =
+        new BucketForkManager(omMetadataManager);
+    return bucketForkManager.getForkBaseKeyForCopyOnWrite(ozoneManager,
+        volume, bucket, key,
+        ozoneManager.getObjectIdFromTxId(trxnLogIndex), trxnLogIndex);
+  }
+}

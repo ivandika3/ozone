@@ -69,11 +69,13 @@ import org.apache.hadoop.ozone.om.OMPerformanceMetrics;
 import org.apache.hadoop.ozone.om.OmConfig;
 import org.apache.hadoop.ozone.om.OmMetadataManagerImpl;
 import org.apache.hadoop.ozone.om.OmMetadataReader;
+import org.apache.hadoop.ozone.om.OmSnapshot;
 import org.apache.hadoop.ozone.om.OmSnapshotManager;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.OzoneManagerPrepareState;
 import org.apache.hadoop.ozone.om.ResolvedBucket;
 import org.apache.hadoop.ozone.om.ScmClient;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
@@ -307,6 +309,45 @@ public class TestOMKeyRequest {
 
   public BucketLayout getBucketLayout() {
     return BucketLayout.DEFAULT;
+  }
+
+  protected void setupBaseVisibleForkKey(String sourceBucketName,
+      String snapshotName, UUID snapshotId, long baseObjectId,
+      long forkObjectId) throws Exception {
+    BucketForkInfo forkInfo = BucketForkInfo.newBuilder()
+        .setForkId(UUID.randomUUID())
+        .setSourceVolumeName(volumeName)
+        .setSourceBucketName(sourceBucketName)
+        .setTargetVolumeName(volumeName)
+        .setTargetBucketName(bucketName)
+        .setBaseSnapshotId(snapshotId)
+        .setBaseSnapshotName(snapshotName)
+        .setStatus(BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE)
+        .build();
+    omMetadataManager.getBucketForkTable().put(
+        BucketForkInfo.getTableKey(volumeName, bucketName), forkInfo);
+    when(ozoneManager.getObjectIdFromTxId(anyLong())).thenReturn(forkObjectId);
+
+    OmSnapshot baseSnapshot = Mockito.mock(OmSnapshot.class);
+    Mockito.when(baseSnapshot.lookupKey(Mockito.argThat(args ->
+        args != null
+            && volumeName.equals(args.getVolumeName())
+            && sourceBucketName.equals(args.getBucketName())
+            && keyName.equals(args.getKeyName()))))
+        .thenReturn(new OmKeyInfo.Builder()
+            .setVolumeName(volumeName)
+            .setBucketName(sourceBucketName)
+            .setKeyName(".snapshot/" + snapshotName + "/" + keyName)
+            .setObjectID(baseObjectId)
+            .setModificationTime(100L)
+            .setReplicationConfig(replicationConfig)
+            .build());
+    UncheckedAutoCloseableSupplier<OmSnapshot> snapshotSupplier =
+        mock(UncheckedAutoCloseableSupplier.class);
+    when(snapshotSupplier.get()).thenReturn(baseSnapshot);
+    OmSnapshotManager snapshotManager = mock(OmSnapshotManager.class);
+    when(snapshotManager.getSnapshot(snapshotId)).thenReturn(snapshotSupplier);
+    when(ozoneManager.getOmSnapshotManager()).thenReturn(snapshotManager);
   }
 
   @AfterEach
