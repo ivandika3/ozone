@@ -23,7 +23,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.util.Collections;
 import java.util.UUID;
+import org.apache.hadoop.hdds.client.BlockID;
 import org.apache.hadoop.ozone.om.OmSnapshot;
 import org.apache.hadoop.ozone.om.OmSnapshotManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
@@ -33,6 +35,8 @@ import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfo;
+import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfoGroup;
 import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
 import org.apache.hadoop.ozone.om.request.OMRequestTestUtils;
 import org.apache.hadoop.ozone.om.response.OMClientResponse;
@@ -138,6 +142,7 @@ public class TestOMKeyDeleteRequest extends TestOMKeyRequest {
             .setVolumeName(volumeName)
             .setBucketName(bucketName)
             .setBucketLayout(getBucketLayout())
+            .setUsedBytes(100L)
             .setUsedNamespace(5L));
     BucketForkInfo forkInfo = BucketForkInfo.newBuilder()
         .setForkId(UUID.randomUUID())
@@ -153,17 +158,24 @@ public class TestOMKeyDeleteRequest extends TestOMKeyRequest {
         BucketForkInfo.getTableKey(volumeName, bucketName), forkInfo);
 
     OmSnapshot baseSnapshot = Mockito.mock(OmSnapshot.class);
+    OmKeyInfo baseKeyInfo = new OmKeyInfo.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(sourceBucketName)
+        .setKeyName(".snapshot/" + snapshotName + "/" + keyName)
+        .setObjectID(123L)
+        .setReplicationConfig(replicationConfig)
+        .addOmKeyLocationInfoGroup(new OmKeyLocationInfoGroup(0L,
+            Collections.singletonList(new OmKeyLocationInfo.Builder()
+                .setBlockID(new BlockID(1L, 1L))
+                .setLength(100L)
+                .build()), false))
+        .build();
     Mockito.when(baseSnapshot.lookupKey(Mockito.argThat(args ->
         args != null
             && volumeName.equals(args.getVolumeName())
             && sourceBucketName.equals(args.getBucketName())
             && keyName.equals(args.getKeyName()))))
-        .thenReturn(new OmKeyInfo.Builder()
-            .setVolumeName(volumeName)
-            .setBucketName(sourceBucketName)
-            .setKeyName(".snapshot/" + snapshotName + "/" + keyName)
-            .setObjectID(123L)
-            .build());
+        .thenReturn(baseKeyInfo);
     UncheckedAutoCloseableSupplier<OmSnapshot> snapshotSupplier =
         Mockito.mock(UncheckedAutoCloseableSupplier.class);
     Mockito.when(snapshotSupplier.get()).thenReturn(baseSnapshot);
@@ -172,12 +184,6 @@ public class TestOMKeyDeleteRequest extends TestOMKeyRequest {
         .thenReturn(snapshotSupplier);
     Mockito.when(ozoneManager.getOmSnapshotManager()).thenReturn(
         snapshotManager);
-    OmKeyInfo baseKeyInfo = new OmKeyInfo.Builder()
-        .setVolumeName(volumeName)
-        .setBucketName(sourceBucketName)
-        .setKeyName(".snapshot/" + snapshotName + "/" + keyName)
-        .setObjectID(123L)
-        .build();
     Mockito.when(baseSnapshot.getFileStatus(Mockito.argThat(args ->
         args != null
             && volumeName.equals(args.getVolumeName())
@@ -205,6 +211,9 @@ public class TestOMKeyDeleteRequest extends TestOMKeyRequest {
     assertEquals(4L, omMetadataManager.getBucketTable().get(
         omMetadataManager.getBucketKey(volumeName, bucketName))
         .getUsedNamespace());
+    assertEquals(0L, omMetadataManager.getBucketTable().get(
+        omMetadataManager.getBucketKey(volumeName, bucketName))
+        .getUsedBytes());
     assertEquals(0, omMetadataManager.countRowsInTable(
         omMetadataManager.getDeletedTable()));
     if (getBucketLayout() == BucketLayout.FILE_SYSTEM_OPTIMIZED) {

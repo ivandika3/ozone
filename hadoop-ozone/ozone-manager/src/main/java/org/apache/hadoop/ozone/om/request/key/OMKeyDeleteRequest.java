@@ -150,14 +150,18 @@ public class OMKeyDeleteRequest extends OMKeyRequest {
           omMetadataManager.getKeyTable(getBucketLayout()).get(objectKey);
       boolean deletedForkBaseKey = false;
       if (omKeyInfo == null) {
-        BucketForkTombstoneInfo tombstoneInfo = getForkBaseKeyTombstoneInfo(
+        ForkBaseDeleteInfo forkBaseDeleteInfo = getForkBaseKeyDeleteInfo(
             ozoneManager, omMetadataManager, volumeName, bucketName, keyName,
             trxnLogIndex, keyArgs.getModificationTime());
-        if (tombstoneInfo == null) {
+        if (forkBaseDeleteInfo == null) {
           throw new OMException("Key not found", KEY_NOT_FOUND);
         }
+        BucketForkTombstoneInfo tombstoneInfo =
+            forkBaseDeleteInfo.getTombstoneInfo();
         OmBucketInfo omBucketInfo =
             getBucketInfo(omMetadataManager, volumeName, bucketName);
+        omBucketInfo.decrUsedBytes(forkBaseDeleteInfo.getQuotaReleased(),
+            false);
         omBucketInfo.decrUsedNamespace(1L, false);
         omMetadataManager.getBucketTable().addCacheEntry(
             new CacheKey<>(omMetadataManager.getBucketKey(volumeName,
@@ -278,7 +282,7 @@ public class OMKeyDeleteRequest extends OMKeyRequest {
     return omClientResponse;
   }
 
-  private BucketForkTombstoneInfo getForkBaseKeyTombstoneInfo(
+  private ForkBaseDeleteInfo getForkBaseKeyDeleteInfo(
       OzoneManager ozoneManager, OMMetadataManager omMetadataManager,
       String volumeName, String bucketName, String keyName,
       long trxnLogIndex, long modificationTime) throws IOException {
@@ -303,7 +307,8 @@ public class OMKeyDeleteRequest extends OMKeyRequest {
           snapshot.get());
     }
 
-    return BucketForkTombstoneInfo.newBuilder()
+    BucketForkTombstoneInfo tombstoneInfo =
+        BucketForkTombstoneInfo.newBuilder()
         .setForkId(forkInfo.getForkId())
         .setTargetVolumeName(forkInfo.getTargetVolumeName())
         .setTargetBucketName(forkInfo.getTargetBucketName())
@@ -314,6 +319,27 @@ public class OMKeyDeleteRequest extends OMKeyRequest {
         .setUpdateId(trxnLogIndex)
         .setType(BucketForkTombstoneInfo.BucketForkTombstoneType.KEY)
         .build();
+    return new ForkBaseDeleteInfo(tombstoneInfo,
+        sumBlockLengths(baseKeyInfo));
+  }
+
+  protected static final class ForkBaseDeleteInfo {
+    private final BucketForkTombstoneInfo tombstoneInfo;
+    private final long quotaReleased;
+
+    protected ForkBaseDeleteInfo(BucketForkTombstoneInfo tombstoneInfo,
+        long quotaReleased) {
+      this.tombstoneInfo = tombstoneInfo;
+      this.quotaReleased = quotaReleased;
+    }
+
+    protected BucketForkTombstoneInfo getTombstoneInfo() {
+      return tombstoneInfo;
+    }
+
+    protected long getQuotaReleased() {
+      return quotaReleased;
+    }
   }
 
   /**

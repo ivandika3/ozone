@@ -121,12 +121,16 @@ public class OMKeyDeleteRequestWithFSO extends OMKeyDeleteRequest {
           ozoneManager.getDefaultReplicationConfig());
 
       if (keyStatus == null) {
-        BucketForkTombstoneInfo tombstoneInfo =
-            getForkBaseFileTombstoneInfo(ozoneManager, omMetadataManager,
+        ForkBaseDeleteInfo forkBaseDeleteInfo =
+            getForkBaseFileDeleteInfo(ozoneManager, omMetadataManager,
                 volumeName, bucketName, keyName, trxnLogIndex);
-        if (tombstoneInfo != null) {
+        if (forkBaseDeleteInfo != null) {
+          BucketForkTombstoneInfo tombstoneInfo =
+              forkBaseDeleteInfo.getTombstoneInfo();
           omBucketInfo = getBucketInfo(omMetadataManager, volumeName,
               bucketName);
+          omBucketInfo.decrUsedBytes(forkBaseDeleteInfo.getQuotaReleased(),
+              false);
           omBucketInfo.decrUsedNamespace(1L, false);
           omMetadataManager.getBucketTable().addCacheEntry(
               new CacheKey<>(omMetadataManager.getBucketKey(volumeName,
@@ -278,7 +282,7 @@ public class OMKeyDeleteRequestWithFSO extends OMKeyDeleteRequest {
     return omClientResponse;
   }
 
-  private BucketForkTombstoneInfo getForkBaseFileTombstoneInfo(
+  private ForkBaseDeleteInfo getForkBaseFileDeleteInfo(
       OzoneManager ozoneManager, OMMetadataManager omMetadataManager,
       String volumeName, String bucketName, String keyName,
       long transactionLogIndex) throws IOException {
@@ -309,7 +313,8 @@ public class OMKeyDeleteRequestWithFSO extends OMKeyDeleteRequest {
       throw ex;
     }
 
-    return BucketForkTombstoneInfo.newBuilder()
+    BucketForkTombstoneInfo tombstoneInfo =
+        BucketForkTombstoneInfo.newBuilder()
         .setForkId(forkInfo.getForkId())
         .setTargetVolumeName(volumeName)
         .setTargetBucketName(bucketName)
@@ -322,6 +327,8 @@ public class OMKeyDeleteRequestWithFSO extends OMKeyDeleteRequest {
             ? BucketForkTombstoneInfo.BucketForkTombstoneType.DIRECTORY
             : BucketForkTombstoneInfo.BucketForkTombstoneType.KEY)
         .build();
+    return new ForkBaseDeleteInfo(tombstoneInfo,
+        sumBlockLengths(baseFileStatus.getKeyInfo()));
   }
 
   @Override
