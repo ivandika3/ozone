@@ -79,6 +79,8 @@ import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfo;
+import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfoGroup;
 import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
 import org.apache.hadoop.ozone.om.request.OMClientRequest;
 import org.apache.hadoop.ozone.om.request.OMRequestTestUtils;
@@ -314,6 +316,14 @@ public class TestOMKeyRequest {
   protected void setupBaseVisibleForkKey(String sourceBucketName,
       String snapshotName, UUID snapshotId, long baseObjectId,
       long forkObjectId) throws Exception {
+    setupBaseVisibleForkKey(sourceBucketName, snapshotName, snapshotId,
+        baseObjectId, forkObjectId, new ArrayList<>());
+  }
+
+  protected void setupBaseVisibleForkKey(String sourceBucketName,
+      String snapshotName, UUID snapshotId, long baseObjectId,
+      long forkObjectId, List<OmKeyLocationInfo> baseLocationList)
+      throws Exception {
     BucketForkInfo forkInfo = BucketForkInfo.newBuilder()
         .setForkId(UUID.randomUUID())
         .setSourceVolumeName(volumeName)
@@ -341,6 +351,8 @@ public class TestOMKeyRequest {
             .setObjectID(baseObjectId)
             .setModificationTime(100L)
             .setReplicationConfig(replicationConfig)
+            .addOmKeyLocationInfoGroup(new OmKeyLocationInfoGroup(
+                0L, baseLocationList, false))
             .build());
     UncheckedAutoCloseableSupplier<OmSnapshot> snapshotSupplier =
         mock(UncheckedAutoCloseableSupplier.class);

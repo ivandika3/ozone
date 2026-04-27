@@ -6,7 +6,7 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 
 - Branch: `research-bucket-forks-feasibility`
 - Remote: `origin/research-bucket-forks-feasibility`
-- Last completed slice: bucket fork delete/tombstone write path.
+- Last completed slice: bucket fork copy-on-write metadata mutations.
 - Capability state: early MVP skeleton, not yet end-to-end ready.
 
 ## Completed
@@ -25,6 +25,7 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 - [x] Add key delete tombstones for base-visible fork keys.
 - [x] Add multi-key delete tombstones for base-visible fork keys.
 - [x] Add OBS copy-on-write metadata mutations for base-visible fork keys.
+- [x] Add overwrite-shadowing coverage for base-visible fork keys.
 - [x] Add unit/request tests for completed metadata, RPC, client, shell, lookup,
   list overlay, delete/tombstone, and metadata mutation slices.
 
@@ -37,10 +38,10 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
   - [x] Preserve existing deleted-table flow for fork-local keys.
   - [x] Add OBS tests for deleting fork-local keys and tombstoning base keys.
 
-- [ ] Implement copy-on-write metadata mutations.
+- [x] Implement copy-on-write metadata mutations.
   - [x] Clone base-visible key metadata into the fork namespace before mutation.
   - [x] Apply set-times, tags, ACL, and similar mutations to fork-owned metadata.
-  - [ ] Ensure overwrites shadow base entries without copying base data blocks.
+  - [x] Ensure overwrites shadow base entries without copying base data blocks.
   - [x] Add request tests for COW mutation paths.
 
 - [ ] Implement rename behavior for fork buckets.

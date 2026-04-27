@@ -784,6 +784,72 @@ public class TestOMKeyCommitRequest extends TestOMKeyRequest {
   }
 
   @Test
+  public void testValidateAndUpdateCacheOverBaseVisibleForkKey() throws Exception {
+    String sourceBucketName = UUID.randomUUID().toString();
+    String snapshotName = UUID.randomUUID().toString();
+    UUID snapshotId = UUID.randomUUID();
+    long baseObjectId = 2000L;
+    long forkObjectId = 3000L;
+
+    List<OmKeyLocationInfo> baseLocationList = getKeyLocation(10).subList(5, 10)
+        .stream()
+        .map(OmKeyLocationInfo::getFromProtobuf)
+        .collect(Collectors.toList());
+    setupBaseVisibleForkKey(sourceBucketName, snapshotName, snapshotId,
+        baseObjectId, forkObjectId, baseLocationList);
+
+    OMRequest modifiedOmRequest = doPreExecute(createCommitKeyRequest());
+    OMKeyCommitRequest omKeyCommitRequest =
+        getOmKeyCommitRequest(modifiedOmRequest);
+    KeyArgs keyArgs = modifiedOmRequest.getCommitKeyRequest().getKeyArgs();
+
+    OMRequestTestUtils.addVolumeAndBucketToDB(volumeName, bucketName,
+        omMetadataManager, omKeyCommitRequest.getBucketLayout());
+
+    List<OmKeyLocationInfo> allocatedLocationList =
+        keyArgs.getKeyLocationsList().stream()
+            .map(OmKeyLocationInfo::getFromProtobuf)
+            .collect(Collectors.toList());
+    String openKey = addKeyToOpenKeyTable(allocatedLocationList);
+    String ozoneKey = getOzonePathKey();
+
+    assertNotNull(omMetadataManager.getOpenKeyTable(
+        omKeyCommitRequest.getBucketLayout()).get(openKey));
+    assertNull(omMetadataManager.getKeyTable(
+        omKeyCommitRequest.getBucketLayout()).get(ozoneKey));
+
+    OMClientResponse omClientResponse =
+        omKeyCommitRequest.validateAndUpdateCache(ozoneManager, 102L);
+
+    assertEquals(OK, omClientResponse.getOMResponse().getStatus());
+    assertNull(omMetadataManager.getOpenKeyTable(
+        omKeyCommitRequest.getBucketLayout()).get(openKey));
+
+    OmKeyInfo omKeyInfo = omMetadataManager.getKeyTable(
+        omKeyCommitRequest.getBucketLayout()).get(ozoneKey);
+    assertNotNull(omKeyInfo);
+    assertEquals(bucketName, omKeyInfo.getBucketName());
+    assertEquals(allocatedLocationList,
+        omKeyInfo.getLatestVersionLocations().getLocationList());
+    assertThat(omKeyInfo.getLatestVersionLocations().getLocationList())
+        .doesNotContainAnyElementsOf(baseLocationList);
+
+    Map<String, RepeatedOmKeyInfo> toDeleteKeyList =
+        ((OMKeyCommitResponse) omClientResponse).getKeysToDelete();
+    assertNull(toDeleteKeyList);
+
+    BatchOperation batchOperation =
+        omMetadataManager.getStore().initBatchOperation();
+    ((OMKeyCommitResponse) omClientResponse).addToDBBatch(
+        omMetadataManager, batchOperation);
+    omMetadataManager.getStore().commitBatchOperation(batchOperation);
+
+    List<? extends Table.KeyValue<String, RepeatedOmKeyInfo>> rangeKVs =
+        omMetadataManager.getDeletedTable().getRangeKVs(null, 100, ozoneKey);
+    assertThat(rangeKVs).isEmpty();
+  }
+
+  @Test
   public void testValidateAndUpdateCacheOnOverwriteWithUncommittedBlocks() throws Exception {
     // Do a normal commit key (this will allocate 5 blocks
     testValidateAndUpdateCache();
