@@ -6,8 +6,10 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 
 - Branch: `research-bucket-forks-feasibility`
 - Remote: `origin/research-bucket-forks-feasibility`
-- Last completed slice: bucket fork deletion cleanup coverage.
-- Capability state: early MVP skeleton, not yet end-to-end ready.
+- Last completed slice: active-source fork creation and MiniOzoneCluster
+  integration coverage.
+- Capability state: MVP request/client/overlay flow is end-to-end covered for
+  OBS and FSO basics; merge/rebase/conflict resolution remains unsupported.
 
 ## Completed
 
@@ -44,6 +46,12 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
   tombstones or fork-shadowed entries.
 - [x] Cover bucket fork deletion cleanup releasing snapshot references and
   removing target bucket/tombstone metadata.
+- [x] Add active-source fork creation with hidden internal base snapshots.
+- [x] Hide internal active-source base snapshots from normal snapshot listings.
+- [x] Classify bucket fork info/list RPCs as read-only and merge fork listing
+  results from OM table cache plus RocksDB.
+- [x] Add MiniOzoneCluster integration coverage for named-snapshot forks,
+  active-source forks, multi-fork sharing, restart reload, and fork deletion.
 - [x] Add unit/request tests for completed metadata, RPC, client, shell, lookup,
   list overlay, delete/tombstone, metadata mutation, OBS rename, FSO exact file
   lookup, FSO file listing, and FSO rename slices.
@@ -90,12 +98,12 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
   - [x] Revisit overfetch strategy if one extra item is insufficient for dense
     tombstone or duplicate cases.
 
-- [ ] Add MiniOzoneCluster integration coverage.
-  - [ ] Source and fork mutate independently.
-  - [ ] Multiple forks share the same base snapshot.
-  - [ ] OM restart reloads fork metadata and snapshot references.
-  - [ ] Fork deletion releases base snapshot references.
-  - [ ] Internal active-source base snapshots are hidden from normal listings.
+- [x] Add MiniOzoneCluster integration coverage.
+  - [x] Source and fork mutate independently.
+  - [x] Multiple forks share the same base snapshot.
+  - [x] OM restart reloads fork metadata and snapshot references.
+  - [x] Fork deletion releases base snapshot references.
+  - [x] Internal active-source base snapshots are hidden from normal listings.
 
 - [x] Complete fork deletion cleanup.
   - [x] Release base snapshot reference by deleting the active fork metadata.

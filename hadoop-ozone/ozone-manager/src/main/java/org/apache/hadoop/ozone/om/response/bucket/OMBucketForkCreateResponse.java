@@ -19,15 +19,21 @@ package org.apache.hadoop.ozone.om.response.bucket;
 
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_TABLE;
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.DELETED_TABLE;
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.SNAPSHOT_INFO_TABLE;
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.SNAPSHOT_RENAMED_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.VOLUME_TABLE;
 
 import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 import java.io.IOException;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
+import org.apache.hadoop.ozone.om.OmSnapshotManager;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmVolumeArgs;
+import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
 import org.apache.hadoop.ozone.om.response.CleanupTableInfo;
 import org.apache.hadoop.ozone.om.response.OMClientResponse;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMResponse;
@@ -36,20 +42,31 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRespo
  * Response for CreateBucketFork request.
  */
 @CleanupTableInfo(cleanupTables = {
-    BUCKET_FORK_TABLE, BUCKET_TABLE, VOLUME_TABLE})
+    BUCKET_FORK_TABLE, BUCKET_TABLE, VOLUME_TABLE, DELETED_TABLE,
+    SNAPSHOT_RENAMED_TABLE, SNAPSHOT_INFO_TABLE})
 public class OMBucketForkCreateResponse extends OMClientResponse {
   private final BucketForkInfo bucketForkInfo;
   private final OmBucketInfo forkBucketInfo;
   private final OmVolumeArgs targetVolumeArgs;
+  private final SnapshotInfo internalBaseSnapshotInfo;
 
   public OMBucketForkCreateResponse(@Nonnull OMResponse omResponse,
       @Nonnull BucketForkInfo bucketForkInfo,
       @Nonnull OmBucketInfo forkBucketInfo,
       @Nonnull OmVolumeArgs targetVolumeArgs) {
+    this(omResponse, bucketForkInfo, forkBucketInfo, targetVolumeArgs, null);
+  }
+
+  public OMBucketForkCreateResponse(@Nonnull OMResponse omResponse,
+      @Nonnull BucketForkInfo bucketForkInfo,
+      @Nonnull OmBucketInfo forkBucketInfo,
+      @Nonnull OmVolumeArgs targetVolumeArgs,
+      @Nullable SnapshotInfo internalBaseSnapshotInfo) {
     super(omResponse);
     this.bucketForkInfo = bucketForkInfo;
     this.forkBucketInfo = forkBucketInfo;
     this.targetVolumeArgs = targetVolumeArgs;
+    this.internalBaseSnapshotInfo = internalBaseSnapshotInfo;
   }
 
   /**
@@ -61,11 +78,19 @@ public class OMBucketForkCreateResponse extends OMClientResponse {
     this.bucketForkInfo = null;
     this.forkBucketInfo = null;
     this.targetVolumeArgs = null;
+    this.internalBaseSnapshotInfo = null;
   }
 
   @Override
   public void addToDBBatch(OMMetadataManager omMetadataManager,
       BatchOperation batchOperation) throws IOException {
+    if (internalBaseSnapshotInfo != null) {
+      omMetadataManager.getSnapshotInfoTable().putWithBatch(batchOperation,
+          internalBaseSnapshotInfo.getTableKey(), internalBaseSnapshotInfo);
+      OmSnapshotManager.createOmSnapshotCheckpoint(omMetadataManager,
+          internalBaseSnapshotInfo, batchOperation);
+    }
+
     String bucketKey = omMetadataManager.getBucketKey(
         forkBucketInfo.getVolumeName(), forkBucketInfo.getBucketName());
     omMetadataManager.getBucketTable().putWithBatch(batchOperation,

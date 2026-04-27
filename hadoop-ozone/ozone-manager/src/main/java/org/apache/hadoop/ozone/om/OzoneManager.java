@@ -3232,11 +3232,18 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
         return new ListBucketForksResponse(forkInfos, null);
       }
       String volumePrefix = BucketForkInfo.getTableKey(volumeName, "");
-      try (TableIterator<String, BucketForkInfo> iterator =
-               metadataManager.getBucketForkTable().valueIterator(
-                   volumePrefix)) {
+      String startKey = StringUtils.isEmpty(prevBucketName) ? null :
+          BucketForkInfo.getTableKey(volumeName, prevBucketName);
+      try (ListIterator.MinHeapIterator iterator =
+               new ListIterator.MinHeapIterator(metadataManager, volumePrefix,
+                   startKey, volumeName, null,
+                   metadataManager.getBucketForkTable())) {
         while (iterator.hasNext() && forkInfos.size() < maxListResult) {
-          BucketForkInfo forkInfo = iterator.next();
+          ListIterator.HeapEntry entry = iterator.next();
+          if (!entry.getKey().startsWith(volumePrefix)) {
+            break;
+          }
+          BucketForkInfo forkInfo = (BucketForkInfo) entry.getValue();
           if (!forkInfo.isActive()) {
             continue;
           }

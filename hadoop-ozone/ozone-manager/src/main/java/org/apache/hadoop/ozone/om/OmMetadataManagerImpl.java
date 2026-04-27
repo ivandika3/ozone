@@ -1248,7 +1248,9 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
       SnapshotInfo snapshotInfo = null;
       while (snapshotIterator.hasNext() && maxListResult > 0) {
         snapshotInfo = (SnapshotInfo) snapshotIterator.next().getValue();
-        if (!Objects.equals(snapshotInfo.getName(), prevSnapshot)) {
+        if (!Objects.equals(snapshotInfo.getName(), prevSnapshot)
+            && !BucketForkInfo.isInternalBaseSnapshotName(
+                snapshotInfo.getName())) {
           snapshotInfos.add(snapshotInfo);
           maxListResult--;
         }

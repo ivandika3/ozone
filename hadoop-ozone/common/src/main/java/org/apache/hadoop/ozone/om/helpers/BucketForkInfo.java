@@ -38,6 +38,8 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.BucketF
  * Metadata for a mutable bucket fork.
  */
 public final class BucketForkInfo implements Auditable, CopyObject<BucketForkInfo> {
+  public static final String INTERNAL_BASE_SNAPSHOT_PREFIX = "bucket-fork-";
+
   private static final Codec<BucketForkInfo> CODEC = new DelegatedCodec<>(
       Proto2Codec.get(OzoneManagerProtocolProtos.BucketForkInfo.getDefaultInstance()),
       BucketForkInfo::getFromProtobuf,
@@ -175,6 +177,11 @@ public final class BucketForkInfo implements Auditable, CopyObject<BucketForkInf
 
   public static String getTableKey(String volumeName, String bucketName) {
     return OM_KEY_PREFIX + volumeName + OM_KEY_PREFIX + bucketName;
+  }
+
+  public static boolean isInternalBaseSnapshotName(String snapshotName) {
+    return snapshotName != null
+        && snapshotName.startsWith(INTERNAL_BASE_SNAPSHOT_PREFIX);
   }
 
   public OzoneManagerProtocolProtos.BucketForkInfo getProtobuf() {

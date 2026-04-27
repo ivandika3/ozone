@@ -27,6 +27,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.UUID;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
+import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
+import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
@@ -114,6 +116,49 @@ public class TestOMBucketForkCreateRequest extends TestBucketRequest {
     assertEquals(sourceBucket.getBucketLayout(), targetBucket.getBucketLayout());
     assertEquals(1024L, targetBucket.getUsedBytes());
     assertEquals(0L, targetBucket.getUsedNamespace());
+  }
+
+  @Test
+  public void testCreateBucketForkFromActiveBucketCreatesInternalSnapshot()
+      throws Exception {
+    ozoneManager.getConfiguration().setBoolean(OZONE_OM_BUCKET_FORK_ENABLED,
+        true);
+    OMRequestTestUtils.addVolumeToDB(SOURCE_VOLUME, omMetadataManager);
+    OMRequestTestUtils.addVolumeToDB(TARGET_VOLUME, omMetadataManager);
+    OmBucketInfo sourceBucket = OMRequestTestUtils.addBucketToDB(
+        SOURCE_VOLUME, SOURCE_BUCKET, omMetadataManager, BucketLayout.DEFAULT)
+        .toBuilder()
+        .setUsedBytes(1024L)
+        .setUsedNamespace(3L)
+        .build();
+    omMetadataManager.getBucketTable().put(
+        omMetadataManager.getBucketKey(SOURCE_VOLUME, SOURCE_BUCKET),
+        sourceBucket);
+    omMetadataManager.getBucketTable().addCacheEntry(new CacheKey<>(
+            omMetadataManager.getBucketKey(SOURCE_VOLUME, SOURCE_BUCKET)),
+        CacheValue.get(11L, sourceBucket));
+
+    OMBucketForkCreateRequest request =
+        new OMBucketForkCreateRequest(createActiveBucketForkRequest());
+    OMResponse response = request.validateAndUpdateCache(ozoneManager, 12L)
+        .getOMResponse();
+
+    assertEquals(OK, response.getStatus());
+    BucketForkInfo forkInfo = omMetadataManager.getBucketForkTable().get(
+        BucketForkInfo.getTableKey(TARGET_VOLUME, TARGET_BUCKET));
+    assertNotNull(forkInfo);
+    assertEquals(true, forkInfo.isCreatedFromActiveBucket());
+    assertEquals(true, BucketForkInfo.isInternalBaseSnapshotName(
+        forkInfo.getBaseSnapshotName()));
+
+    SnapshotInfo snapshotInfo = omMetadataManager.getSnapshotInfoTable().get(
+        SnapshotInfo.getTableKey(SOURCE_VOLUME, SOURCE_BUCKET,
+            forkInfo.getBaseSnapshotName()));
+    assertNotNull(snapshotInfo);
+    assertEquals(forkInfo.getBaseSnapshotId(), snapshotInfo.getSnapshotId());
+    assertEquals(sourceBucket.getUsedBytes(), snapshotInfo.getReferencedSize());
+    assertEquals(sourceBucket.getUsedNamespace(),
+        forkInfo.getQuotaBaselineNamespace());
   }
 
   @Test
@@ -309,6 +354,19 @@ public class TestOMBucketForkCreateRequest extends TestBucketRequest {
             .setTargetVolumeName(TARGET_VOLUME)
             .setTargetBucketName(TARGET_BUCKET)
             .setBaseSnapshotName(SNAPSHOT_NAME)
+            .build())
+        .build();
+  }
+
+  private OMRequest createActiveBucketForkRequest() {
+    return OMRequest.newBuilder()
+        .setClientId("client")
+        .setCmdType(Type.CreateBucketFork)
+        .setCreateBucketForkRequest(CreateBucketForkRequest.newBuilder()
+            .setSourceVolumeName(SOURCE_VOLUME)
+            .setSourceBucketName(SOURCE_BUCKET)
+            .setTargetVolumeName(TARGET_VOLUME)
+            .setTargetBucketName(TARGET_BUCKET)
             .build())
         .build();
   }
