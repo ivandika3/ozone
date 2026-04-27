@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.ozone.om.response.key;
 
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_TOMBSTONE_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.DELETED_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.KEY_TABLE;
@@ -28,6 +29,7 @@ import org.apache.hadoop.hdds.utils.db.BatchOperation;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
@@ -37,11 +39,13 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRespo
 /**
  * Response for DeleteKey request.
  */
-@CleanupTableInfo(cleanupTables = {KEY_TABLE, OPEN_KEY_TABLE, DELETED_TABLE, BUCKET_TABLE})
+@CleanupTableInfo(cleanupTables = {KEY_TABLE, OPEN_KEY_TABLE, DELETED_TABLE,
+    BUCKET_TABLE, BUCKET_FORK_TOMBSTONE_TABLE})
 public class OMKeyDeleteResponse extends AbstractOMKeyDeleteResponse {
 
   private OmKeyInfo omKeyInfo;
   private OmBucketInfo omBucketInfo;
+  private BucketForkTombstoneInfo bucketForkTombstoneInfo;
   // If not null, this key will be deleted from OpenKeyTable
   private OmKeyInfo deletedOpenKeyInfo;
 
@@ -52,6 +56,13 @@ public class OMKeyDeleteResponse extends AbstractOMKeyDeleteResponse {
     this.omKeyInfo = omKeyInfo;
     this.omBucketInfo = omBucketInfo;
     this.deletedOpenKeyInfo = deletedOpenKeyInfo;
+  }
+
+  public OMKeyDeleteResponse(@Nonnull OMResponse omResponse,
+      @Nonnull BucketForkTombstoneInfo bucketForkTombstoneInfo,
+      @Nonnull BucketLayout bucketLayout) {
+    super(omResponse, bucketLayout);
+    this.bucketForkTombstoneInfo = bucketForkTombstoneInfo;
   }
 
   /**
@@ -70,6 +81,13 @@ public class OMKeyDeleteResponse extends AbstractOMKeyDeleteResponse {
 
     // For OmResponse with failure, this should do nothing. This method is
     // not called in failure scenario in OM code.
+    if (bucketForkTombstoneInfo != null) {
+      omMetadataManager.getBucketForkTombstoneTable().putWithBatch(
+          batchOperation, bucketForkTombstoneInfo.getTableKey(),
+          bucketForkTombstoneInfo);
+      return;
+    }
+
     String ozoneKey = omMetadataManager.getOzoneKey(omKeyInfo.getVolumeName(),
         omKeyInfo.getBucketName(), omKeyInfo.getKeyName());
     Table<String, OmKeyInfo> keyTable =

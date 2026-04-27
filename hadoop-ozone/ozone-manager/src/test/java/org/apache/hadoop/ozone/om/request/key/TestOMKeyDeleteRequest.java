@@ -24,8 +24,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.UUID;
+import org.apache.hadoop.ozone.om.OmSnapshot;
+import org.apache.hadoop.ozone.om.OmSnapshotManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
+import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.request.OMRequestTestUtils;
 import org.apache.hadoop.ozone.om.response.OMClientResponse;
@@ -33,10 +38,12 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.DeleteKeyRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.KeyArgs;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRequest;
+import org.apache.ratis.util.function.UncheckedAutoCloseableSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.Mockito;
 
 /**
  * Tests OmKeyDelete request.
@@ -116,6 +123,69 @@ public class TestOMKeyDeleteRequest extends TestOMKeyRequest {
 
     assertEquals(OzoneManagerProtocolProtos.Status.KEY_NOT_FOUND,
         omClientResponse.getOMResponse().getStatus());
+  }
+
+  @Test
+  public void testDeleteBaseVisibleForkKeyCreatesTombstone() throws Exception {
+    String sourceBucketName = bucketName + "-source";
+    String snapshotName = "snap";
+    UUID snapshotId = UUID.randomUUID();
+
+    OMRequestTestUtils.addVolumeAndBucketToDB(volumeName, bucketName,
+        omMetadataManager, getBucketLayout());
+    BucketForkInfo forkInfo = BucketForkInfo.newBuilder()
+        .setForkId(UUID.randomUUID())
+        .setSourceVolumeName(volumeName)
+        .setSourceBucketName(sourceBucketName)
+        .setTargetVolumeName(volumeName)
+        .setTargetBucketName(bucketName)
+        .setBaseSnapshotId(snapshotId)
+        .setBaseSnapshotName(snapshotName)
+        .setStatus(BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE)
+        .build();
+    omMetadataManager.getBucketForkTable().put(
+        BucketForkInfo.getTableKey(volumeName, bucketName), forkInfo);
+
+    OmSnapshot baseSnapshot = Mockito.mock(OmSnapshot.class);
+    Mockito.when(baseSnapshot.lookupKey(Mockito.argThat(args ->
+        volumeName.equals(args.getVolumeName())
+            && sourceBucketName.equals(args.getBucketName())
+            && keyName.equals(args.getKeyName()))))
+        .thenReturn(new OmKeyInfo.Builder()
+            .setVolumeName(volumeName)
+            .setBucketName(sourceBucketName)
+            .setKeyName(".snapshot/" + snapshotName + "/" + keyName)
+            .setObjectID(123L)
+            .build());
+    UncheckedAutoCloseableSupplier<OmSnapshot> snapshotSupplier =
+        Mockito.mock(UncheckedAutoCloseableSupplier.class);
+    Mockito.when(snapshotSupplier.get()).thenReturn(baseSnapshot);
+    OmSnapshotManager snapshotManager = Mockito.mock(OmSnapshotManager.class);
+    Mockito.when(snapshotManager.getSnapshot(snapshotId))
+        .thenReturn(snapshotSupplier);
+    Mockito.when(ozoneManager.getOmSnapshotManager()).thenReturn(
+        snapshotManager);
+
+    OMKeyDeleteRequest omKeyDeleteRequest =
+        getOmKeyDeleteRequest(createDeleteKeyRequest());
+
+    OMClientResponse omClientResponse =
+        omKeyDeleteRequest.validateAndUpdateCache(ozoneManager, 100L);
+
+    assertEquals(OzoneManagerProtocolProtos.Status.OK,
+        omClientResponse.getOMResponse().getStatus());
+
+    BucketForkTombstoneInfo tombstone = omMetadataManager
+        .getBucketForkTombstoneTable()
+        .get(BucketForkTombstoneInfo.getTableKey(volumeName, bucketName,
+            keyName));
+    assertNotNull(tombstone);
+    assertEquals(keyName, tombstone.getLogicalPath());
+    assertEquals(snapshotId, tombstone.getBaseSnapshotId());
+    assertEquals(100L, tombstone.getUpdateId());
+    assertEquals(0, omMetadataManager.countRowsInTable(
+        omMetadataManager.getDeletedTable()));
+    Mockito.verify(baseSnapshot).lookupKey(Mockito.any(OmKeyArgs.class));
   }
 
   @Test
