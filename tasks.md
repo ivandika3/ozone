@@ -23,8 +23,9 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 
 - Branch: `research-bucket-forks-feasibility`
 - Remote: `origin/research-bucket-forks-feasibility`
-- Last completed slice: active-source fork creation and MiniOzoneCluster
-  integration coverage.
+- Last completed slice: bucket fork design follow-ups for `getKeyInfo`
+  fallback parity, overlay ownership, lifecycle semantics, and unsupported MVP
+  behavior.
 - Capability state: MVP request/client/overlay flow is end-to-end covered for
   OBS and FSO basics; merge/rebase/conflict resolution remains unsupported.
 
@@ -129,13 +130,37 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 
 ## Design Follow-Ups
 
-- [ ] Confirm whether `getKeyInfo` fallback should call snapshot `getKeyInfo`
+- [x] Confirm whether `getKeyInfo` fallback should call snapshot `getKeyInfo`
   instead of `lookupKey` for exact parity with non-fork behavior.
-- [ ] Decide how much of the overlay should live in `BucketForkManager` versus
+- [x] Decide how much of the overlay should live in `BucketForkManager` versus
   request-specific helpers as FSO and mutation paths grow.
-- [ ] Document admin/user semantics for fork bucket lifecycle.
-- [ ] Document unsupported MVP behavior: merge, rebase, conflict resolution,
+- [x] Document admin/user semantics for fork bucket lifecycle.
+- [x] Document unsupported MVP behavior: merge, rebase, conflict resolution,
   and snapshot diff for forks.
+
+## Resolved Design Decisions
+
+- `getKeyInfo` fork fallback uses the base snapshot reader's `getKeyInfo`
+  method rather than `lookupKey`. This keeps it aligned with non-fork
+  `getKeyInfo` semantics while still applying fork tombstones and rewriting the
+  returned key metadata into the target fork namespace.
+- `BucketForkManager` owns read-overlay decisions: active fork lookup,
+  tombstone checks, base snapshot fallback, namespace rewriting, and merged
+  listing order. Request classes own write-side behavior such as copy-on-write,
+  fork tombstone creation, quota deltas, cache updates, lock ordering, and
+  response construction.
+- Fork lifecycle is intentionally explicit and admin-facing for the MVP.
+  `ozone.om.bucket.fork.enabled` gates the feature. Create/delete/info/list are
+  exposed through Ozone RPC and CLI, not S3 management APIs. A fork appears as
+  a normal mutable bucket for object reads/writes, ACLs, tags, metadata updates,
+  and quota checks. Deleting a fork deletes the target bucket plus fork metadata
+  and tombstones, and releases the retained base snapshot reference.
+- Active-bucket forks create hidden internal base snapshots. Named-snapshot
+  forks reference the supplied snapshot directly. Any snapshot referenced by an
+  active fork remains protected from deletion until the fork is deleted.
+- Merge, rebase, conflict resolution, and fork-aware snapshot diff are outside
+  the MVP. Future work can layer those semantics on top of the explicit base
+  snapshot plus fork-delta model.
 
 ## Verification Checklist Per Slice
 

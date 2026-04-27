@@ -32,6 +32,7 @@ import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
+import org.apache.hadoop.ozone.om.helpers.KeyInfoWithVolumeContext;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
@@ -184,6 +185,41 @@ public class TestBucketForkManager {
 
     assertEquals(OMException.ResultCodes.KEY_NOT_FOUND, ex.getResult());
     Mockito.verifyNoInteractions(baseReader);
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  public void testGetBaseKeyInfoUsesBaseGetKeyInfo() throws IOException {
+    OMMetadataManager metadataManager = Mockito.mock(OMMetadataManager.class);
+    Table<String, BucketForkTombstoneInfo> tombstoneTable =
+        Mockito.mock(Table.class);
+    Mockito.when(metadataManager.getBucketForkTombstoneTable())
+        .thenReturn(tombstoneTable);
+    BucketForkInfo forkInfo = createForkInfo(
+        BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE);
+    IOmMetadataReader baseReader = Mockito.mock(IOmMetadataReader.class);
+    OmKeyInfo baseKeyInfo = createKeyInfo("vol", "source",
+        ".snapshot/snap/dir/key");
+    Mockito.when(baseReader.getKeyInfo(Mockito.argThat(args ->
+        "vol".equals(args.getVolumeName())
+            && "source".equals(args.getBucketName())
+            && "dir/key".equals(args.getKeyName())),
+        Mockito.eq(true)))
+        .thenReturn(KeyInfoWithVolumeContext.newBuilder()
+            .setKeyInfo(baseKeyInfo)
+            .setUserPrincipal("alice")
+            .build());
+
+    KeyInfoWithVolumeContext result = new BucketForkManager(metadataManager)
+        .getBaseKeyInfo(forkInfo, createKeyArgs("vol", "fork", "dir/key"),
+            baseReader, true);
+
+    Mockito.verify(baseReader, Mockito.never())
+        .lookupKey(Mockito.any(OmKeyArgs.class));
+    assertEquals("vol", result.getKeyInfo().getVolumeName());
+    assertEquals("fork", result.getKeyInfo().getBucketName());
+    assertEquals("dir/key", result.getKeyInfo().getKeyName());
+    assertEquals("alice", result.getUserPrincipal().orElse(null));
   }
 
   @Test

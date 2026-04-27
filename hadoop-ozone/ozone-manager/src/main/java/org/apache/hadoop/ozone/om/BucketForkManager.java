@@ -27,6 +27,7 @@ import org.apache.hadoop.ozone.ClientVersion;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
+import org.apache.hadoop.ozone.om.helpers.KeyInfoWithVolumeContext;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
@@ -35,7 +36,13 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos;
 import org.apache.ratis.util.function.UncheckedAutoCloseableSupplier;
 
 /**
- * Coordinates bucket-fork metadata lookups for future overlay reads.
+ * Coordinates bucket-fork metadata overlay reads.
+ *
+ * This class owns fork-active checks, tombstone filtering, base snapshot
+ * fallback, namespace rewriting, and sorted read merges. Request classes still
+ * own write-side actions such as copy-on-write, tombstone creation, quota
+ * accounting, and cache updates because those depend on request locks,
+ * transaction indexes, and per-operation response semantics.
  */
 public class BucketForkManager {
   private final OMMetadataManager metadataManager;
@@ -126,6 +133,32 @@ public class BucketForkManager {
           OMException.ResultCodes.KEY_NOT_FOUND);
     }
     return rewriteBaseKeyInfo(forkInfo, baseKeyInfo, targetArgs.getKeyName());
+  }
+
+  public KeyInfoWithVolumeContext getBaseKeyInfo(BucketForkInfo forkInfo,
+      OmKeyArgs targetArgs, IOmMetadataReader baseReader,
+      boolean assumeS3Context) throws IOException {
+    if (getTombstoneInfo(forkInfo, targetArgs.getKeyName()) != null) {
+      throw new OMException("Key:" + targetArgs.getKeyName() + " not found",
+          OMException.ResultCodes.KEY_NOT_FOUND);
+    }
+
+    OmKeyArgs sourceArgs = targetArgs.toBuilder()
+        .setVolumeName(forkInfo.getSourceVolumeName())
+        .setBucketName(forkInfo.getSourceBucketName())
+        .build();
+    KeyInfoWithVolumeContext baseKeyInfo =
+        baseReader.getKeyInfo(sourceArgs, assumeS3Context);
+    if (baseKeyInfo == null || baseKeyInfo.getKeyInfo() == null) {
+      throw new OMException("Key:" + targetArgs.getKeyName() + " not found",
+          OMException.ResultCodes.KEY_NOT_FOUND);
+    }
+    return KeyInfoWithVolumeContext.newBuilder()
+        .setKeyInfo(rewriteBaseKeyInfo(forkInfo, baseKeyInfo.getKeyInfo(),
+            targetArgs.getKeyName()))
+        .setVolumeArgs(baseKeyInfo.getVolumeArgs().orElse(null))
+        .setUserPrincipal(baseKeyInfo.getUserPrincipal().orElse(null))
+        .build();
   }
 
   public OzoneFileStatus lookupBaseFileStatus(BucketForkInfo forkInfo,

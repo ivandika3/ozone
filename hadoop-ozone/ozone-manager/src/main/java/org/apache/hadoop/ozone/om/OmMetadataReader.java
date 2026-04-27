@@ -216,17 +216,10 @@ public class OmMetadataReader implements IOmMetadataReader, Auditor {
     } catch (Exception ex) {
       Exception failure = ex;
       try {
-        OmKeyInfo forkBaseKeyInfo =
-            lookupForkBaseKeyIfNeeded(resolvedArgs, ex);
+        KeyInfoWithVolumeContext forkBaseKeyInfo =
+            getForkBaseKeyInfoIfNeeded(resolvedArgs, ex, assumeS3Context);
         if (forkBaseKeyInfo != null) {
-          KeyInfoWithVolumeContext.Builder builder = KeyInfoWithVolumeContext
-              .newBuilder()
-              .setKeyInfo(forkBaseKeyInfo);
-          s3VolumeContext.ifPresent(context -> {
-            builder.setVolumeArgs(context.getOmVolumeArgs());
-            builder.setUserPrincipal(context.getUserPrincipal());
-          });
-          return builder.build();
+          return forkBaseKeyInfo;
         }
       } catch (Exception forkEx) {
         failure = forkEx;
@@ -242,6 +235,24 @@ public class OmMetadataReader implements IOmMetadataReader, Auditor {
             bucket.audit(resolvedVolumeArgs.toAuditMap())));
       }
       perfMetrics.addGetKeyInfoLatencyNs(Time.monotonicNowNanos() - start);
+    }
+  }
+
+  private KeyInfoWithVolumeContext getForkBaseKeyInfoIfNeeded(OmKeyArgs args,
+      Exception ex, boolean assumeS3Context) throws IOException {
+    if (!isKeyNotFound(ex)) {
+      return null;
+    }
+    BucketForkInfo forkInfo = bucketForkManager.getActiveForkInfo(
+        args.getVolumeName(), args.getBucketName());
+    if (forkInfo == null) {
+      return null;
+    }
+    try (UncheckedAutoCloseableSupplier<OmSnapshot> snapshot =
+             ozoneManager.getOmSnapshotManager().getSnapshot(
+                 forkInfo.getBaseSnapshotId())) {
+      return bucketForkManager.getBaseKeyInfo(forkInfo, args, snapshot.get(),
+          assumeS3Context);
     }
   }
 
