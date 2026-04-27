@@ -254,6 +254,7 @@ import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.DBUpdates;
 import org.apache.hadoop.ozone.om.helpers.KeyInfoWithVolumeContext;
 import org.apache.hadoop.ozone.om.helpers.LeaseKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.ListBucketForksResponse;
 import org.apache.hadoop.ozone.om.helpers.ListKeysLightResult;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.ListOpenFilesResult;
@@ -3213,7 +3214,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
     }
   }
 
-  public List<BucketForkInfo> listBucketForks(String volumeName,
+  public ListBucketForksResponse listBucketForks(String volumeName,
       String bucketNamePrefix, String prevBucketName, int maxListResult)
       throws IOException {
     Map<String, String> auditMap = buildAuditMap(volumeName);
@@ -3228,7 +3229,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
       }
       List<BucketForkInfo> forkInfos = new ArrayList<>();
       if (maxListResult <= 0) {
-        return forkInfos;
+        return new ListBucketForksResponse(forkInfos, null);
       }
       String volumePrefix = BucketForkInfo.getTableKey(volumeName, "");
       try (TableIterator<String, BucketForkInfo> iterator =
@@ -3253,7 +3254,9 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
       }
       AUDIT.logReadSuccess(buildAuditMessageForSuccess(
           OMAction.READ_BUCKET_FORK, auditMap));
-      return forkInfos;
+      String lastBucketName = forkInfos.isEmpty() ? null :
+          forkInfos.get(forkInfos.size() - 1).getTargetBucketName();
+      return new ListBucketForksResponse(forkInfos, lastBucketName);
     } catch (Exception ex) {
       AUDIT.logReadFailure(buildAuditMessageForFailure(
           OMAction.READ_BUCKET_FORK, auditMap, ex));

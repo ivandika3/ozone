@@ -39,6 +39,7 @@ import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.execution.flowcontrol.ExecutionContext;
 import org.apache.hadoop.ozone.om.helpers.BasicOmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
+import org.apache.hadoop.ozone.om.helpers.ListBucketForksResponse;
 import org.apache.hadoop.ozone.om.helpers.ListKeysLightResult;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
@@ -108,7 +109,7 @@ public class TestOzoneManagerRequestHandler {
         createBucketForkInfo("fork-a"),
         createBucketForkInfo("fork-b"));
     Mockito.when(ozoneManager.listBucketForks("vol", "fork", "fork-0", 5))
-        .thenReturn(forkInfos);
+        .thenReturn(new ListBucketForksResponse(forkInfos, "fork-b"));
 
     OzoneManagerProtocolProtos.OMRequest request =
         OzoneManagerProtocolProtos.OMRequest.newBuilder()

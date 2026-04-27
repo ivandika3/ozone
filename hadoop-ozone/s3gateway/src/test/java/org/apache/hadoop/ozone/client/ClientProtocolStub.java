@@ -37,9 +37,11 @@ import org.apache.hadoop.ozone.client.io.OzoneDataStreamOutput;
 import org.apache.hadoop.ozone.client.io.OzoneInputStream;
 import org.apache.hadoop.ozone.client.io.OzoneOutputStream;
 import org.apache.hadoop.ozone.client.protocol.ClientProtocol;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.DeleteTenantState;
 import org.apache.hadoop.ozone.om.helpers.ErrorInfo;
 import org.apache.hadoop.ozone.om.helpers.LeaseKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.ListBucketForksResponse;
 import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfo;
@@ -742,6 +744,31 @@ public class ClientProtocolStub implements ClientProtocol {
       String bucketName, String snapshotName)
       throws IOException {
     return "";
+  }
+
+  @Override
+  public BucketForkInfo createBucketFork(String sourceVolumeName,
+      String sourceBucketName, String targetVolumeName, String targetBucketName,
+      String baseSnapshotName) throws IOException {
+    return null;
+  }
+
+  @Override
+  public void deleteBucketFork(String volumeName, String bucketName)
+      throws IOException {
+  }
+
+  @Override
+  public BucketForkInfo getBucketForkInfo(String volumeName, String bucketName)
+      throws IOException {
+    return null;
+  }
+
+  @Override
+  public ListBucketForksResponse listBucketForks(String volumeName,
+      String bucketNamePrefix, String prevBucketName, int maxListResult)
+      throws IOException {
+    return null;
   }
 
   @Override

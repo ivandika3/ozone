@@ -71,6 +71,7 @@ import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.DBUpdates;
 import org.apache.hadoop.ozone.om.helpers.KeyInfoWithVolumeContext;
 import org.apache.hadoop.ozone.om.helpers.KeyValueUtil;
+import org.apache.hadoop.ozone.om.helpers.ListBucketForksResponse;
 import org.apache.hadoop.ozone.om.helpers.ListKeysLightResult;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.ListOpenFilesResult;
@@ -1580,10 +1581,11 @@ public class OzoneManagerRequestHandler implements RequestHandler {
   private OzoneManagerProtocolProtos.ListBucketForksResponse listBucketForks(
       OzoneManagerProtocolProtos.ListBucketForksRequest request)
       throws IOException {
-    List<BucketForkInfo> bucketForkInfos = impl.listBucketForks(
+    ListBucketForksResponse response = impl.listBucketForks(
         request.getVolumeName(), request.getBucketNamePrefix(),
         request.getPrevBucketName(),
         limitListSizeInt(request.getMaxListResult()));
+    List<BucketForkInfo> bucketForkInfos = response.getBucketForkInfos();
     List<OzoneManagerProtocolProtos.BucketForkInfo> protoInfos =
         bucketForkInfos.stream()
             .map(BucketForkInfo::getProtobuf)
@@ -1591,9 +1593,8 @@ public class OzoneManagerRequestHandler implements RequestHandler {
     OzoneManagerProtocolProtos.ListBucketForksResponse.Builder builder =
         OzoneManagerProtocolProtos.ListBucketForksResponse.newBuilder()
             .addAllBucketForkInfo(protoInfos);
-    if (!bucketForkInfos.isEmpty()) {
-      builder.setLastBucketName(bucketForkInfos.get(
-          bucketForkInfos.size() - 1).getTargetBucketName());
+    if (response.getLastBucketName() != null) {
+      builder.setLastBucketName(response.getLastBucketName());
     }
     return builder.build();
   }

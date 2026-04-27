@@ -130,11 +130,13 @@ import org.apache.hadoop.ozone.om.OmConfig;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.BasicOmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketEncryptionKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.DeleteTenantState;
 import org.apache.hadoop.ozone.om.helpers.ErrorInfo;
 import org.apache.hadoop.ozone.om.helpers.KeyInfoWithVolumeContext;
 import org.apache.hadoop.ozone.om.helpers.LeaseKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.ListBucketForksResponse;
 import org.apache.hadoop.ozone.om.helpers.OmBucketArgs;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmDeleteKeys;
@@ -952,6 +954,53 @@ public class RpcClient implements ClientProtocol {
         "bucket can't be null or empty.");
     return ozoneManagerClient.createSnapshot(volumeName,
         bucketName, snapshotName);
+  }
+
+  @Override
+  public BucketForkInfo createBucketFork(String sourceVolumeName,
+      String sourceBucketName, String targetVolumeName, String targetBucketName,
+      String baseSnapshotName) throws IOException {
+    Preconditions.checkArgument(StringUtils.isNotBlank(sourceVolumeName),
+        "source volume can't be null or empty.");
+    Preconditions.checkArgument(StringUtils.isNotBlank(sourceBucketName),
+        "source bucket can't be null or empty.");
+    Preconditions.checkArgument(StringUtils.isNotBlank(targetVolumeName),
+        "target volume can't be null or empty.");
+    Preconditions.checkArgument(StringUtils.isNotBlank(targetBucketName),
+        "target bucket can't be null or empty.");
+    return ozoneManagerClient.createBucketFork(sourceVolumeName,
+        sourceBucketName, targetVolumeName, targetBucketName,
+        baseSnapshotName);
+  }
+
+  @Override
+  public void deleteBucketFork(String volumeName, String bucketName)
+      throws IOException {
+    Preconditions.checkArgument(StringUtils.isNotBlank(volumeName),
+        "volume can't be null or empty.");
+    Preconditions.checkArgument(StringUtils.isNotBlank(bucketName),
+        "bucket can't be null or empty.");
+    ozoneManagerClient.deleteBucketFork(volumeName, bucketName);
+  }
+
+  @Override
+  public BucketForkInfo getBucketForkInfo(String volumeName, String bucketName)
+      throws IOException {
+    Preconditions.checkArgument(StringUtils.isNotBlank(volumeName),
+        "volume can't be null or empty.");
+    Preconditions.checkArgument(StringUtils.isNotBlank(bucketName),
+        "bucket can't be null or empty.");
+    return ozoneManagerClient.getBucketForkInfo(volumeName, bucketName);
+  }
+
+  @Override
+  public ListBucketForksResponse listBucketForks(String volumeName,
+      String bucketNamePrefix, String prevBucketName, int maxListResult)
+      throws IOException {
+    Preconditions.checkArgument(StringUtils.isNotBlank(volumeName),
+        "volume can't be null or empty.");
+    return ozoneManagerClient.listBucketForks(volumeName, bucketNamePrefix,
+        prevBucketName, maxListResult);
   }
 
   /**
