@@ -32,6 +32,7 @@ import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
 import org.apache.hadoop.ozone.om.request.OMRequestTestUtils;
 import org.apache.hadoop.ozone.om.response.OMClientResponse;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos;
@@ -166,6 +167,18 @@ public class TestOMKeyDeleteRequest extends TestOMKeyRequest {
         .thenReturn(snapshotSupplier);
     Mockito.when(ozoneManager.getOmSnapshotManager()).thenReturn(
         snapshotManager);
+    OmKeyInfo baseKeyInfo = new OmKeyInfo.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(sourceBucketName)
+        .setKeyName(".snapshot/" + snapshotName + "/" + keyName)
+        .setObjectID(123L)
+        .build();
+    Mockito.when(baseSnapshot.getFileStatus(Mockito.argThat(args ->
+        args != null
+            && volumeName.equals(args.getVolumeName())
+            && sourceBucketName.equals(args.getBucketName())
+            && keyName.equals(args.getKeyName()))))
+        .thenReturn(new OzoneFileStatus(baseKeyInfo, 0L, false));
 
     OMKeyDeleteRequest omKeyDeleteRequest =
         getOmKeyDeleteRequest(createDeleteKeyRequest());
@@ -186,7 +199,11 @@ public class TestOMKeyDeleteRequest extends TestOMKeyRequest {
     assertEquals(100L, tombstone.getUpdateId());
     assertEquals(0, omMetadataManager.countRowsInTable(
         omMetadataManager.getDeletedTable()));
-    Mockito.verify(baseSnapshot).lookupKey(Mockito.any(OmKeyArgs.class));
+    if (getBucketLayout() == BucketLayout.FILE_SYSTEM_OPTIMIZED) {
+      Mockito.verify(baseSnapshot).getFileStatus(Mockito.any(OmKeyArgs.class));
+    } else {
+      Mockito.verify(baseSnapshot).lookupKey(Mockito.any(OmKeyArgs.class));
+    }
   }
 
   @Test
