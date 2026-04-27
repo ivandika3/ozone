@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.ozone.om.response.key;
 
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_TOMBSTONE_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.DIRECTORY_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.FILE_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.SNAPSHOT_RENAMED_TABLE;
@@ -25,6 +26,7 @@ import jakarta.annotation.Nonnull;
 import java.io.IOException;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmDirectoryInfo;
@@ -38,13 +40,14 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRespo
  * Response for RenameKey request - prefix layout.
  */
 @CleanupTableInfo(cleanupTables = {FILE_TABLE, DIRECTORY_TABLE,
-    SNAPSHOT_RENAMED_TABLE})
+    SNAPSHOT_RENAMED_TABLE, BUCKET_FORK_TOMBSTONE_TABLE})
 public class OMKeyRenameResponseWithFSO extends OMKeyRenameResponse {
 
   private boolean isRenameDirectory;
   private OmKeyInfo fromKeyParent;
   private OmKeyInfo toKeyParent;
   private OmBucketInfo bucketInfo;
+  private BucketForkTombstoneInfo bucketForkTombstoneInfo;
 
   @SuppressWarnings("checkstyle:ParameterNumber")
   public OMKeyRenameResponseWithFSO(@Nonnull OMResponse omResponse,
@@ -57,6 +60,18 @@ public class OMKeyRenameResponseWithFSO extends OMKeyRenameResponse {
     this.fromKeyParent = fromKeyParent;
     this.toKeyParent = toKeyParent;
     this.bucketInfo = bucketInfo;
+  }
+
+  @SuppressWarnings("checkstyle:ParameterNumber")
+  public OMKeyRenameResponseWithFSO(@Nonnull OMResponse omResponse,
+      String fromDBKey, String toDBKey, OmKeyInfo fromKeyParent,
+      OmKeyInfo toKeyParent, @Nonnull OmKeyInfo renameKeyInfo,
+      OmBucketInfo bucketInfo,
+      BucketForkTombstoneInfo bucketForkTombstoneInfo,
+      boolean isRenameDirectory, BucketLayout bucketLayout) {
+    this(omResponse, fromDBKey, toDBKey, fromKeyParent, toKeyParent,
+        renameKeyInfo, bucketInfo, isRenameDirectory, bucketLayout);
+    this.bucketForkTombstoneInfo = bucketForkTombstoneInfo;
   }
 
   /**
@@ -118,6 +133,11 @@ public class OMKeyRenameResponseWithFSO extends OMKeyRenameResponse {
               bucketInfo.getBucketName());
       omMetadataManager.getBucketTable().putWithBatch(batchOperation,
           dbBucketKey, bucketInfo);
+    }
+    if (bucketForkTombstoneInfo != null) {
+      omMetadataManager.getBucketForkTombstoneTable().putWithBatch(
+          batchOperation, bucketForkTombstoneInfo.getTableKey(),
+          bucketForkTombstoneInfo);
     }
   }
 

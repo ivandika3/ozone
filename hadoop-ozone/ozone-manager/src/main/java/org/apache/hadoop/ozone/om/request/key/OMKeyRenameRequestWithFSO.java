@@ -18,6 +18,7 @@
 package org.apache.hadoop.ozone.om.request.key;
 
 import static org.apache.hadoop.ozone.OmUtils.normalizeKey;
+import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.FILE_NOT_FOUND;
 import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.KEY_NOT_FOUND;
 import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.RENAME_OPEN_FILE;
 import static org.apache.hadoop.ozone.om.lock.OzoneManagerLock.LeveledResource.BUCKET_LOCK;
@@ -28,17 +29,23 @@ import java.util.Map;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
 import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
+import org.apache.hadoop.ozone.ClientVersion;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.audit.AuditLogger;
 import org.apache.hadoop.ozone.audit.OMAction;
+import org.apache.hadoop.ozone.om.BucketForkManager;
+import org.apache.hadoop.ozone.om.IOmMetadataReader;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OMMetrics;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.execution.flowcontrol.ExecutionContext;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmDirectoryInfo;
+import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.OzoneFSUtils;
 import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
@@ -53,6 +60,7 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.RenameK
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.RenameKeyResponse;
 import org.apache.hadoop.ozone.security.acl.IAccessAuthorizer;
 import org.apache.hadoop.ozone.security.acl.OzoneObj;
+import org.apache.ratis.util.function.UncheckedAutoCloseableSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -96,6 +104,7 @@ public class OMKeyRenameRequestWithFSO extends OMKeyRenameRequest {
     OMClientResponse omClientResponse = null;
     Exception exception = null;
     OmKeyInfo fromKeyValue;
+    BucketForkTombstoneInfo bucketForkTombstoneInfo = null;
     Result result;
     try {
       if (fromKeyName.isEmpty()) {
@@ -110,12 +119,22 @@ public class OMKeyRenameRequestWithFSO extends OMKeyRenameRequest {
       // Validate bucket and volume exists or not.
       validateBucketAndVolume(omMetadataManager, volumeName, bucketName);
 
+      BucketForkManager bucketForkManager =
+          new BucketForkManager(omMetadataManager);
+      BucketForkInfo forkInfo = bucketForkManager.getActiveForkInfo(
+          volumeName, bucketName);
+
       // Check if fromKey exists
       OzoneFileStatus fromKeyFileStatus = OMFileRequest.getOMKeyInfoIfExists(
           omMetadataManager, volumeName, bucketName, fromKeyName, 0,
           ozoneManager.getDefaultReplicationConfig());
 
       // case-1) fromKeyName should exist, otw throws exception
+      if (fromKeyFileStatus == null) {
+        fromKeyFileStatus = getForkBaseFileStatus(ozoneManager,
+            bucketForkManager, forkInfo, volumeName, bucketName, fromKeyName);
+      }
+
       if (fromKeyFileStatus == null) {
         // TODO: Add support for renaming open key
         throw new OMException("Key not found " + fromKeyName, KEY_NOT_FOUND);
@@ -130,6 +149,14 @@ public class OMKeyRenameRequestWithFSO extends OMKeyRenameRequest {
       // source existed
       fromKeyValue = fromKeyFileStatus.getKeyInfo();
       boolean isRenameDirectory = fromKeyFileStatus.isDirectory();
+      if (forkInfo != null && !isForkLocalEntry(omMetadataManager,
+          volumeName, bucketName, fromKeyName, fromKeyValue,
+          isRenameDirectory)) {
+        fromKeyValue = forkOwnedCopy(fromKeyValue,
+            ozoneManager.getObjectIdFromTxId(trxnLogIndex), trxnLogIndex);
+        bucketForkTombstoneInfo = createTombstoneInfo(forkInfo, fromKeyName,
+            fromKeyFileStatus, keyArgs.getModificationTime(), trxnLogIndex);
+      }
 
       // case-2) Cannot rename a directory to its own subdirectory
       OMFileRequest.verifyToDirIsASubDirOfFromDirectory(fromKeyName,
@@ -176,7 +203,8 @@ public class OMKeyRenameRequestWithFSO extends OMKeyRenameRequest {
 
           omClientResponse = renameKey(toKeyValue, newToKeyName, fromKeyValue,
               fromKeyName, isRenameDirectory, keyArgs.getModificationTime(),
-              ozoneManager, omResponse, trxnLogIndex);
+              ozoneManager, omResponse, trxnLogIndex,
+              bucketForkTombstoneInfo);
           result = Result.SUCCESS;
         } else {
           // case-6) If destination is a file type and if exists then throws
@@ -189,12 +217,17 @@ public class OMKeyRenameRequestWithFSO extends OMKeyRenameRequest {
         // case-7) Check whether dst parent dir exists or not. If parent
         // doesn't exist then throw exception, otw the source can be renamed to
         // destination path.
+        if (getForkBaseFileStatus(ozoneManager, bucketForkManager, forkInfo,
+            volumeName, bucketName, toKeyName) != null) {
+          throw new OMException("Key already exists " + toKeyName,
+              OMException.ResultCodes.KEY_ALREADY_EXISTS);
+        }
         OmKeyInfo toKeyParent = OMFileRequest.getKeyParentDir(volumeName,
                 bucketName, toKeyName, ozoneManager, omMetadataManager);
 
         omClientResponse = renameKey(toKeyParent, toKeyName, fromKeyValue,
             fromKeyName, isRenameDirectory, keyArgs.getModificationTime(),
-            ozoneManager, omResponse, trxnLogIndex);
+            ozoneManager, omResponse, trxnLogIndex, bucketForkTombstoneInfo);
 
         result = Result.SUCCESS;
       }
@@ -267,7 +300,8 @@ public class OMKeyRenameRequestWithFSO extends OMKeyRenameRequest {
   private OMClientResponse renameKey(OmKeyInfo toKeyParent, String toKeyName,
       OmKeyInfo fromKeyValue, String fromKeyName, boolean isRenameDirectory,
       long modificationTime, OzoneManager ozoneManager,
-      OMResponse.Builder omResponse, long trxnLogIndex) throws IOException {
+      OMResponse.Builder omResponse, long trxnLogIndex,
+      BucketForkTombstoneInfo bucketForkTombstoneInfo) throws IOException {
     final OMMetadataManager ommm = ozoneManager.getMetadataManager();
     final long volumeId = ommm.getVolumeId(fromKeyValue.getVolumeName());
     final long bucketId = ommm.getBucketId(fromKeyValue.getVolumeName(),
@@ -338,12 +372,86 @@ public class OMKeyRenameRequestWithFSO extends OMKeyRenameRequest {
       keyTable.addCacheEntry(new CacheKey<>(dbToKey),
               CacheValue.get(trxnLogIndex, fromKeyValue));
     }
+    if (bucketForkTombstoneInfo != null) {
+      metadataMgr.getBucketForkTombstoneTable().addCacheEntry(
+          new CacheKey<>(bucketForkTombstoneInfo.getTableKey()),
+          CacheValue.get(trxnLogIndex, bucketForkTombstoneInfo));
+    }
 
     OMClientResponse omClientResponse = new OMKeyRenameResponseWithFSO(
         omResponse.setRenameKeyResponse(RenameKeyResponse.newBuilder()).build(),
         dbFromKey, dbToKey, fromKeyParent, toKeyParent, fromKeyValue,
-        omBucketInfo, isRenameDirectory, getBucketLayout());
+        omBucketInfo, bucketForkTombstoneInfo, isRenameDirectory,
+        getBucketLayout());
     return omClientResponse;
+  }
+
+  private OzoneFileStatus getForkBaseFileStatus(OzoneManager ozoneManager,
+      BucketForkManager bucketForkManager, BucketForkInfo forkInfo,
+      String volumeName, String bucketName, String keyName)
+      throws IOException {
+    if (forkInfo == null) {
+      return null;
+    }
+
+    OmKeyArgs targetArgs = new OmKeyArgs.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setKeyName(keyName)
+        .build();
+    try (UncheckedAutoCloseableSupplier<? extends IOmMetadataReader> snapshot =
+             ozoneManager.getOmSnapshotManager().getSnapshot(
+                 forkInfo.getBaseSnapshotId())) {
+      return bucketForkManager.lookupBaseFileStatus(forkInfo, targetArgs,
+          snapshot.get());
+    } catch (OMException ex) {
+      if (ex.getResult() == FILE_NOT_FOUND || ex.getResult() == KEY_NOT_FOUND) {
+        return null;
+      }
+      throw ex;
+    }
+  }
+
+  private boolean isForkLocalEntry(OMMetadataManager omMetadataManager,
+      String volumeName, String bucketName, String keyName,
+      OmKeyInfo keyInfo, boolean isDirectory) throws IOException {
+    long volumeId = omMetadataManager.getVolumeId(volumeName);
+    long bucketId = omMetadataManager.getBucketId(volumeName, bucketName);
+    String dbKey = omMetadataManager.getOzonePathKey(volumeId, bucketId,
+        keyInfo.getParentObjectID(), keyInfo.getFileName());
+    if (isDirectory) {
+      return omMetadataManager.getDirectoryTable().get(dbKey) != null;
+    }
+    return omMetadataManager.getKeyTable(getBucketLayout()).get(dbKey) != null;
+  }
+
+  private OmKeyInfo forkOwnedCopy(OmKeyInfo baseKeyInfo, long forkObjectId,
+      long updateId) throws IOException {
+    return OmKeyInfo.getFromProtobuf(baseKeyInfo
+        .getProtobuf(ClientVersion.CURRENT_VERSION).toBuilder()
+        .setObjectID(forkObjectId)
+        .setUpdateID(updateId)
+        .build());
+  }
+
+  private BucketForkTombstoneInfo createTombstoneInfo(
+      BucketForkInfo forkInfo, String logicalPath, OzoneFileStatus status,
+      long creationTime, long updateId) {
+    BucketForkTombstoneInfo.BucketForkTombstoneType tombstoneType =
+        status.isDirectory()
+            ? BucketForkTombstoneInfo.BucketForkTombstoneType.DIRECTORY
+            : BucketForkTombstoneInfo.BucketForkTombstoneType.KEY;
+    return BucketForkTombstoneInfo.newBuilder()
+        .setForkId(forkInfo.getForkId())
+        .setTargetVolumeName(forkInfo.getTargetVolumeName())
+        .setTargetBucketName(forkInfo.getTargetBucketName())
+        .setBaseSnapshotId(forkInfo.getBaseSnapshotId())
+        .setLogicalPath(logicalPath)
+        .setObjectId(status.getKeyInfo().getObjectID())
+        .setCreationTime(creationTime)
+        .setUpdateId(updateId)
+        .setType(tombstoneType)
+        .build();
   }
 
   @SuppressWarnings("checkstyle:ParameterNumber")

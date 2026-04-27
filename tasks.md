@@ -6,7 +6,7 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 
 - Branch: `research-bucket-forks-feasibility`
 - Remote: `origin/research-bucket-forks-feasibility`
-- Last completed slice: bucket fork FSO base-visible file delete tombstones.
+- Last completed slice: bucket fork FSO base-visible rename overlay.
 - Capability state: early MVP skeleton, not yet end-to-end ready.
 
 ## Completed
@@ -32,9 +32,10 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
 - [x] Add subtree hiding for base-visible entries under fork directory/prefix
   tombstones.
 - [x] Add FSO single-key delete tombstones for base-visible fork files.
+- [x] Add FSO rename support for base-visible fork files.
 - [x] Add unit/request tests for completed metadata, RPC, client, shell, lookup,
   list overlay, delete/tombstone, metadata mutation, OBS rename, FSO exact file
-  lookup, and FSO file listing slices.
+  lookup, FSO file listing, and FSO rename slices.
 
 ## Next Major Slices
 
@@ -57,12 +58,12 @@ Tracking document for the HDDS-15120 bucket fork MVP branch.
     tombstones for old logical paths, then apply rename semantics.
   - [x] Add OBS rename tests.
 
-- [ ] Extend overlay support to FSO/file APIs.
+- [x] Extend overlay support to FSO/file APIs.
   - [x] Add `lookupFile` and `getFileStatus` fall-through behavior.
   - [x] Add directory/file listing merge behavior.
   - [x] Define directory tombstone behavior for base-visible directories.
   - [x] Add FSO tests for file lookup, directory listing, and delete.
-  - [ ] Add FSO rename tests and behavior.
+  - [x] Add FSO rename tests and behavior.
 
 - [ ] Implement quota accounting for visible fork namespace.
   - [ ] Initialize fork usage from base snapshot visible usage.

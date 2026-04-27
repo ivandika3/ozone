@@ -81,6 +81,7 @@ import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfoGroup;
+import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
 import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
 import org.apache.hadoop.ozone.om.request.OMClientRequest;
 import org.apache.hadoop.ozone.om.request.OMRequestTestUtils;
@@ -339,21 +340,28 @@ public class TestOMKeyRequest {
     when(ozoneManager.getObjectIdFromTxId(anyLong())).thenReturn(forkObjectId);
 
     OmSnapshot baseSnapshot = Mockito.mock(OmSnapshot.class);
+    OmKeyInfo baseKeyInfo = new OmKeyInfo.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(sourceBucketName)
+        .setKeyName(".snapshot/" + snapshotName + "/" + keyName)
+        .setObjectID(baseObjectId)
+        .setModificationTime(100L)
+        .setReplicationConfig(replicationConfig)
+        .addOmKeyLocationInfoGroup(new OmKeyLocationInfoGroup(
+            0L, baseLocationList, false))
+        .build();
     Mockito.when(baseSnapshot.lookupKey(Mockito.argThat(args ->
         args != null
             && volumeName.equals(args.getVolumeName())
             && sourceBucketName.equals(args.getBucketName())
             && keyName.equals(args.getKeyName()))))
-        .thenReturn(new OmKeyInfo.Builder()
-            .setVolumeName(volumeName)
-            .setBucketName(sourceBucketName)
-            .setKeyName(".snapshot/" + snapshotName + "/" + keyName)
-            .setObjectID(baseObjectId)
-            .setModificationTime(100L)
-            .setReplicationConfig(replicationConfig)
-            .addOmKeyLocationInfoGroup(new OmKeyLocationInfoGroup(
-                0L, baseLocationList, false))
-            .build());
+        .thenReturn(baseKeyInfo);
+    Mockito.when(baseSnapshot.getFileStatus(Mockito.argThat(args ->
+        args != null
+            && volumeName.equals(args.getVolumeName())
+            && sourceBucketName.equals(args.getBucketName())
+            && keyName.equals(args.getKeyName()))))
+        .thenReturn(new OzoneFileStatus(baseKeyInfo, 0L, false));
     UncheckedAutoCloseableSupplier<OmSnapshot> snapshotSupplier =
         mock(UncheckedAutoCloseableSupplier.class);
     when(snapshotSupplier.get()).thenReturn(baseSnapshot);
