@@ -166,38 +166,12 @@ public class OMBucketForkCreateRequest extends OMClientRequest {
       long creationTime = request.hasCreationTime()
           ? request.getCreationTime() : transactionLogIndex;
 
-      OmBucketInfo targetBucketInfo = sourceBucketInfo.toBuilder()
-          .setVolumeName(targetVolumeName)
-          .setBucketName(targetBucketName)
-          .setSourceVolume(null)
-          .setSourceBucket(null)
-          .setObjectID(targetBucketObjectId)
-          .setUpdateID(transactionLogIndex)
-          .setCreationTime(creationTime)
-          .setModificationTime(creationTime)
-          .setUsedBytes(quotaBaselineBytes)
-          .setUsedNamespace(quotaBaselineNamespace)
-          .build();
-
-      BucketForkInfo bucketForkInfo = BucketForkInfo.newBuilder()
-          .setForkId(request.hasForkId()
-              ? fromProtobuf(request.getForkId())
-              : new UUID(0L, transactionLogIndex))
-          .setSourceVolumeName(sourceVolumeName)
-          .setSourceBucketName(sourceBucketName)
-          .setTargetVolumeName(targetVolumeName)
-          .setTargetBucketName(targetBucketName)
-          .setBaseSnapshotId(baseSnapshotInfo.getSnapshotId())
-          .setBaseSnapshotName(baseSnapshotInfo.getName())
-          .setSourceBucketObjectId(sourceBucketInfo.getObjectID())
-          .setTargetBucketObjectId(targetBucketObjectId)
-          .setCreationTime(creationTime)
-          .setDeletionTime(-1L)
-          .setStatus(BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE)
-          .setQuotaBaselineBytes(quotaBaselineBytes)
-          .setQuotaBaselineNamespace(quotaBaselineNamespace)
-          .setCreatedFromActiveBucket(false)
-          .build();
+      OmBucketInfo targetBucketInfo = buildTargetBucketInfo(request,
+          sourceBucketInfo, targetBucketObjectId, transactionLogIndex,
+          creationTime, baseSnapshotInfo);
+      BucketForkInfo bucketForkInfo = buildBucketForkInfo(request,
+          sourceBucketInfo, baseSnapshotInfo, targetBucketObjectId,
+          transactionLogIndex, creationTime);
 
       targetVolumeArgs = targetVolumeArgs.toBuilder()
           .incrUsedNamespace(1L)
@@ -257,6 +231,49 @@ public class OMBucketForkCreateRequest extends OMClientRequest {
               getOmRequest().getUserInfo()));
     }
     return omClientResponse;
+  }
+
+  private static OmBucketInfo buildTargetBucketInfo(
+      CreateBucketForkRequest request, OmBucketInfo sourceBucketInfo,
+      long targetBucketObjectId, long transactionLogIndex, long creationTime,
+      SnapshotInfo baseSnapshotInfo) {
+    return sourceBucketInfo.toBuilder()
+        .setVolumeName(request.getTargetVolumeName())
+        .setBucketName(request.getTargetBucketName())
+        .setSourceVolume(null)
+        .setSourceBucket(null)
+        .setObjectID(targetBucketObjectId)
+        .setUpdateID(transactionLogIndex)
+        .setCreationTime(creationTime)
+        .setModificationTime(creationTime)
+        .setUsedBytes(baseSnapshotInfo.getReferencedSize())
+        .setUsedNamespace(sourceBucketInfo.getUsedNamespace())
+        .build();
+  }
+
+  private static BucketForkInfo buildBucketForkInfo(
+      CreateBucketForkRequest request, OmBucketInfo sourceBucketInfo,
+      SnapshotInfo baseSnapshotInfo, long targetBucketObjectId,
+      long transactionLogIndex, long creationTime) {
+    return BucketForkInfo.newBuilder()
+        .setForkId(request.hasForkId()
+            ? fromProtobuf(request.getForkId())
+            : new UUID(0L, transactionLogIndex))
+        .setSourceVolumeName(request.getSourceVolumeName())
+        .setSourceBucketName(request.getSourceBucketName())
+        .setTargetVolumeName(request.getTargetVolumeName())
+        .setTargetBucketName(request.getTargetBucketName())
+        .setBaseSnapshotId(baseSnapshotInfo.getSnapshotId())
+        .setBaseSnapshotName(baseSnapshotInfo.getName())
+        .setSourceBucketObjectId(sourceBucketInfo.getObjectID())
+        .setTargetBucketObjectId(targetBucketObjectId)
+        .setCreationTime(creationTime)
+        .setDeletionTime(-1L)
+        .setStatus(BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE)
+        .setQuotaBaselineBytes(baseSnapshotInfo.getReferencedSize())
+        .setQuotaBaselineNamespace(sourceBucketInfo.getUsedNamespace())
+        .setCreatedFromActiveBucket(false)
+        .build();
   }
 
   private static SnapshotInfo getActiveBaseSnapshot(
