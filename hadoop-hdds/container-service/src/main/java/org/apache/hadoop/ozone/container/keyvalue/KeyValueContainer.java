@@ -462,6 +462,19 @@ public class KeyValueContainer implements Container<KeyValueContainerData> {
   }
 
   /**
+   * Updates the persisted storage type for this container replica.
+   */
+  public void updateContainerStorageType(StorageType storageType)
+      throws StorageContainerException {
+    writeLock();
+    try {
+      updateContainerData(() -> containerData.setStorageType(storageType));
+    } finally {
+      writeUnlock();
+    }
+  }
+
+  /**
    * Sync RocksDB WAL on closing of a single container.
    *
    * @param closer

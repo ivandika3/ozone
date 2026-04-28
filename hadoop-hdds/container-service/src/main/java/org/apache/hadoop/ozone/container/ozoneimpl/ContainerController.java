@@ -25,6 +25,7 @@ import java.time.Instant;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.ContainerDataProto.State;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.ContainerType;
@@ -257,6 +258,18 @@ public class ContainerController {
       LOG.warn("Container {} to reconcile not found on this datanode.", containerID);
     } else {
       getHandler(container).reconcileContainer(dnClient, container, peers);
+    }
+  }
+
+  public void setContainerStorageType(final long containerId,
+      final int replicaIndex, final StorageType storageType)
+      throws IOException {
+    Container container = containerSet.getContainer(containerId);
+    if (container == null) {
+      LOG.warn("Container {} not found, skip set storage type", containerId);
+    } else {
+      getHandler(container).setContainerStorageType(container, replicaIndex,
+          storageType);
     }
   }
 

@@ -24,6 +24,7 @@ import java.io.OutputStream;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.util.Collection;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos;
@@ -229,6 +230,17 @@ public abstract class Handler {
    */
   public abstract void deleteContainer(Container container, boolean force)
       throws IOException;
+
+  /**
+   * Sets the storage type for the specified container replica.
+   *
+   * @param container container to update
+   * @param replicaIndex replica index for EC containers
+   * @param storageType new storage type
+   * @throws IOException in case of exception
+   */
+  public abstract void setContainerStorageType(Container container,
+      int replicaIndex, StorageType storageType) throws IOException;
 
   /**
    * Triggers reconciliation of this container replica's data with its peers.

@@ -168,6 +168,29 @@ public class DatanodeConfiguration extends ReconfigurableConfig {
   private int containerCloseThreads = CONTAINER_CLOSE_THREADS_DEFAULT;
 
   /**
+   * The maximum number of threads used to set container storage type on a
+   * datanode simultaneously.
+   */
+  @Config(key = "hdds.datanode.container.set.storage.type.threads.max",
+      type = ConfigType.INT,
+      defaultValue = "1",
+      tags = {DATANODE},
+      description = "The maximum number of threads used to set container "
+          + "storage type on a datanode")
+  private int containerSetStorageTypeThreads = 1;
+
+  /**
+   * The maximum number of queued set-container-storage-type commands.
+   */
+  @Config(key = "hdds.datanode.container.set.storage.type.queue.limit",
+      type = ConfigType.INT,
+      defaultValue = "5000",
+      tags = {DATANODE},
+      description = "The maximum number of set container storage type "
+          + "commands queued on a datanode")
+  private int containerSetStorageTypeQueueLimit = 5000;
+
+  /**
    * The maximum number of threads used to handle delete block commands.
    * It takes about 200ms to open a RocksDB with HDD media, so basically DN
    * can handle 300 individual container delete tx every 60s if RocksDB cache
@@ -838,6 +861,25 @@ public class DatanodeConfiguration extends ReconfigurableConfig {
 
   public void setContainerCloseThreads(int containerCloseThreads) {
     this.containerCloseThreads = containerCloseThreads;
+  }
+
+  public int getContainerSetStorageTypeThreads() {
+    return containerSetStorageTypeThreads;
+  }
+
+  public void setContainerSetStorageTypeThreads(
+      int containerSetStorageTypeThreads) {
+    this.containerSetStorageTypeThreads = containerSetStorageTypeThreads;
+  }
+
+  public int getContainerSetStorageTypeQueueLimit() {
+    return containerSetStorageTypeQueueLimit;
+  }
+
+  public void setContainerSetStorageTypeQueueLimit(
+      int containerSetStorageTypeQueueLimit) {
+    this.containerSetStorageTypeQueueLimit =
+        containerSetStorageTypeQueueLimit;
   }
 
   public long getMinFreeSpace(long capacity) {

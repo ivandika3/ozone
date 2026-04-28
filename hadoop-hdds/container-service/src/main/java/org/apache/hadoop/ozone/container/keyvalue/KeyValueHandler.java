@@ -1640,6 +1640,48 @@ public class KeyValueHandler extends Handler {
   }
 
   @Override
+  public void setContainerStorageType(Container container, int replicaIndex,
+      StorageType storageType) throws IOException {
+    container.writeLock();
+    long containerID = container.getContainerData().getContainerID();
+    try {
+      KeyValueContainer kvContainer = (KeyValueContainer) container;
+      KeyValueContainerData containerData = kvContainer.getContainerData();
+      if (containerData.getReplicaIndex() != replicaIndex) {
+        LOG.warn("Container #{} replica index mismatch. Expected: {}, "
+                + "actual: {}. Skipping setContainerStorageType.",
+            containerID, replicaIndex, containerData.getReplicaIndex());
+        return;
+      }
+      if (storageType == containerData.getStorageType()) {
+        LOG.debug("Container #{} storage type already {}.",
+            containerID, storageType);
+        return;
+      }
+
+      try {
+        kvContainer.updateContainerStorageType(storageType);
+      } catch (StorageContainerException e) {
+        throw new IOException("Failed to update storage type for container "
+            + containerID, e);
+      }
+
+      try {
+        sendICR(container);
+      } catch (StorageContainerException e) {
+        throw new IOException("Failed to send ICR for container "
+            + containerID, e);
+      }
+
+      LOG.info("Successfully set storage type for container #{}, "
+              + "replicaIndex: {}, storageType: {}",
+          containerID, replicaIndex, storageType);
+    } finally {
+      container.writeUnlock();
+    }
+  }
+
+  @Override
   public void reconcileContainer(DNContainerOperationClient dnClient, Container<?> container,
       Collection<DatanodeDetails> peers) throws IOException {
     long containerID = container.getContainerData().getContainerID();

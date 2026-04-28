@@ -65,6 +65,7 @@ import org.apache.hadoop.ozone.container.common.statemachine.commandhandler.Reco
 import org.apache.hadoop.ozone.container.common.statemachine.commandhandler.ReconstructECContainersCommandHandler;
 import org.apache.hadoop.ozone.container.common.statemachine.commandhandler.RefreshVolumeUsageCommandHandler;
 import org.apache.hadoop.ozone.container.common.statemachine.commandhandler.ReplicateContainerCommandHandler;
+import org.apache.hadoop.ozone.container.common.statemachine.commandhandler.SetContainerStorageTypeCommandHandler;
 import org.apache.hadoop.ozone.container.common.statemachine.commandhandler.SetNodeOperationalStateCommandHandler;
 import org.apache.hadoop.ozone.container.common.volume.VolumeChoosingPolicyFactory;
 import org.apache.hadoop.ozone.container.ec.reconstruction.ECReconstructionCoordinator;
@@ -278,6 +279,9 @@ public class DatanodeStateMachine implements Closeable {
             createPipelineCommandExecutorService))
         .addHandler(new FinalizeNewLayoutVersionCommandHandler())
         .addHandler(new RefreshVolumeUsageCommandHandler())
+        .addHandler(new SetContainerStorageTypeCommandHandler(
+            dnConf.getContainerSetStorageTypeThreads(),
+            dnConf.getContainerSetStorageTypeQueueLimit(), threadNamePrefix))
         .addHandler(new ReconcileContainerCommandHandler(supervisor, dnClient));
 
     if (container.getDiskBalancerService() != null) {

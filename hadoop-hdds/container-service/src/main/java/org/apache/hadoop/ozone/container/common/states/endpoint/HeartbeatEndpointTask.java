@@ -60,6 +60,7 @@ import org.apache.hadoop.ozone.protocol.commands.ReconstructECContainersCommand;
 import org.apache.hadoop.ozone.protocol.commands.RefreshVolumeUsageCommand;
 import org.apache.hadoop.ozone.protocol.commands.ReplicateContainerCommand;
 import org.apache.hadoop.ozone.protocol.commands.SCMCommand;
+import org.apache.hadoop.ozone.protocol.commands.SetContainerStorageTypeCommand;
 import org.apache.hadoop.ozone.protocol.commands.SetNodeOperationalStateCommand;
 import org.apache.hadoop.util.Time;
 import org.slf4j.Logger;
@@ -390,6 +391,13 @@ public class HeartbeatEndpointTask
         ReconcileContainerCommand reconcileContainerCommand =
             ReconcileContainerCommand.getFromProtobuf(commandResponseProto.getReconcileContainerCommandProto());
         processCommonCommand(commandResponseProto, reconcileContainerCommand);
+        break;
+      case setContainerStorageTypeCommand:
+        SetContainerStorageTypeCommand setContainerStorageTypeCommand =
+            SetContainerStorageTypeCommand.getFromProtobuf(
+                commandResponseProto.getSetContainerStorageTypeCommandProto());
+        processCommonCommand(commandResponseProto,
+            setContainerStorageTypeCommand);
         break;
       default:
         throw new IllegalArgumentException("Unknown response : "
