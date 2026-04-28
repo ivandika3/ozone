@@ -109,8 +109,7 @@ public class TestS3PutObjectTaggingRequest extends TestOMKeyRequest {
     setupBaseVisibleForkKey(sourceBucketName, snapshotName, snapshotId,
         123L, forkObjectId);
 
-    String ozoneKey = omMetadataManager.getOzoneKey(volumeName, bucketName,
-        keyName);
+    String ozoneKey = getForkLocalKeyTableKey();
     assertNull(omMetadataManager.getKeyTable(getBucketLayout()).get(ozoneKey));
 
     OMRequest modifiedOmRequest =

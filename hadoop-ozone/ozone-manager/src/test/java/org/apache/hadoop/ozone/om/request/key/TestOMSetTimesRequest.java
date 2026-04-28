@@ -79,8 +79,7 @@ public class TestOMSetTimesRequest extends TestOMKeyRequest {
     setupBaseVisibleForkKey(sourceBucketName, snapshotName, snapshotId,
         baseObjectId, forkObjectId);
 
-    String ozoneKey = omMetadataManager.getOzoneKey(volumeName, bucketName,
-        keyName);
+    String ozoneKey = getForkLocalKeyTableKey();
     assertNull(omMetadataManager.getKeyTable(getBucketLayout()).get(ozoneKey));
 
     executeAndReturn(mtime);

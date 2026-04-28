@@ -35,6 +35,7 @@ import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.execution.flowcontrol.ExecutionContext;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
 import org.apache.hadoop.ozone.om.request.util.OmResponseUtil;
 import org.apache.hadoop.ozone.om.response.OMClientResponse;
 import org.apache.hadoop.ozone.om.response.key.OMKeySetTimesResponse;
@@ -226,8 +227,22 @@ public class OMKeySetTimesRequest extends OMKeyRequest {
           .get(dbKey);
 
       if (omKeyInfo == null) {
-        omKeyInfo = getForkBaseKeyForCopyOnWrite(ozoneManager,
-            omMetadataManager, volume, bucket, key, trxnLogIndex);
+        if (getBucketLayout().isFileSystemOptimized()) {
+          OzoneFileStatus keyStatus = new BucketForkManager(omMetadataManager)
+              .getForkBaseFileStatusForCopyOnWrite(ozoneManager, volume,
+                  bucket, key, ozoneManager.getObjectIdFromTxId(trxnLogIndex),
+                  trxnLogIndex);
+          if (keyStatus != null && keyStatus.getKeyInfo() != null) {
+            omKeyInfo = keyStatus.getKeyInfo();
+            long volumeId = omMetadataManager.getVolumeId(volume);
+            long bucketId = omMetadataManager.getBucketId(volume, bucket);
+            dbKey = omMetadataManager.getOzonePathKey(volumeId, bucketId,
+                omKeyInfo.getParentObjectID(), omKeyInfo.getFileName());
+          }
+        } else {
+          omKeyInfo = getForkBaseKeyForCopyOnWrite(ozoneManager,
+              omMetadataManager, volume, bucket, key, trxnLogIndex);
+        }
         if (omKeyInfo == null) {
           throw new OMException(OMException.ResultCodes.KEY_NOT_FOUND);
         }

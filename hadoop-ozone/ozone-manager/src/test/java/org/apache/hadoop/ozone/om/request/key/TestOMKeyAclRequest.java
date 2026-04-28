@@ -203,8 +203,7 @@ public class TestOMKeyAclRequest extends TestOMKeyRequest {
         omMetadataManager, getBucketLayout());
     setupBaseVisibleForkKey(sourceBucketName, snapshotName, snapshotId,
         123L, forkObjectId);
-    String ozoneKey = omMetadataManager.getOzoneKey(volumeName, bucketName,
-        keyName);
+    String ozoneKey = getForkLocalKeyTableKey();
     assertNull(omMetadataManager.getKeyTable(getBucketLayout()).get(ozoneKey));
 
     OzoneAcl acl = OzoneAcl.parseAcl("user:bilbo:rwdlncxy[ACCESS]");

@@ -232,6 +232,45 @@ public class BucketForkManager {
     return OmKeyInfo.getFromProtobuf(forkKeyProto);
   }
 
+  public OzoneFileStatus getForkBaseFileStatusForCopyOnWrite(
+      OzoneManager ozoneManager, String volumeName, String bucketName,
+      String keyName, long forkObjectId, long updateId) throws IOException {
+    BucketForkInfo forkInfo = getActiveForkInfo(volumeName, bucketName);
+    if (forkInfo == null) {
+      return null;
+    }
+
+    OmKeyArgs targetArgs = new OmKeyArgs.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setKeyName(keyName)
+        .build();
+    OzoneFileStatus baseFileStatus;
+    try (UncheckedAutoCloseableSupplier<? extends IOmMetadataReader> snapshot =
+             ozoneManager.getOmSnapshotManager().getSnapshot(
+                 forkInfo.getBaseSnapshotId())) {
+      baseFileStatus = lookupBaseFileStatus(forkInfo, targetArgs,
+          snapshot.get());
+    } catch (OMException ex) {
+      if (isFileOrKeyNotFound(ex)) {
+        return null;
+      }
+      throw ex;
+    }
+
+    OmKeyInfo baseKeyInfo = baseFileStatus.getKeyInfo();
+    if (baseKeyInfo == null) {
+      return baseFileStatus;
+    }
+    OzoneManagerProtocolProtos.KeyInfo forkKeyProto =
+        baseKeyInfo.getProtobuf(ClientVersion.CURRENT_VERSION).toBuilder()
+            .setObjectID(forkObjectId)
+            .setUpdateID(updateId)
+            .build();
+    return new OzoneFileStatus(OmKeyInfo.getFromProtobuf(forkKeyProto),
+        baseFileStatus.getBlockSize(), baseFileStatus.isDirectory());
+  }
+
   public ListKeysResult listKeys(BucketForkInfo forkInfo,
       ListKeysResult forkLocalKeys, String startKey, String keyPrefix,
       int maxKeys, IOmMetadataReader baseReader) throws IOException {

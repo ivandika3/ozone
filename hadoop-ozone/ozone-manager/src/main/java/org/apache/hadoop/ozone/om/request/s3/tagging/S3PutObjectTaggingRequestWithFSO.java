@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.util.Map;
 import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
 import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
+import org.apache.hadoop.ozone.om.BucketForkManager;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OMMetrics;
 import org.apache.hadoop.ozone.om.OzoneManager;
@@ -97,7 +98,14 @@ public class S3PutObjectTaggingRequestWithFSO extends S3PutObjectTaggingRequest 
           ozoneManager.getDefaultReplicationConfig());
 
       if (keyStatus == null) {
-        throw new OMException("Key not found. Key: " + keyName, ResultCodes.KEY_NOT_FOUND);
+        keyStatus = new BucketForkManager(omMetadataManager)
+            .getForkBaseFileStatusForCopyOnWrite(ozoneManager, volumeName,
+                bucketName, keyName,
+                ozoneManager.getObjectIdFromTxId(trxnLogIndex), trxnLogIndex);
+        if (keyStatus == null) {
+          throw new OMException("Key not found. Key: " + keyName,
+              ResultCodes.KEY_NOT_FOUND);
+        }
       }
 
       boolean isDirectory = keyStatus.isDirectory();
