@@ -131,14 +131,12 @@ public class CheckStoragePolicySubCommand extends ScmSubcommand {
             keyMatchesStoragePolicy = false;
           }
           DatanodeDetails datanode = replica.getDatanodeDetails();
-          sb.append(String.format("  Datanode: %s (%s, %s)%n",
+          sb.append(String.format("  Datanode: %s (%s, %s)%n"
+                  + "  Replica Storage Type: %s%n"
+                  + "  Volume Storage Type: %s%n%n",
               datanode.getUuid(), datanode.getHostName(),
-              datanode.getNetworkLocation()));
-          sb.append(String.format("  Replica Storage Type: %s%n",
-              replica.getStorageType()));
-          sb.append(String.format("  Volume Storage Type: %s%n",
+              datanode.getNetworkLocation(), replica.getStorageType(),
               replica.getVolumeStorageType()));
-          sb.append('\n');
         }
       } catch (IOException e) {
         throw new RuntimeException(String.format(
