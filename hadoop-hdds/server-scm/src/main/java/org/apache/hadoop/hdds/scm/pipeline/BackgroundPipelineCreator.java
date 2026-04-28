@@ -17,6 +17,8 @@
 
 package org.apache.hadoop.hdds.scm.pipeline;
 
+import static org.apache.hadoop.hdds.protocol.proto.HddsProtos.NodeOperationalState.IN_SERVICE;
+import static org.apache.hadoop.hdds.protocol.proto.HddsProtos.NodeState.HEALTHY;
 import static org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationType.EC;
 import static org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationType.RATIS;
 import static org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationType.STAND_ALONE;
@@ -28,23 +30,33 @@ import static org.apache.hadoop.hdds.scm.ha.SCMService.Event.UNHEALTHY_TO_HEALTH
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import java.io.IOException;
 import java.time.Clock;
+import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import org.apache.commons.collections4.iterators.LoopingIterator;
+import org.apache.hadoop.fs.StorageType;
 import org.apache.hadoop.hdds.HddsConfigKeys;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.StandaloneReplicationConfig;
+import org.apache.hadoop.hdds.client.StorageTier;
+import org.apache.hadoop.hdds.client.StorageTypeUtils;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
+import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationFactor;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.StorageReportProto;
 import org.apache.hadoop.hdds.scm.ScmConfigKeys;
 import org.apache.hadoop.hdds.scm.ha.SCMContext;
 import org.apache.hadoop.hdds.scm.ha.SCMService;
+import org.apache.hadoop.hdds.scm.node.DatanodeInfo;
 import org.apache.hadoop.ozone.OzoneConfigKeys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -211,9 +223,9 @@ public class BackgroundPipelineCreator implements SCMService {
     boolean autoCreateFactorOne = conf.getBoolean(
         ScmConfigKeys.OZONE_SCM_PIPELINE_AUTO_CREATE_FACTOR_ONE,
         ScmConfigKeys.OZONE_SCM_PIPELINE_AUTO_CREATE_FACTOR_ONE_DEFAULT);
+    Set<StorageType> clusterStorageTypes = collectClusterStorageTypes();
 
-    List<ReplicationConfig> list =
-        new ArrayList<>();
+    List<Map.Entry<ReplicationConfig, StorageTier>> list = new ArrayList<>();
     for (HddsProtos.ReplicationFactor factor : HddsProtos.ReplicationFactor
         .values()) {
       if (factor == ReplicationFactor.ZERO) {
@@ -233,16 +245,26 @@ public class BackgroundPipelineCreator implements SCMService {
         // Skip this iteration for creating pipeline
         continue;
       }
-      list.add(replicationConfig);
+      for (StorageTier storageTier : StorageTier.values()) {
+        if (storageTier == StorageTier.EMPTY) {
+          continue;
+        }
+        StorageType primaryStorageType = storageTier.getStorageTypes(1).get(0);
+        if (!clusterStorageTypes.contains(primaryStorageType)) {
+          continue;
+        }
+        list.add(new SimpleImmutableEntry<>(replicationConfig, storageTier));
+      }
     }
 
     LoopingIterator it = new LoopingIterator(list);
     while (it.hasNext()) {
-      ReplicationConfig replicationConfig =
-          (ReplicationConfig) it.next();
+      Map.Entry<ReplicationConfig, StorageTier> request =
+          (Map.Entry<ReplicationConfig, StorageTier>) it.next();
 
       try {
-        Pipeline pipeline = pipelineManager.createPipeline(replicationConfig);
+        Pipeline pipeline = pipelineManager.createPipeline(
+            request.getKey(), request.getValue());
         LOG.info("Created new pipeline {}", pipeline);
       } catch (IOException ioe) {
         it.remove();
@@ -253,6 +275,35 @@ public class BackgroundPipelineCreator implements SCMService {
     }
 
     LOG.debug("BackgroundPipelineCreator createPipelines finished.");
+  }
+
+  private Set<StorageType> collectClusterStorageTypes() {
+    Set<StorageType> clusterStorageTypes = new HashSet<>();
+    if (scmContext.getScm() == null) {
+      for (StorageTier storageTier : StorageTier.values()) {
+        if (storageTier != StorageTier.EMPTY) {
+          clusterStorageTypes.add(storageTier.getStorageTypes(1).get(0));
+        }
+      }
+      return clusterStorageTypes;
+    }
+
+    List<DatanodeDetails> datanodes = scmContext.getScm().getScmNodeManager()
+        .getNodes(IN_SERVICE, HEALTHY);
+    for (DatanodeDetails datanode : datanodes) {
+      DatanodeInfo datanodeInfo =
+          scmContext.getScm().getScmNodeManager().getDatanodeInfo(datanode);
+      if (datanodeInfo == null) {
+        continue;
+      }
+      for (StorageReportProto reportProto : datanodeInfo.getStorageReports()) {
+        if (reportProto.hasStorageTypeProto()) {
+          clusterStorageTypes.add(
+              StorageTypeUtils.getFromProtobuf(reportProto.getStorageTypeProto()));
+        }
+      }
+    }
+    return clusterStorageTypes;
   }
 
   @Override
