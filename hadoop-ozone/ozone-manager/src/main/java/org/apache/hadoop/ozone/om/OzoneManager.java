@@ -3189,6 +3189,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
     }
   }
 
+  @Override
   public BucketForkInfo getBucketForkInfo(String volumeName, String bucketName)
       throws IOException {
     Map<String, String> auditMap = buildAuditMap(volumeName);
@@ -3214,6 +3215,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
     }
   }
 
+  @Override
   public ListBucketForksResponse listBucketForks(String volumeName,
       String bucketNamePrefix, String prevBucketName, int maxListResult)
       throws IOException {
@@ -3264,7 +3266,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
       String lastBucketName = forkInfos.isEmpty() ? null :
           forkInfos.get(forkInfos.size() - 1).getTargetBucketName();
       return new ListBucketForksResponse(forkInfos, lastBucketName);
-    } catch (Exception ex) {
+    } catch (IOException | RuntimeException ex) {
       AUDIT.logReadFailure(buildAuditMessageForFailure(
           OMAction.READ_BUCKET_FORK, auditMap, ex));
       throw ex;

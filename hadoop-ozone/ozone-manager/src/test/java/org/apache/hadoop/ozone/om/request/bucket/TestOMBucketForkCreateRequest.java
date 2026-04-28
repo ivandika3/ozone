@@ -24,6 +24,7 @@ import static org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.UUID;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
@@ -147,8 +148,8 @@ public class TestOMBucketForkCreateRequest extends TestBucketRequest {
     BucketForkInfo forkInfo = omMetadataManager.getBucketForkTable().get(
         BucketForkInfo.getTableKey(TARGET_VOLUME, TARGET_BUCKET));
     assertNotNull(forkInfo);
-    assertEquals(true, forkInfo.isCreatedFromActiveBucket());
-    assertEquals(true, BucketForkInfo.isInternalBaseSnapshotName(
+    assertTrue(forkInfo.isCreatedFromActiveBucket());
+    assertTrue(BucketForkInfo.isInternalBaseSnapshotName(
         forkInfo.getBaseSnapshotName()));
 
     SnapshotInfo snapshotInfo = omMetadataManager.getSnapshotInfoTable().get(

@@ -165,8 +165,6 @@ public class OMBucketForkCreateRequest extends OMClientRequest {
 
       long targetBucketObjectId =
           ozoneManager.getObjectIdFromTxId(transactionLogIndex);
-      long quotaBaselineBytes = baseSnapshotInfo.getReferencedSize();
-      long quotaBaselineNamespace = sourceBucketInfo.getUsedNamespace();
       long creationTime = request.hasCreationTime()
           ? request.getCreationTime() : transactionLogIndex;
 
