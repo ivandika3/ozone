@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Collections;
 import org.apache.hadoop.hdds.client.DefaultReplicationConfig;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
+import org.apache.hadoop.hdds.client.OzoneStoragePolicy;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationType;
 import org.apache.hadoop.hdds.protocol.StorageType;
@@ -50,7 +51,9 @@ public class TestOmBucketInfo {
         .setStorageType(StorageType.ARCHIVE)
         .build();
 
-    assertEquals(bucket,
+    assertEquals(bucket.toBuilder()
+            .setStoragePolicy(OzoneStoragePolicy.COLD)
+            .build(),
         OmBucketInfo.getFromProtobuf(bucket.getProtobuf()));
   }
 

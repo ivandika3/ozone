@@ -43,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.anyString;
@@ -82,6 +83,7 @@ import org.apache.hadoop.hdds.client.BlockID;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.StandaloneReplicationConfig;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationFactor;
@@ -228,6 +230,16 @@ public class TestKeyManagerImpl {
             anyString(),
             any(ExcludeList.class),
             anyString())).thenThrow(
+                new SCMException("SafeModePrecheck failed for allocateBlock",
+            ResultCodes.SAFE_MODE_EXCEPTION));
+    when(mockScmBlockLocationProtocol
+        .allocateBlock(anyLong(), anyInt(),
+            any(ReplicationConfig.class),
+            anyString(),
+            any(ExcludeList.class),
+            anyString(),
+            any(StoragePolicy.class),
+            anyBoolean())).thenThrow(
                 new SCMException("SafeModePrecheck failed for allocateBlock",
             ResultCodes.SAFE_MODE_EXCEPTION));
     createVolume(VOLUME_NAME);
