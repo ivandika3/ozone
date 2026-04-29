@@ -59,6 +59,7 @@ import org.apache.hadoop.hdds.client.ContainerBlockID;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
+import org.apache.hadoop.hdds.client.StoragePolicy;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.DatanodeID;
@@ -721,6 +722,15 @@ public class TestOmContainerLocationCache {
             any(ExcludeList.class),
             anyString()))
         .thenReturn(Collections.singletonList(block));
+    when(mockScmBlockLocationProtocol
+        .allocateBlock(anyLong(), anyInt(),
+            any(ReplicationConfig.class),
+            anyString(),
+            any(ExcludeList.class),
+            anyString(),
+            any(StoragePolicy.class),
+            anyBoolean()))
+        .thenReturn(Collections.singletonList(block));
   }
 
   private void mockScmAllocationEcPipeline(long containerID, long localId)
@@ -736,6 +746,15 @@ public class TestOmContainerLocationCache {
             anyString(),
             any(ExcludeList.class),
             anyString()))
+        .thenReturn(Collections.singletonList(block));
+    when(mockScmBlockLocationProtocol
+        .allocateBlock(anyLong(), anyInt(),
+            any(ECReplicationConfig.class),
+            anyString(),
+            any(ExcludeList.class),
+            anyString(),
+            any(StoragePolicy.class),
+            anyBoolean()))
         .thenReturn(Collections.singletonList(block));
   }
 

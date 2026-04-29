@@ -39,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyList;
 import static org.mockito.Mockito.anyLong;
+import static org.mockito.Mockito.anySet;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
@@ -895,7 +896,9 @@ public class TestPipelineManagerImpl {
 
     // Throw on pipeline creates, so no new pipelines can be created
     doThrow(SCMException.class).when(pipelineManagerSpy)
-        .createPipeline(any(), any(), anyList());
+        .createPipeline(any(ReplicationConfig.class), any(StorageTier.class));
+    doThrow(SCMException.class).when(pipelineManagerSpy)
+        .createPipeline(any(), anyList(), anyList(), any(StorageTier.class));
     provider = new WritableRatisContainerProvider(
         pipelineManagerSpy, containerManager, pipelineChoosingPolicy);
 
@@ -913,7 +916,8 @@ public class TestPipelineManagerImpl {
     pipelineManager.addContainerToPipeline(
         allocatedPipeline.getId(), container.containerID());
     doReturn(container).when(containerManager).getMatchingContainer(anyLong(),
-        anyString(), eq(allocatedPipeline), any());
+        anyString(), eq(allocatedPipeline), anySet(),
+        any(StorageTier.class));
 
 
     assertTrue(pipelineManager.getPipelines(repConfig,  OPEN)
