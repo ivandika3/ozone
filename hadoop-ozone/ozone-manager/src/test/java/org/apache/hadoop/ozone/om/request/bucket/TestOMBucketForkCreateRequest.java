@@ -30,6 +30,7 @@ import java.util.UUID;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
 import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
 import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
+import org.apache.hadoop.ozone.om.helpers.BucketForkBaseViewInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
@@ -110,6 +111,24 @@ public class TestOMBucketForkCreateRequest extends TestBucketRequest {
     assertEquals(sourceBucket.getObjectID(), forkInfo.getSourceBucketObjectId());
     assertEquals(ozoneManager.getObjectIdFromTxId(11L),
         forkInfo.getTargetBucketObjectId());
+    assertNotNull(forkInfo.getBaseViewId());
+    assertNull(forkInfo.getSourceForkId());
+    assertEquals(1, forkInfo.getLineageDepth());
+
+    BucketForkBaseViewInfo baseViewInfo =
+        omMetadataManager.getBucketForkBaseViewTable().get(
+            BucketForkBaseViewInfo.getTableKey(forkInfo.getBaseViewId()));
+    assertNotNull(baseViewInfo);
+    assertEquals(SOURCE_VOLUME, baseViewInfo.getSourceVolumeName());
+    assertEquals(SOURCE_BUCKET, baseViewInfo.getSourceBucketName());
+    assertEquals(sourceBucket.getObjectID(),
+        baseViewInfo.getSourceBucketObjectId());
+    assertEquals(snapshotInfo.getSnapshotId(), baseViewInfo.getSnapshotId());
+    assertEquals(snapshotInfo.getName(), baseViewInfo.getSnapshotName());
+    assertNull(baseViewInfo.getParentBaseViewId());
+    assertNull(baseViewInfo.getSourceForkId());
+    assertEquals(1L, baseViewInfo.getReferenceCount());
+    assertTrue(baseViewInfo.isActive());
 
     OmBucketInfo targetBucket = omMetadataManager.getBucketTable().get(
         omMetadataManager.getBucketKey(TARGET_VOLUME, TARGET_BUCKET));
@@ -160,6 +179,15 @@ public class TestOMBucketForkCreateRequest extends TestBucketRequest {
     assertEquals(sourceBucket.getUsedBytes(), snapshotInfo.getReferencedSize());
     assertEquals(sourceBucket.getUsedNamespace(),
         forkInfo.getQuotaBaselineNamespace());
+
+    BucketForkBaseViewInfo baseViewInfo =
+        omMetadataManager.getBucketForkBaseViewTable().get(
+            BucketForkBaseViewInfo.getTableKey(forkInfo.getBaseViewId()));
+    assertNotNull(baseViewInfo);
+    assertEquals(snapshotInfo.getSnapshotId(), baseViewInfo.getSnapshotId());
+    assertEquals(snapshotInfo.getName(), baseViewInfo.getSnapshotName());
+    assertEquals(1L, baseViewInfo.getReferenceCount());
+    assertTrue(baseViewInfo.isActive());
   }
 
   @Test
@@ -218,6 +246,7 @@ public class TestOMBucketForkCreateRequest extends TestBucketRequest {
         volumeArgs.toBuilder().setUsedNamespace(1L).build());
 
     BucketForkInfo bucketForkInfo = BucketForkInfo.newBuilder()
+        .setBaseViewId(UUID.randomUUID())
         .setForkId(UUID.randomUUID())
         .setSourceVolumeName(SOURCE_VOLUME)
         .setSourceBucketName(SOURCE_BUCKET)
@@ -226,9 +255,23 @@ public class TestOMBucketForkCreateRequest extends TestBucketRequest {
         .setBaseSnapshotId(UUID.randomUUID())
         .setBaseSnapshotName(SNAPSHOT_NAME)
         .setStatus(BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE)
+        .setLineageDepth(1)
         .build();
     omMetadataManager.getBucketForkTable().put(bucketForkInfo.getTableKey(),
         bucketForkInfo);
+    omMetadataManager.getBucketForkBaseViewTable().put(
+        BucketForkBaseViewInfo.getTableKey(bucketForkInfo.getBaseViewId()),
+        BucketForkBaseViewInfo.newBuilder()
+            .setBaseViewId(bucketForkInfo.getBaseViewId())
+            .setSourceVolumeName(SOURCE_VOLUME)
+            .setSourceBucketName(SOURCE_BUCKET)
+            .setSourceBucketObjectId(1L)
+            .setSnapshotId(bucketForkInfo.getBaseSnapshotId())
+            .setSnapshotName(bucketForkInfo.getBaseSnapshotName())
+            .setCreationTime(Time.now())
+            .setUpdateId(12L)
+            .setReferenceCount(1L)
+            .build());
     omMetadataManager.getBucketForkTombstoneTable().put(
         BucketForkTombstoneInfo.getTableKey(TARGET_VOLUME, TARGET_BUCKET,
             "deleted-key"),
@@ -266,6 +309,8 @@ public class TestOMBucketForkCreateRequest extends TestBucketRequest {
     }
     assertEquals(null, omMetadataManager.getBucketForkTable().get(
         bucketForkInfo.getTableKey()));
+    assertEquals(null, omMetadataManager.getBucketForkBaseViewTable().get(
+        BucketForkBaseViewInfo.getTableKey(bucketForkInfo.getBaseViewId())));
     assertEquals(null, omMetadataManager.getBucketTable().get(
         omMetadataManager.getBucketKey(TARGET_VOLUME, TARGET_BUCKET)));
     assertEquals(null, omMetadataManager.getBucketForkTombstoneTable().get(

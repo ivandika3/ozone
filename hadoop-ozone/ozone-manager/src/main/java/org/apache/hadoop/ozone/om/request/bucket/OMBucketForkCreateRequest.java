@@ -45,6 +45,7 @@ import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.SnapshotChainManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.execution.flowcontrol.ExecutionContext;
+import org.apache.hadoop.ozone.om.helpers.BucketForkBaseViewInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmVolumeArgs;
@@ -84,6 +85,9 @@ public class OMBucketForkCreateRequest extends OMClientRequest {
     }
     if (!request.hasForkId()) {
       builder.setForkId(toProtobuf(UUID.randomUUID()));
+    }
+    if (!request.hasBaseViewID()) {
+      builder.setBaseViewID(toProtobuf(UUID.randomUUID()));
     }
     return getOmRequest().toBuilder()
         .setUserInfo(getUserInfo())
@@ -174,25 +178,18 @@ public class OMBucketForkCreateRequest extends OMClientRequest {
       BucketForkInfo bucketForkInfo = buildBucketForkInfo(request,
           sourceBucketInfo, baseSnapshotInfo, targetBucketObjectId,
           transactionLogIndex, creationTime);
+      BucketForkBaseViewInfo baseViewInfo = buildBaseViewInfo(request,
+          sourceBucketInfo, baseSnapshotInfo, transactionLogIndex,
+          creationTime);
 
       targetVolumeArgs = targetVolumeArgs.toBuilder()
           .incrUsedNamespace(1L)
           .build();
 
-      metadataManager.getVolumeTable().addCacheEntry(
-          new CacheKey<>(targetVolumeKey),
-          CacheValue.get(transactionLogIndex, targetVolumeArgs));
-      metadataManager.getBucketTable().addCacheEntry(
-          new CacheKey<>(targetBucketKey),
-          CacheValue.get(transactionLogIndex, targetBucketInfo));
-      if (bucketForkInfo.isCreatedFromActiveBucket()) {
-        metadataManager.getSnapshotInfoTable().addCacheEntry(
-            new CacheKey<>(baseSnapshotInfo.getTableKey()),
-            CacheValue.get(transactionLogIndex, baseSnapshotInfo));
-      }
-      metadataManager.getBucketForkTable().addCacheEntry(
-          new CacheKey<>(bucketForkInfo.getTableKey()),
-          CacheValue.get(transactionLogIndex, bucketForkInfo));
+      addTargetToCache(metadataManager, transactionLogIndex, targetVolumeKey,
+          targetBucketKey, targetVolumeArgs, targetBucketInfo);
+      addForkToCache(metadataManager, transactionLogIndex, bucketForkInfo,
+          baseSnapshotInfo, baseViewInfo);
 
       omResponse.setCreateBucketForkResponse(
           CreateBucketForkResponse.newBuilder()
@@ -200,7 +197,8 @@ public class OMBucketForkCreateRequest extends OMClientRequest {
               .build());
       omClientResponse = new OMBucketForkCreateResponse(omResponse.build(),
           bucketForkInfo, targetBucketInfo, targetVolumeArgs.copyObject(),
-          bucketForkInfo.isCreatedFromActiveBucket() ? baseSnapshotInfo : null);
+          bucketForkInfo.isCreatedFromActiveBucket() ? baseSnapshotInfo : null,
+          baseViewInfo);
       LOG.info("Created bucket fork {}/{} from snapshot {} of {}/{}",
           targetVolumeName, targetBucketName, baseSnapshotInfo.getName(),
           sourceVolumeName, sourceBucketName);
@@ -282,6 +280,7 @@ public class OMBucketForkCreateRequest extends OMClientRequest {
         .setTargetBucketName(request.getTargetBucketName())
         .setBaseSnapshotId(baseSnapshotInfo.getSnapshotId())
         .setBaseSnapshotName(baseSnapshotInfo.getName())
+        .setBaseViewId(baseViewId(request, transactionLogIndex))
         .setSourceBucketObjectId(sourceBucketInfo.getObjectID())
         .setTargetBucketObjectId(targetBucketObjectId)
         .setCreationTime(creationTime)
@@ -290,7 +289,53 @@ public class OMBucketForkCreateRequest extends OMClientRequest {
         .setQuotaBaselineBytes(baseSnapshotInfo.getReferencedSize())
         .setQuotaBaselineNamespace(sourceBucketInfo.getUsedNamespace())
         .setCreatedFromActiveBucket(!hasBaseSnapshotName(request))
+        .setLineageDepth(1)
         .build();
+  }
+
+  private static BucketForkBaseViewInfo buildBaseViewInfo(
+      CreateBucketForkRequest request, OmBucketInfo sourceBucketInfo,
+      SnapshotInfo baseSnapshotInfo, long transactionLogIndex,
+      long creationTime) {
+    return BucketForkBaseViewInfo.newBuilder()
+        .setBaseViewId(baseViewId(request, transactionLogIndex))
+        .setSourceVolumeName(request.getSourceVolumeName())
+        .setSourceBucketName(request.getSourceBucketName())
+        .setSourceBucketObjectId(sourceBucketInfo.getObjectID())
+        .setSnapshotId(baseSnapshotInfo.getSnapshotId())
+        .setSnapshotName(baseSnapshotInfo.getName())
+        .setCreationTime(creationTime)
+        .setUpdateId(transactionLogIndex)
+        .setStatus(BucketForkBaseViewInfo.BucketForkBaseViewStatus.ACTIVE)
+        .setReferenceCount(1L)
+        .build();
+  }
+
+  private static void addTargetToCache(OMMetadataManager metadataManager,
+      long transactionLogIndex, String targetVolumeKey, String targetBucketKey,
+      OmVolumeArgs targetVolumeArgs, OmBucketInfo targetBucketInfo) {
+    metadataManager.getVolumeTable().addCacheEntry(
+        new CacheKey<>(targetVolumeKey),
+        CacheValue.get(transactionLogIndex, targetVolumeArgs));
+    metadataManager.getBucketTable().addCacheEntry(
+        new CacheKey<>(targetBucketKey),
+        CacheValue.get(transactionLogIndex, targetBucketInfo));
+  }
+
+  private static void addForkToCache(OMMetadataManager metadataManager,
+      long transactionLogIndex, BucketForkInfo bucketForkInfo,
+      SnapshotInfo baseSnapshotInfo, BucketForkBaseViewInfo baseViewInfo) {
+    if (bucketForkInfo.isCreatedFromActiveBucket()) {
+      metadataManager.getSnapshotInfoTable().addCacheEntry(
+          new CacheKey<>(baseSnapshotInfo.getTableKey()),
+          CacheValue.get(transactionLogIndex, baseSnapshotInfo));
+    }
+    metadataManager.getBucketForkTable().addCacheEntry(
+        new CacheKey<>(bucketForkInfo.getTableKey()),
+        CacheValue.get(transactionLogIndex, bucketForkInfo));
+    metadataManager.getBucketForkBaseViewTable().addCacheEntry(
+        new CacheKey<>(baseViewInfo.getTableKey()),
+        CacheValue.get(transactionLogIndex, baseViewInfo));
   }
 
   private static SnapshotInfo getOrCreateBaseSnapshot(
@@ -359,6 +404,18 @@ public class OMBucketForkCreateRequest extends OMClientRequest {
         + request.getSourceBucketName() + "/" + request.getTargetVolumeName()
         + "/" + request.getTargetBucketName() + "/" + transactionLogIndex
         + "/" + forkMaterial).getBytes(StandardCharsets.UTF_8));
+  }
+
+  private static UUID baseViewId(CreateBucketForkRequest request,
+      long transactionLogIndex) {
+    if (request.hasBaseViewID()) {
+      return fromProtobuf(request.getBaseViewID());
+    }
+    return UUID.nameUUIDFromBytes(("base-view/"
+        + request.getSourceVolumeName() + "/" + request.getSourceBucketName()
+        + "/" + request.getTargetVolumeName() + "/"
+        + request.getTargetBucketName() + "/" + transactionLogIndex)
+        .getBytes(StandardCharsets.UTF_8));
   }
 
   private static boolean hasBaseSnapshotName(CreateBucketForkRequest request) {

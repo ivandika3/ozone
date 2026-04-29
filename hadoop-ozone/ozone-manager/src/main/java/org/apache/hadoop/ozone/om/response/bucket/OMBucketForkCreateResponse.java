@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.ozone.om.response.bucket;
 
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_BASE_VIEW_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.DELETED_TABLE;
@@ -30,6 +31,7 @@ import java.io.IOException;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OmSnapshotManager;
+import org.apache.hadoop.ozone.om.helpers.BucketForkBaseViewInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmVolumeArgs;
@@ -42,31 +44,35 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRespo
  * Response for CreateBucketFork request.
  */
 @CleanupTableInfo(cleanupTables = {
-    BUCKET_FORK_TABLE, BUCKET_TABLE, VOLUME_TABLE, DELETED_TABLE,
-    SNAPSHOT_RENAMED_TABLE, SNAPSHOT_INFO_TABLE})
+    BUCKET_FORK_TABLE, BUCKET_FORK_BASE_VIEW_TABLE, BUCKET_TABLE,
+    VOLUME_TABLE, DELETED_TABLE, SNAPSHOT_RENAMED_TABLE, SNAPSHOT_INFO_TABLE})
 public class OMBucketForkCreateResponse extends OMClientResponse {
   private final BucketForkInfo bucketForkInfo;
   private final OmBucketInfo forkBucketInfo;
   private final OmVolumeArgs targetVolumeArgs;
   private final SnapshotInfo internalBaseSnapshotInfo;
+  private final BucketForkBaseViewInfo baseViewInfo;
 
   public OMBucketForkCreateResponse(@Nonnull OMResponse omResponse,
       @Nonnull BucketForkInfo bucketForkInfo,
       @Nonnull OmBucketInfo forkBucketInfo,
       @Nonnull OmVolumeArgs targetVolumeArgs) {
-    this(omResponse, bucketForkInfo, forkBucketInfo, targetVolumeArgs, null);
+    this(omResponse, bucketForkInfo, forkBucketInfo, targetVolumeArgs, null,
+        null);
   }
 
   public OMBucketForkCreateResponse(@Nonnull OMResponse omResponse,
       @Nonnull BucketForkInfo bucketForkInfo,
       @Nonnull OmBucketInfo forkBucketInfo,
       @Nonnull OmVolumeArgs targetVolumeArgs,
-      @Nullable SnapshotInfo internalBaseSnapshotInfo) {
+      @Nullable SnapshotInfo internalBaseSnapshotInfo,
+      @Nullable BucketForkBaseViewInfo baseViewInfo) {
     super(omResponse);
     this.bucketForkInfo = bucketForkInfo;
     this.forkBucketInfo = forkBucketInfo;
     this.targetVolumeArgs = targetVolumeArgs;
     this.internalBaseSnapshotInfo = internalBaseSnapshotInfo;
+    this.baseViewInfo = baseViewInfo;
   }
 
   /**
@@ -79,6 +85,7 @@ public class OMBucketForkCreateResponse extends OMClientResponse {
     this.forkBucketInfo = null;
     this.targetVolumeArgs = null;
     this.internalBaseSnapshotInfo = null;
+    this.baseViewInfo = null;
   }
 
   @Override
@@ -97,6 +104,10 @@ public class OMBucketForkCreateResponse extends OMClientResponse {
         bucketKey, forkBucketInfo);
     omMetadataManager.getBucketForkTable().putWithBatch(batchOperation,
         bucketForkInfo.getTableKey(), bucketForkInfo);
+    if (baseViewInfo != null) {
+      omMetadataManager.getBucketForkBaseViewTable().putWithBatch(
+          batchOperation, baseViewInfo.getTableKey(), baseViewInfo);
+    }
     omMetadataManager.getVolumeTable().putWithBatch(batchOperation,
         omMetadataManager.getVolumeKey(targetVolumeArgs.getVolume()),
         targetVolumeArgs);

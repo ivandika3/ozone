@@ -32,6 +32,8 @@ import org.junit.jupiter.api.Test;
 public class TestBucketForkInfo {
   private static final UUID FORK_ID = UUID.randomUUID();
   private static final UUID BASE_SNAPSHOT_ID = UUID.randomUUID();
+  private static final UUID BASE_VIEW_ID = UUID.randomUUID();
+  private static final UUID SOURCE_FORK_ID = UUID.randomUUID();
   private static final String SOURCE_VOLUME = "source-vol";
   private static final String SOURCE_BUCKET = "source-bucket";
   private static final String TARGET_VOLUME = "target-vol";
@@ -58,6 +60,9 @@ public class TestBucketForkInfo {
         .setQuotaBaselineBytes(1234L)
         .setQuotaBaselineNamespace(12L)
         .setCreatedFromActiveBucket(true)
+        .setBaseViewId(BASE_VIEW_ID)
+        .setSourceForkId(SOURCE_FORK_ID)
+        .setLineageDepth(2)
         .build();
   }
 
@@ -78,6 +83,9 @@ public class TestBucketForkInfo {
         .setQuotaBaselineBytes(1234L)
         .setQuotaBaselineNamespace(12L)
         .setCreatedFromActiveBucket(true)
+        .setBaseViewID(toProtobuf(BASE_VIEW_ID))
+        .setSourceForkID(toProtobuf(SOURCE_FORK_ID))
+        .setLineageDepth(2)
         .build();
   }
 

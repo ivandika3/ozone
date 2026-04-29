@@ -61,6 +61,9 @@ public final class BucketForkInfo implements Auditable, CopyObject<BucketForkInf
   private final long quotaBaselineBytes;
   private final long quotaBaselineNamespace;
   private final boolean createdFromActiveBucket;
+  private final UUID baseViewId;
+  private final UUID sourceForkId;
+  private final int lineageDepth;
 
   private BucketForkInfo(Builder builder) {
     this.forkId = builder.forkId;
@@ -78,6 +81,9 @@ public final class BucketForkInfo implements Auditable, CopyObject<BucketForkInf
     this.quotaBaselineBytes = builder.quotaBaselineBytes;
     this.quotaBaselineNamespace = builder.quotaBaselineNamespace;
     this.createdFromActiveBucket = builder.createdFromActiveBucket;
+    this.baseViewId = builder.baseViewId;
+    this.sourceForkId = builder.sourceForkId;
+    this.lineageDepth = builder.lineageDepth;
   }
 
   public static Codec<BucketForkInfo> getCodec() {
@@ -104,7 +110,10 @@ public final class BucketForkInfo implements Auditable, CopyObject<BucketForkInf
         .setStatus(status)
         .setQuotaBaselineBytes(quotaBaselineBytes)
         .setQuotaBaselineNamespace(quotaBaselineNamespace)
-        .setCreatedFromActiveBucket(createdFromActiveBucket);
+        .setCreatedFromActiveBucket(createdFromActiveBucket)
+        .setBaseViewId(baseViewId)
+        .setSourceForkId(sourceForkId)
+        .setLineageDepth(lineageDepth);
   }
 
   public UUID getForkId() {
@@ -167,6 +176,18 @@ public final class BucketForkInfo implements Auditable, CopyObject<BucketForkInf
     return createdFromActiveBucket;
   }
 
+  public UUID getBaseViewId() {
+    return baseViewId;
+  }
+
+  public UUID getSourceForkId() {
+    return sourceForkId;
+  }
+
+  public int getLineageDepth() {
+    return lineageDepth;
+  }
+
   public boolean isActive() {
     return status == BucketForkStatus.BUCKET_FORK_ACTIVE;
   }
@@ -202,6 +223,15 @@ public final class BucketForkInfo implements Auditable, CopyObject<BucketForkInf
             .setQuotaBaselineBytes(quotaBaselineBytes)
             .setQuotaBaselineNamespace(quotaBaselineNamespace)
             .setCreatedFromActiveBucket(createdFromActiveBucket);
+    if (baseViewId != null) {
+      builder.setBaseViewID(toProtobuf(baseViewId));
+    }
+    if (sourceForkId != null) {
+      builder.setSourceForkID(toProtobuf(sourceForkId));
+    }
+    if (lineageDepth > 0) {
+      builder.setLineageDepth(lineageDepth);
+    }
     return builder.build();
   }
 
@@ -222,7 +252,12 @@ public final class BucketForkInfo implements Auditable, CopyObject<BucketForkInf
         .setStatus(BucketForkStatus.valueOf(proto.getStatus()))
         .setQuotaBaselineBytes(proto.getQuotaBaselineBytes())
         .setQuotaBaselineNamespace(proto.getQuotaBaselineNamespace())
-        .setCreatedFromActiveBucket(proto.getCreatedFromActiveBucket());
+        .setCreatedFromActiveBucket(proto.getCreatedFromActiveBucket())
+        .setBaseViewId(proto.hasBaseViewID()
+            ? fromProtobuf(proto.getBaseViewID()) : null)
+        .setSourceForkId(proto.hasSourceForkID()
+            ? fromProtobuf(proto.getSourceForkID()) : null)
+        .setLineageDepth(proto.getLineageDepth());
   }
 
   public static BucketForkInfo getFromProtobuf(
@@ -262,6 +297,7 @@ public final class BucketForkInfo implements Auditable, CopyObject<BucketForkInf
         && quotaBaselineBytes == that.quotaBaselineBytes
         && quotaBaselineNamespace == that.quotaBaselineNamespace
         && createdFromActiveBucket == that.createdFromActiveBucket
+        && lineageDepth == that.lineageDepth
         && Objects.equals(forkId, that.forkId)
         && Objects.equals(sourceVolumeName, that.sourceVolumeName)
         && Objects.equals(sourceBucketName, that.sourceBucketName)
@@ -269,6 +305,8 @@ public final class BucketForkInfo implements Auditable, CopyObject<BucketForkInf
         && Objects.equals(targetBucketName, that.targetBucketName)
         && Objects.equals(baseSnapshotId, that.baseSnapshotId)
         && Objects.equals(baseSnapshotName, that.baseSnapshotName)
+        && Objects.equals(baseViewId, that.baseViewId)
+        && Objects.equals(sourceForkId, that.sourceForkId)
         && status == that.status;
   }
 
@@ -278,7 +316,7 @@ public final class BucketForkInfo implements Auditable, CopyObject<BucketForkInf
         targetVolumeName, targetBucketName, baseSnapshotId, baseSnapshotName,
         sourceBucketObjectId, targetBucketObjectId, creationTime, deletionTime,
         status, quotaBaselineBytes, quotaBaselineNamespace,
-        createdFromActiveBucket);
+        createdFromActiveBucket, baseViewId, sourceForkId, lineageDepth);
   }
 
   @Override
@@ -291,6 +329,9 @@ public final class BucketForkInfo implements Auditable, CopyObject<BucketForkInf
         ", targetBucketName='" + targetBucketName + '\'' +
         ", baseSnapshotId=" + baseSnapshotId +
         ", baseSnapshotName='" + baseSnapshotName + '\'' +
+        ", baseViewId=" + baseViewId +
+        ", sourceForkId=" + sourceForkId +
+        ", lineageDepth=" + lineageDepth +
         ", status=" + status +
         '}';
   }
@@ -346,6 +387,9 @@ public final class BucketForkInfo implements Auditable, CopyObject<BucketForkInf
     private long quotaBaselineBytes;
     private long quotaBaselineNamespace;
     private boolean createdFromActiveBucket;
+    private UUID baseViewId;
+    private UUID sourceForkId;
+    private int lineageDepth;
 
     private Builder() {
     }
@@ -422,6 +466,21 @@ public final class BucketForkInfo implements Auditable, CopyObject<BucketForkInf
 
     public Builder setCreatedFromActiveBucket(boolean createdFromActiveBucket) {
       this.createdFromActiveBucket = createdFromActiveBucket;
+      return this;
+    }
+
+    public Builder setBaseViewId(UUID baseViewId) {
+      this.baseViewId = baseViewId;
+      return this;
+    }
+
+    public Builder setSourceForkId(UUID sourceForkId) {
+      this.sourceForkId = sourceForkId;
+      return this;
+    }
+
+    public Builder setLineageDepth(int lineageDepth) {
+      this.lineageDepth = lineageDepth;
       return this;
     }
 

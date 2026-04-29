@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.ozone.om.response.bucket;
 
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_BASE_VIEW_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_TOMBSTONE_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_TABLE;
@@ -26,6 +27,7 @@ import jakarta.annotation.Nonnull;
 import java.io.IOException;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
+import org.apache.hadoop.ozone.om.helpers.BucketForkBaseViewInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.OmVolumeArgs;
 import org.apache.hadoop.ozone.om.response.CleanupTableInfo;
@@ -36,17 +38,29 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRespo
  * Response for DeleteBucketFork request.
  */
 @CleanupTableInfo(cleanupTables = {
-    BUCKET_FORK_TABLE, BUCKET_FORK_TOMBSTONE_TABLE, BUCKET_TABLE, VOLUME_TABLE})
+    BUCKET_FORK_TABLE, BUCKET_FORK_BASE_VIEW_TABLE,
+    BUCKET_FORK_TOMBSTONE_TABLE, BUCKET_TABLE, VOLUME_TABLE})
 public class OMBucketForkDeleteResponse extends OMClientResponse {
   private final BucketForkInfo bucketForkInfo;
   private final OmVolumeArgs targetVolumeArgs;
+  private final BucketForkBaseViewInfo baseViewInfo;
+  private final boolean deleteBaseView;
 
   public OMBucketForkDeleteResponse(@Nonnull OMResponse omResponse,
       @Nonnull BucketForkInfo bucketForkInfo,
       @Nonnull OmVolumeArgs targetVolumeArgs) {
+    this(omResponse, bucketForkInfo, targetVolumeArgs, null, false);
+  }
+
+  public OMBucketForkDeleteResponse(@Nonnull OMResponse omResponse,
+      @Nonnull BucketForkInfo bucketForkInfo,
+      @Nonnull OmVolumeArgs targetVolumeArgs,
+      BucketForkBaseViewInfo baseViewInfo, boolean deleteBaseView) {
     super(omResponse);
     this.bucketForkInfo = bucketForkInfo;
     this.targetVolumeArgs = targetVolumeArgs;
+    this.baseViewInfo = baseViewInfo;
+    this.deleteBaseView = deleteBaseView;
   }
 
   /**
@@ -57,6 +71,8 @@ public class OMBucketForkDeleteResponse extends OMClientResponse {
     checkStatusNotOK();
     this.bucketForkInfo = null;
     this.targetVolumeArgs = null;
+    this.baseViewInfo = null;
+    this.deleteBaseView = false;
   }
 
   @Override
@@ -71,6 +87,15 @@ public class OMBucketForkDeleteResponse extends OMClientResponse {
         bucketForkInfo.getTableKey());
     omMetadataManager.getBucketForkTombstoneTable().deleteBatchWithPrefix(
         batchOperation, bucketForkInfo.getTableKey());
+    if (baseViewInfo != null) {
+      if (deleteBaseView) {
+        omMetadataManager.getBucketForkBaseViewTable().deleteWithBatch(
+            batchOperation, baseViewInfo.getTableKey());
+      } else {
+        omMetadataManager.getBucketForkBaseViewTable().putWithBatch(
+            batchOperation, baseViewInfo.getTableKey(), baseViewInfo);
+      }
+    }
     omMetadataManager.getVolumeTable().putWithBatch(batchOperation,
         omMetadataManager.getVolumeKey(targetVolumeArgs.getVolume()),
         targetVolumeArgs);

@@ -909,6 +909,14 @@ enum BucketForkTombstoneTypeProto {
 }
 
 /**
+ * BucketForkBaseViewStatus - retained base view states.
+ */
+enum BucketForkBaseViewStatusProto {
+  BUCKET_FORK_BASE_VIEW_ACTIVE = 1;
+  BUCKET_FORK_BASE_VIEW_DELETED = 2;
+}
+
+/**
  * SnapshotInfo table entry for Bucket/Volume snapshot metadata
  */
 message SnapshotInfo {
@@ -962,6 +970,27 @@ message BucketForkInfo {
   optional uint64 quotaBaselineBytes = 13;
   optional uint64 quotaBaselineNamespace = 14;
   optional bool createdFromActiveBucket = 15;
+  optional hadoop.hdds.UUID baseViewID = 16;
+  optional hadoop.hdds.UUID sourceForkID = 17;
+  optional uint32 lineageDepth = 18;
+}
+
+/**
+ * BucketForkBaseViewInfo table entry for retained fork lineage base views.
+ */
+message BucketForkBaseViewInfo {
+  optional hadoop.hdds.UUID baseViewID = 1;
+  optional string sourceVolumeName = 2;
+  optional string sourceBucketName = 3;
+  optional uint64 sourceBucketObjectID = 4;
+  optional hadoop.hdds.UUID snapshotID = 5;
+  optional string snapshotName = 6;
+  optional hadoop.hdds.UUID parentBaseViewID = 7;
+  optional hadoop.hdds.UUID sourceForkID = 8;
+  optional uint64 creationTime = 9;
+  optional uint64 updateID = 10;
+  optional BucketForkBaseViewStatusProto status = 11;
+  optional uint64 referenceCount = 12;
 }
 
 /**
@@ -2163,6 +2192,7 @@ message CreateBucketForkRequest {
   optional string baseSnapshotName = 5;
   optional hadoop.hdds.UUID forkId = 6;
   optional uint64 creationTime = 7;
+  optional hadoop.hdds.UUID baseViewID = 8;
 }
 
 message DeleteBucketForkRequest {

@@ -35,6 +35,7 @@ import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.execution.flowcontrol.ExecutionContext;
+import org.apache.hadoop.ozone.om.helpers.BucketForkBaseViewInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.OmVolumeArgs;
 import org.apache.hadoop.ozone.om.request.OMClientRequest;
@@ -109,6 +110,30 @@ public class OMBucketForkDeleteRequest extends OMClientRequest {
         throw new OMException("Fork target bucket doesn't exist",
             BUCKET_NOT_FOUND);
       }
+      BucketForkBaseViewInfo baseViewInfo = null;
+      boolean deleteBaseView = false;
+      if (bucketForkInfo.getBaseViewId() != null) {
+        String baseViewKey =
+            BucketForkBaseViewInfo.getTableKey(bucketForkInfo.getBaseViewId());
+        baseViewInfo =
+            metadataManager.getBucketForkBaseViewTable().get(baseViewKey);
+        if (baseViewInfo != null) {
+          deleteBaseView = baseViewInfo.getReferenceCount() <= 1L;
+          if (deleteBaseView) {
+            metadataManager.getBucketForkBaseViewTable().addCacheEntry(
+                new CacheKey<>(baseViewKey),
+                CacheValue.get(transactionLogIndex));
+          } else {
+            baseViewInfo = baseViewInfo.toBuilder()
+                .setReferenceCount(baseViewInfo.getReferenceCount() - 1L)
+                .setUpdateId(transactionLogIndex)
+                .build();
+            metadataManager.getBucketForkBaseViewTable().addCacheEntry(
+                new CacheKey<>(baseViewKey),
+                CacheValue.get(transactionLogIndex, baseViewInfo));
+          }
+        }
+      }
 
       volumeArgs = volumeArgs.toBuilder()
           .setUsedNamespace(Math.max(0L, volumeArgs.getUsedNamespace() - 1L))
@@ -127,7 +152,8 @@ public class OMBucketForkDeleteRequest extends OMClientRequest {
       omResponse.setDeleteBucketForkResponse(
           DeleteBucketForkResponse.newBuilder().build());
       omClientResponse = new OMBucketForkDeleteResponse(omResponse.build(),
-          bucketForkInfo, volumeArgs.copyObject());
+          bucketForkInfo, volumeArgs.copyObject(), baseViewInfo,
+          deleteBaseView);
       LOG.info("Deleted bucket fork {}/{}", volumeName, bucketName);
     } catch (IOException | RuntimeException ex) {
       exception = ex;

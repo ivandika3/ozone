@@ -97,6 +97,7 @@ import org.apache.hadoop.ozone.common.DeletedBlock;
 import org.apache.hadoop.ozone.om.codec.OMDBDefinition;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes;
+import org.apache.hadoop.ozone.om.helpers.BucketForkBaseViewInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
@@ -186,6 +187,7 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
   private Table<String, SnapshotInfo> snapshotInfoTable;
   private Table<String, String> snapshotRenamedTable;
   private Table<String, BucketForkInfo> bucketForkTable;
+  private Table<String, BucketForkBaseViewInfo> bucketForkBaseViewTable;
   private Table<String, BucketForkTombstoneInfo> bucketForkTombstoneTable;
   private Table<String, CompactionLogEntry> compactionLogTable;
 
@@ -512,6 +514,10 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
 
     // target volume/bucket -> bucket fork metadata
     bucketForkTable = initializer.get(OMDBDefinition.BUCKET_FORK_TABLE_DEF);
+
+    // base view ID -> bucket fork retained base view metadata
+    bucketForkBaseViewTable = initializer.get(
+        OMDBDefinition.BUCKET_FORK_BASE_VIEW_TABLE_DEF);
 
     // fork logical key -> tombstoned base logical key
     bucketForkTombstoneTable = initializer.get(OMDBDefinition.BUCKET_FORK_TOMBSTONE_TABLE_DEF);
@@ -1719,6 +1725,11 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
   @Override
   public Table<String, BucketForkInfo> getBucketForkTable() {
     return bucketForkTable;
+  }
+
+  @Override
+  public Table<String, BucketForkBaseViewInfo> getBucketForkBaseViewTable() {
+    return bucketForkBaseViewTable;
   }
 
   @Override

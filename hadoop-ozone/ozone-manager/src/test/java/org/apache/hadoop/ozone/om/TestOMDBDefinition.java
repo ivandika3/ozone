@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.ozone.om;
 
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_BASE_VIEW_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_TOMBSTONE_TABLE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -59,6 +60,7 @@ public class TestOMDBDefinition {
       dbDefTableNames.add(definition.getName());
     }
     assertTrue(dbDefTableNames.contains(BUCKET_FORK_TABLE));
+    assertTrue(dbDefTableNames.contains(BUCKET_FORK_BASE_VIEW_TABLE));
     assertTrue(dbDefTableNames.contains(BUCKET_FORK_TOMBSTONE_TABLE));
 
     try (DBStore store = OmMetadataManagerImpl.loadDB(configuration, metaDir, -1, new OmReadOnlyLock())) {
@@ -66,6 +68,7 @@ public class TestOMDBDefinition {
       final Collection<String> missingOmDBTables = new ArrayList<>(store.getTableNames().values());
       missingOmDBTables.remove("default");
       assertTrue(missingOmDBTables.contains(BUCKET_FORK_TABLE));
+      assertTrue(missingOmDBTables.contains(BUCKET_FORK_BASE_VIEW_TABLE));
       assertTrue(missingOmDBTables.contains(BUCKET_FORK_TOMBSTONE_TABLE));
       int countOmDBTables = missingOmDBTables.size();
       // Remove the file if it is found in both the datastructures
