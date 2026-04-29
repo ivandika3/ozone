@@ -23,10 +23,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -82,9 +84,11 @@ public class TestContainerReportSuppressOptions {
     when(scmClient.getReplicationManagerReport()).thenAnswer(inv -> createMockReport());
 
     // Mock listContainer
-    when(scmClient.listContainer(anyLong(), anyInt(), eq(null), eq(null), eq(null), eq(true)))
+    when(scmClient.listContainer(anyLong(), anyInt(), isNull(), isNull(),
+        isNull(), eq(true), isNull(), anyBoolean()))
         .thenAnswer(inv -> listSuppressedContainers());
-    when(scmClient.listContainer(anyLong(), anyInt(), eq(null), eq(null), eq(null), eq(false)))
+    when(scmClient.listContainer(anyLong(), anyInt(), isNull(), isNull(),
+        isNull(), eq(false), isNull(), anyBoolean()))
         .thenAnswer(inv -> listNonSuppressedContainers());
 
     // Mock suppress/unsuppress

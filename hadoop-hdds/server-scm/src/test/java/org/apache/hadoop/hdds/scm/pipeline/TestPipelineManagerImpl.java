@@ -75,6 +75,7 @@ import org.apache.hadoop.hdds.protocol.DatanodeID;
 import org.apache.hadoop.hdds.protocol.MockDatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationFactor;
+import org.apache.hadoop.hdds.protocol.proto.HddsProtos.StorageTypeProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos;
 import org.apache.hadoop.hdds.scm.HddsTestUtils;
 import org.apache.hadoop.hdds.scm.PipelineChoosePolicy;
@@ -197,6 +198,15 @@ public class TestPipelineManagerImpl {
         new TestClock(Instant.now(), ZoneOffset.UTC));
   }
 
+  private void stopScmAndResetMetrics() throws Exception {
+    if (scm != null) {
+      scm.stop();
+      scm = null;
+    }
+    DefaultMetricsSystem.shutdown();
+    DefaultMetricsSystem.initialize("TestPipelineManagerImpl");
+  }
+
   @Test
   public void testCreatePipeline() throws Exception {
     SCMHADBTransactionBuffer buffer1 =
@@ -253,6 +263,8 @@ public class TestPipelineManagerImpl {
 
   @Test
   public void testGetPipelinesByStorageTier() throws Exception {
+    nodeManager.setStorageTypes(Lists.list(StorageTypeProto.SSD,
+        StorageTypeProto.DISK));
     try (PipelineManager pipelineManager = createPipelineManager(true)) {
       Pipeline ssdPipeline = pipelineManager.createPipeline(
           RatisReplicationConfig.getInstance(ReplicationFactor.ONE),
@@ -397,6 +409,7 @@ public class TestPipelineManagerImpl {
   @Test
   public void testPipelineReport() throws Exception {
     try (PipelineManagerImpl pipelineManager = createPipelineManager(true)) {
+      stopScmAndResetMetrics();
       SCMSafeModeManager scmSafeModeManager = new SCMSafeModeManager(conf,
           mock(NodeManager.class), pipelineManager, mock(ContainerManager.class),
           serviceManager, new EventQueue(), scmContext);
@@ -436,6 +449,7 @@ public class TestPipelineManagerImpl {
 
       assertThrows(PipelineNotFoundException.class,
           () -> pipelineManager.getPipeline(pipeline.getId()));
+      scmSafeModeManager.stop();
     }
   }
 
@@ -507,6 +521,7 @@ public class TestPipelineManagerImpl {
     assertEquals(Pipeline.PipelineState.ALLOCATED,
         pipelineManager.getPipeline(pipeline.getId()).getPipelineState());
 
+    stopScmAndResetMetrics();
     SCMSafeModeManager scmSafeModeManager = new SCMSafeModeManager(new OzoneConfiguration(),
         mock(NodeManager.class), pipelineManager, mock(ContainerManager.class),
         serviceManager, new EventQueue(), scmContext);
@@ -532,6 +547,7 @@ public class TestPipelineManagerImpl {
     assertEquals(Pipeline.PipelineState.OPEN,
         pipelineManager.getPipeline(pipeline.getId()).getPipelineState());
 
+    scmSafeModeManager.stop();
     pipelineManager.close();
   }
 

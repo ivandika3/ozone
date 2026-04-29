@@ -294,7 +294,7 @@ public class TestContainerCommandReconciliation {
     Container<?> container = targetDN.getDatanodeStateMachine().getContainer()
         .getContainerSet().getContainer(containerID);
     File treeFile = getContainerChecksumFile(container.getContainerData());
-    assertTrue(treeFile.exists());
+    GenericTestUtils.waitFor(treeFile::exists, 100, 10_000);
     // Make the server unable to read the file.
     assertTrue(treeFile.setReadable(false));
 

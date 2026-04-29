@@ -42,6 +42,7 @@ import org.apache.hadoop.hdds.protocol.DatanodeID;
 import org.apache.hadoop.hdds.protocol.MockDatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.NodeOperationalState;
+import org.apache.hadoop.hdds.protocol.proto.HddsProtos.StorageTypeProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.CommandQueueReportProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.LayoutVersionProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.MetadataStorageReportProto;
@@ -113,6 +114,8 @@ public class MockNodeManager implements NodeManager {
   private ConcurrentMap<String, Set<String>> dnsToUuidMap;
   private int numHealthyDisksPerDatanode;
   private int numPipelinePerDatanode;
+  private List<StorageTypeProto> storageTypes =
+      Collections.singletonList(StorageTypeProto.DISK);
 
   {
     this.healthyNodes = new LinkedList<>();
@@ -153,6 +156,10 @@ public class MockNodeManager implements NodeManager {
   public MockNodeManager(boolean initializeFakeNodes, int nodeCount) {
     this(new NetworkTopologyImpl(new OzoneConfiguration()), new ArrayList<>(),
         initializeFakeNodes, nodeCount);
+  }
+
+  public void setStorageTypes(List<StorageTypeProto> storageTypes) {
+    this.storageTypes = new ArrayList<>(storageTypes);
   }
 
   public MockNodeManager(List<DatanodeUsageInfo> nodes)
@@ -268,13 +275,16 @@ public class MockNodeManager implements NodeManager {
         long capacity = nodeMetricMap.get(dd).getCapacity().get();
         long used = nodeMetricMap.get(dd).getScmUsed().get();
         long remaining = nodeMetricMap.get(dd).getRemaining().get();
-        StorageReportProto storage1 = HddsTestUtils.createStorageReport(
-            di.getID(), "/data1-" + di.getID(),
-            capacity, used, remaining, null);
+        List<StorageReportProto> storageReports = new ArrayList<>();
+        for (StorageTypeProto storageType : storageTypes) {
+          storageReports.add(HddsTestUtils.createStorageReport(
+              di.getID(), "/data-" + storageType + "-" + di.getID(),
+              capacity, used, remaining, storageType));
+        }
         MetadataStorageReportProto metaStorage1 =
             HddsTestUtils.createMetadataStorageReport(
                 "/metadata1-" + di.getID(), capacity, used, remaining, null);
-        di.updateStorageReports(Collections.singletonList(storage1));
+        di.updateStorageReports(storageReports);
         di.updateMetaDataStorageReports(Collections.singletonList(metaStorage1));
 
         healthyNodesWithInfo.add(di);
@@ -347,14 +357,17 @@ public class MockNodeManager implements NodeManager {
       long capacity = entry.getValue().getCapacity().get();
       long used = entry.getValue().getScmUsed().get();
       long remaining = entry.getValue().getRemaining().get();
-      StorageReportProto storage1 = HddsTestUtils.createStorageReport(
-          di.getID(), "/data1-" + di.getUuidString(),
-          capacity, used, remaining, null);
+      List<StorageReportProto> storageReports = new ArrayList<>();
+      for (StorageTypeProto storageType : storageTypes) {
+        storageReports.add(HddsTestUtils.createStorageReport(
+            di.getID(), "/data-" + storageType + "-" + di.getUuidString(),
+            capacity, used, remaining, storageType));
+      }
       MetadataStorageReportProto metaStorage1 =
           HddsTestUtils.createMetadataStorageReport(
               "/metadata1-" + di.getUuidString(), capacity, used,
               remaining, null);
-      di.updateStorageReports(new ArrayList<>(Arrays.asList(storage1)));
+      di.updateStorageReports(storageReports);
       di.updateMetaDataStorageReports(
           new ArrayList<>(Arrays.asList(metaStorage1)));
 
