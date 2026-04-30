@@ -114,6 +114,7 @@ public class ScmClient {
     for (DatanodeDetails node : pipeline.getNodes()) {
       DatanodeDetails datanodeDetails =
           datanodeDetailsCache.get(node.getID());
+      // Call compareNodeValues to handle IP / hostname changes
       if (datanodeDetails != null && node.compareNodeValues(datanodeDetails)) {
         nodes.add(datanodeDetails);
       } else {
