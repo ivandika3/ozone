@@ -19,7 +19,11 @@ package org.apache.hadoop.ozone.om.response;
 
 import com.google.common.base.Preconditions;
 import java.io.IOException;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.Objects;
+import java.util.Set;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
@@ -34,6 +38,7 @@ public abstract class OMClientResponse {
 
   private final OMResponse omResponse;
   private OMLockDetails omLockDetails;
+  private Set<String> cleanupTables = Collections.emptySet();
 
   public OMClientResponse(OMResponse omResponse) {
     Objects.requireNonNull(omResponse, "omResponse == null");
@@ -86,5 +91,16 @@ public abstract class OMClientResponse {
       OMLockDetails omLockDetails) {
     this.omLockDetails = omLockDetails;
   }
-}
 
+  public Set<String> getCleanupTables() {
+    return cleanupTables;
+  }
+
+  public void setCleanupTables(Collection<String> tables) {
+    if (tables == null || tables.isEmpty()) {
+      cleanupTables = Collections.emptySet();
+      return;
+    }
+    cleanupTables = Collections.unmodifiableSet(new LinkedHashSet<>(tables));
+  }
+}
