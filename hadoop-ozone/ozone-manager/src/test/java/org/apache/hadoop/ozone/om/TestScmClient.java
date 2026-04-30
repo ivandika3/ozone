@@ -174,22 +174,36 @@ public class TestScmClient {
   }
 
   @Test
+  public void testDatanodeDetailsCacheRecordsStats() {
+    Cache<DatanodeID, DatanodeDetails> datanodeDetailsCache =
+        ScmClient.createDatanodeDetailsCache(new OzoneConfiguration());
+
+    datanodeDetailsCache.getIfPresent(DatanodeID.randomID());
+
+    assertEquals(1, datanodeDetailsCache.stats().missCount());
+  }
+
+  @Test
   public void testDatanodeDetailsCacheUpdatesIpAddressChange() {
     Cache<DatanodeID, DatanodeDetails> datanodeDetailsCache =
         CacheBuilder.newBuilder().build();
     DatanodeDetails original = randomDatanode();
+    String originalIp = original.getIpAddress();
     DatanodeDetails updated = DatanodeDetails.newBuilder()
         .setDatanodeDetails(original)
         .setIpAddress("updated-ip")
         .build();
 
-    ScmClient.newPipelineWithDNCache(
+    Pipeline originalPipeline = ScmClient.newPipelineWithDNCache(
         createPipeline(1L, asList(original)).getPipeline(),
         datanodeDetailsCache);
     Pipeline refreshed = ScmClient.newPipelineWithDNCache(
         createPipeline(2L, asList(updated)).getPipeline(),
         datanodeDetailsCache);
 
+    assertSame(original, originalPipeline.getNodes().get(0));
+    assertEquals(originalIp, original.getIpAddress());
+    assertEquals(originalIp, originalPipeline.getNodes().get(0).getIpAddress());
     DatanodeDetails refreshedNode = refreshed.getNodes().get(0);
     assertSame(updated, refreshedNode);
     assertEquals("updated-ip", refreshedNode.getIpAddress());

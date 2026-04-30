@@ -57,35 +57,34 @@ public class ScmClient {
   private final StorageContainerLocationProtocol containerClient;
   private final LoadingCache<Long, Pipeline> containerLocationCache;
   private final CacheMetrics containerCacheMetrics;
+  private final CacheMetrics datanodeDetailsCacheMetrics;
 
   ScmClient(ScmBlockLocationProtocol blockClient,
             StorageContainerLocationProtocol containerClient,
             OzoneConfiguration configuration) {
     this.containerClient = containerClient;
     this.blockClient = blockClient;
+    Cache<DatanodeID, DatanodeDetails> datanodeDetailsCache =
+        createDatanodeDetailsCache(configuration);
     this.containerLocationCache =
-        createContainerLocationCache(configuration, containerClient);
+        createContainerLocationCache(configuration, containerClient,
+            datanodeDetailsCache);
     this.containerCacheMetrics = CacheMetrics.create(containerLocationCache,
         "ContainerInfo");
+    this.datanodeDetailsCacheMetrics = CacheMetrics.create(
+        datanodeDetailsCache, "DatanodeDetails");
   }
 
   static LoadingCache<Long, Pipeline> createContainerLocationCache(
       OzoneConfiguration configuration,
-      StorageContainerLocationProtocol containerClient) {
+      StorageContainerLocationProtocol containerClient,
+      Cache<DatanodeID, DatanodeDetails> datanodeDetailsCache) {
     int maxSize = configuration.getInt(OZONE_OM_CONTAINER_LOCATION_CACHE_SIZE,
         OZONE_OM_CONTAINER_LOCATION_CACHE_SIZE_DEFAULT);
     TimeUnit unit =  OZONE_OM_CONTAINER_LOCATION_CACHE_TTL_DEFAULT.getUnit();
     long ttl = configuration.getTimeDuration(
         OZONE_OM_CONTAINER_LOCATION_CACHE_TTL,
         OZONE_OM_CONTAINER_LOCATION_CACHE_TTL_DEFAULT.getDuration(), unit);
-    int datanodeCacheMaxSize = configuration.getInt(
-        OZONE_OM_CONTAINER_LOCATION_DATANODE_CACHE_SIZE,
-        OZONE_OM_CONTAINER_LOCATION_DATANODE_CACHE_SIZE_DEFAULT);
-
-    final Cache<DatanodeID, DatanodeDetails> datanodeDetailsCache =
-        CacheBuilder.newBuilder()
-            .maximumSize(datanodeCacheMaxSize)
-            .build();
     return CacheBuilder.newBuilder()
         .maximumSize(maxSize)
         .expireAfterWrite(ttl, unit)
@@ -112,6 +111,18 @@ public class ScmClient {
                 ));
           }
         });
+  }
+
+  static Cache<DatanodeID, DatanodeDetails> createDatanodeDetailsCache(
+      OzoneConfiguration configuration) {
+    int datanodeCacheMaxSize = configuration.getInt(
+        OZONE_OM_CONTAINER_LOCATION_DATANODE_CACHE_SIZE,
+        OZONE_OM_CONTAINER_LOCATION_DATANODE_CACHE_SIZE_DEFAULT);
+
+    return CacheBuilder.newBuilder()
+        .maximumSize(datanodeCacheMaxSize)
+        .recordStats()
+        .build();
   }
 
   static Pipeline newPipelineWithDNCache(Pipeline pipeline,
@@ -201,6 +212,7 @@ public class ScmClient {
 
   public void close() {
     containerCacheMetrics.unregister();
+    datanodeDetailsCacheMetrics.unregister();
   }
 
 }
