@@ -18,8 +18,10 @@
 package org.apache.hadoop.ozone.om;
 
 import static com.google.common.collect.Sets.newHashSet;
+import static java.util.Arrays.asList;
 import static org.apache.hadoop.hdds.client.ReplicationConfig.fromTypeAndFactor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
@@ -40,6 +42,7 @@ import org.apache.hadoop.hdds.client.ReplicationFactor;
 import org.apache.hadoop.hdds.client.ReplicationType;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
+import org.apache.hadoop.hdds.protocol.DatanodeID;
 import org.apache.hadoop.hdds.scm.container.ContainerInfo;
 import org.apache.hadoop.hdds.scm.container.common.helpers.ContainerWithPipeline;
 import org.apache.hadoop.hdds.scm.pipeline.Pipeline;
@@ -166,6 +169,28 @@ public class TestScmClient {
     RuntimeException actualRt = assertThrows(RuntimeException.class,
         () -> scmClient.getContainerLocations(newHashSet(2L), false));
     assertEquals(runtimeException, actualRt.getCause());
+  }
+
+  @Test
+  public void testDatanodeDetailsCacheUpdatesIpAddressChange() {
+    Map<DatanodeID, DatanodeDetails> datanodeDetailsCache = new HashMap<>();
+    DatanodeDetails original = randomDatanode();
+    DatanodeDetails updated = DatanodeDetails.newBuilder()
+        .setDatanodeDetails(original)
+        .setIpAddress("updated-ip")
+        .build();
+
+    ScmClient.newPipelineWithDNCache(
+        createPipeline(1L, asList(original)).getPipeline(),
+        datanodeDetailsCache);
+    Pipeline refreshed = ScmClient.newPipelineWithDNCache(
+        createPipeline(2L, asList(updated)).getPipeline(),
+        datanodeDetailsCache);
+
+    DatanodeDetails refreshedNode = refreshed.getNodes().get(0);
+    assertSame(updated, refreshedNode);
+    assertEquals("updated-ip", refreshedNode.getIpAddress());
+    assertSame(updated, datanodeDetailsCache.get(original.getID()));
   }
 
   ContainerWithPipeline createPipeline(long containerId,

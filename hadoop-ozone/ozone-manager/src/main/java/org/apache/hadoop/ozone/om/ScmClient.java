@@ -32,7 +32,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -41,6 +40,7 @@ import org.apache.hadoop.hdds.client.ECReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
+import org.apache.hadoop.hdds.protocol.DatanodeID;
 import org.apache.hadoop.hdds.scm.pipeline.Pipeline;
 import org.apache.hadoop.hdds.scm.protocol.ScmBlockLocationProtocol;
 import org.apache.hadoop.hdds.scm.protocol.StorageContainerLocationProtocol;
@@ -77,7 +77,7 @@ public class ScmClient {
         OZONE_OM_CONTAINER_LOCATION_CACHE_TTL,
         OZONE_OM_CONTAINER_LOCATION_CACHE_TTL_DEFAULT.getDuration(), unit);
 
-    final Map<UUID, DatanodeDetails>
+    final Map<DatanodeID, DatanodeDetails>
         datanodeDetailsCache = new ConcurrentHashMap<>();
     return CacheBuilder.newBuilder()
         .maximumSize(maxSize)
@@ -108,16 +108,16 @@ public class ScmClient {
   }
 
   static Pipeline newPipelineWithDNCache(Pipeline pipeline,
-      Map<UUID, DatanodeDetails> datanodeDetailsCache) {
-    Pipeline.Builder builder = Pipeline.newBuilder(pipeline);
+      Map<DatanodeID, DatanodeDetails> datanodeDetailsCache) {
+    Pipeline.Builder builder = pipeline.toBuilder();
     List<DatanodeDetails> nodes = new ArrayList<>();
     for (DatanodeDetails node : pipeline.getNodes()) {
       DatanodeDetails datanodeDetails =
-          datanodeDetailsCache.get(node.getUuid());
-      if (node.equals(datanodeDetails)) {
+          datanodeDetailsCache.get(node.getID());
+      if (datanodeDetails != null && node.compareNodeValues(datanodeDetails)) {
         nodes.add(datanodeDetails);
       } else {
-        datanodeDetailsCache.put(node.getUuid(), node);
+        datanodeDetailsCache.put(node.getID(), node);
         nodes.add(node);
       }
     }
