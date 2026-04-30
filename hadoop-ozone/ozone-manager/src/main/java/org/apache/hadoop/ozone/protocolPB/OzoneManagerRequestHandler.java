@@ -637,6 +637,11 @@ public class OzoneManagerRequestHandler implements RequestHandler {
         .setSortDatanodesInPipeline(keyArgs.getSortDatanodes())
         .setHeadOp(keyArgs.getHeadOp())
         .build();
+    if (keyArgs.hasByteRangeStart() && keyArgs.hasByteRangeEnd()) {
+      omKeyArgs = omKeyArgs.toBuilder()
+          .setByteRange(keyArgs.getByteRangeStart(), keyArgs.getByteRangeEnd())
+          .build();
+    }
     OmKeyInfo keyInfo = impl.lookupKey(omKeyArgs);
 
     resp.setKeyInfo(keyInfo.getProtobuf(keyArgs.getHeadOp(), clientVersion));
@@ -658,6 +663,11 @@ public class OzoneManagerRequestHandler implements RequestHandler {
             keyArgs.getForceUpdateContainerCacheFromSCM())
         .setMultipartUploadPartNumber(keyArgs.getMultipartNumber())
         .build();
+    if (keyArgs.hasByteRangeStart() && keyArgs.hasByteRangeEnd()) {
+      omKeyArgs = omKeyArgs.toBuilder()
+          .setByteRange(keyArgs.getByteRangeStart(), keyArgs.getByteRangeEnd())
+          .build();
+    }
     KeyInfoWithVolumeContext keyInfo = impl.getKeyInfo(omKeyArgs,
         request.getAssumeS3Context());
 
