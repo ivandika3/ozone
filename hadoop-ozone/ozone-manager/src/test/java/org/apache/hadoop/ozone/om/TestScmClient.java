@@ -29,6 +29,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -173,7 +175,8 @@ public class TestScmClient {
 
   @Test
   public void testDatanodeDetailsCacheUpdatesIpAddressChange() {
-    Map<DatanodeID, DatanodeDetails> datanodeDetailsCache = new HashMap<>();
+    Cache<DatanodeID, DatanodeDetails> datanodeDetailsCache =
+        CacheBuilder.newBuilder().build();
     DatanodeDetails original = randomDatanode();
     DatanodeDetails updated = DatanodeDetails.newBuilder()
         .setDatanodeDetails(original)
@@ -190,7 +193,7 @@ public class TestScmClient {
     DatanodeDetails refreshedNode = refreshed.getNodes().get(0);
     assertSame(updated, refreshedNode);
     assertEquals("updated-ip", refreshedNode.getIpAddress());
-    assertSame(updated, datanodeDetailsCache.get(original.getID()));
+    assertSame(updated, datanodeDetailsCache.getIfPresent(original.getID()));
   }
 
   ContainerWithPipeline createPipeline(long containerId,

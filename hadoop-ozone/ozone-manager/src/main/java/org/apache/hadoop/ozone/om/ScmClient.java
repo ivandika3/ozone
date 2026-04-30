@@ -21,7 +21,10 @@ import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_CONTAINER_LOCATIO
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_CONTAINER_LOCATION_CACHE_SIZE_DEFAULT;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_CONTAINER_LOCATION_CACHE_TTL;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_CONTAINER_LOCATION_CACHE_TTL_DEFAULT;
+import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_CONTAINER_LOCATION_DATANODE_CACHE_SIZE;
+import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_CONTAINER_LOCATION_DATANODE_CACHE_SIZE_DEFAULT;
 
+import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.CacheLoader.InvalidCacheLoadException;
@@ -32,7 +35,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -76,9 +78,14 @@ public class ScmClient {
     long ttl = configuration.getTimeDuration(
         OZONE_OM_CONTAINER_LOCATION_CACHE_TTL,
         OZONE_OM_CONTAINER_LOCATION_CACHE_TTL_DEFAULT.getDuration(), unit);
+    int datanodeCacheMaxSize = configuration.getInt(
+        OZONE_OM_CONTAINER_LOCATION_DATANODE_CACHE_SIZE,
+        OZONE_OM_CONTAINER_LOCATION_DATANODE_CACHE_SIZE_DEFAULT);
 
-    final Map<DatanodeID, DatanodeDetails>
-        datanodeDetailsCache = new ConcurrentHashMap<>();
+    final Cache<DatanodeID, DatanodeDetails> datanodeDetailsCache =
+        CacheBuilder.newBuilder()
+            .maximumSize(datanodeCacheMaxSize)
+            .build();
     return CacheBuilder.newBuilder()
         .maximumSize(maxSize)
         .expireAfterWrite(ttl, unit)
@@ -108,12 +115,12 @@ public class ScmClient {
   }
 
   static Pipeline newPipelineWithDNCache(Pipeline pipeline,
-      Map<DatanodeID, DatanodeDetails> datanodeDetailsCache) {
+      Cache<DatanodeID, DatanodeDetails> datanodeDetailsCache) {
     Pipeline.Builder builder = pipeline.toBuilder();
     List<DatanodeDetails> nodes = new ArrayList<>();
     for (DatanodeDetails node : pipeline.getNodes()) {
       DatanodeDetails datanodeDetails =
-          datanodeDetailsCache.get(node.getID());
+          datanodeDetailsCache.getIfPresent(node.getID());
       // Call compareNodeValues to handle IP / hostname changes
       if (datanodeDetails != null && node.compareNodeValues(datanodeDetails)) {
         nodes.add(datanodeDetails);
