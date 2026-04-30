@@ -31,14 +31,27 @@ import static org.mockito.Mockito.when;
 import com.google.common.collect.Iterators;
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.hadoop.hdds.client.BlockID;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
@@ -53,26 +66,34 @@ import org.apache.hadoop.ozone.audit.AuditLogger;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OMMetrics;
 import org.apache.hadoop.ozone.om.OMPerformanceMetrics;
+import org.apache.hadoop.ozone.om.OmConfig;
 import org.apache.hadoop.ozone.om.OmMetadataManagerImpl;
 import org.apache.hadoop.ozone.om.OzoneManager;
+import org.apache.hadoop.ozone.om.codec.OMDBDefinition;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmVolumeArgs;
 import org.apache.hadoop.ozone.om.lock.OzoneLockProvider;
+import org.apache.hadoop.ozone.om.request.OMClientRequest;
 import org.apache.hadoop.ozone.om.request.file.OMFileCreateRequest;
 import org.apache.hadoop.ozone.om.request.key.OMKeyCreateRequest;
+import org.apache.hadoop.ozone.om.request.volume.OMVolumeCreateRequest;
 import org.apache.hadoop.ozone.om.response.file.OMFileCreateResponse;
 import org.apache.hadoop.ozone.om.response.key.OMKeyCreateResponse;
 import org.apache.hadoop.ozone.om.response.util.OMEchoRPCWriteResponse;
+import org.apache.hadoop.ozone.om.response.volume.OMVolumeCreateResponse;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.CreateFileRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.CreateKeyRequest;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.CreateVolumeRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.KeyArgs;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.KeyLocation;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.Type;
-import org.junit.jupiter.api.BeforeEach;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.VolumeInfo;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.reflections.Reflections;
@@ -92,6 +113,18 @@ public class TestCleanupTableInfo {
       new BlockID(1, 1).getProtobuf();
   public static final String OM_RESPONSE_PACKAGE =
       "org.apache.hadoop.ozone.om.response";
+  private static final String OM_REQUEST_SOURCE_PATH =
+      "hadoop-ozone/ozone-manager/src/main/java/org/apache/hadoop/ozone/om/request";
+  private static final Pattern TABLE_GETTER_CACHE_MUTATION =
+      Pattern.compile("\\.(get\\w+Table)\\s*\\([^;]*?\\)\\s*\\.addCacheEntry",
+          Pattern.DOTALL);
+  private static final Pattern TABLE_ALIAS =
+      Pattern.compile("(?:Table(?:<[^;]+>)?)\\s+(\\w+)\\s*=\\s*[^;]*" +
+          "\\.(get\\w+Table)\\s*\\(", Pattern.DOTALL);
+  private static final Pattern RESPONSE_CREATION =
+      Pattern.compile("new\\s+([A-Z][A-Za-z0-9]*Response(?:WithFSO)?)\\s*\\(");
+  private static final Map<String, String> TABLE_GETTER_TO_NAME =
+      tableGetterToName();
 
   @TempDir
   private Path folder;
@@ -116,21 +149,20 @@ public class TestCleanupTableInfo {
    *
    * @throws IOException should not happen but declared in mocked methods
    */
-  @BeforeEach
   public void setupOzoneManagerMock()
       throws IOException {
     OMMetadataManager metaMgr = createOMMetadataManagerSpy();
     when(om.getMetrics()).thenReturn(omMetrics);
     when(om.getMetadataManager()).thenReturn(metaMgr);
     when(om.getAuditLogger()).thenReturn(mock(AuditLogger.class));
-    when(om.getDefaultReplicationConfig()).thenReturn(ReplicationConfig
-        .getDefault(new OzoneConfiguration()));
+    when(om.getConfig()).thenReturn(new OmConfig());
     addVolumeToMetaTable(aVolumeArgs());
     addBucketToMetaTable(aBucketInfo());
   }
 
   @Test
-  public void checkAnnotationAndTableName() {
+  public void checkAnnotationAndTableName() throws IOException {
+    setupOzoneManagerMock();
     OMMetadataManager omMetadataManager = om.getMetadataManager();
 
     Set<String> tables = omMetadataManager.listTableNames();
@@ -171,30 +203,233 @@ public class TestCleanupTableInfo {
   }
 
   @Test
-  public void testFileCreateRequestSetsAllTouchedTableCachesForEviction() {
-    OMFileCreateRequest request = anOMFileCreateRequest();
-    Map<String, Integer> cacheItemCount = recordCacheItemCounts();
+  public void requestSourcesDeclareCleanupForDirectlyMutatedCacheTables()
+      throws IOException {
+    Map<String, Class<? extends OMClientResponse>> responsesBySimpleName =
+        responseClasses().stream().collect(Collectors.toMap(
+            Class::getSimpleName, responseClass -> responseClass));
+    List<String> missingCleanupTables = new ArrayList<>();
 
-    request.validateAndUpdateCache(om, 1);
+    try (Stream<Path> sources = Files.walk(requestSourcePath())) {
+      List<Path> sourceFiles = sources
+          .filter(path -> path.toString().endsWith(".java"))
+          .collect(Collectors.toList());
 
-    assertCacheItemCounts(cacheItemCount, OMFileCreateResponse.class);
-    verify(omMetrics, times(1)).incNumCreateFile();
+      for (Path sourceFile : sourceFiles) {
+        String source = new String(Files.readAllBytes(sourceFile),
+            StandardCharsets.UTF_8);
+        Set<String> mutatedTables = directCacheMutatedTables(source,
+            isFileSystemOptimizedRequest(source, sourceFile));
+        if (mutatedTables.isEmpty()) {
+          continue;
+        }
+
+        Set<String> responseClassNames = responseClassNames(source);
+        for (String responseClassName : responseClassNames) {
+          Class<? extends OMClientResponse> responseClass =
+              responsesBySimpleName.get(responseClassName);
+          if (responseClass == null) {
+            continue;
+          }
+          CleanupTableInfo cleanupTableInfo =
+              responseClass.getAnnotation(CleanupTableInfo.class);
+          assertNotNull(cleanupTableInfo,
+              responseClass.getName() + " does not have CleanupTableInfo");
+          if (cleanupTableInfo.cleanupAll()) {
+            continue;
+          }
+          List<String> cleanupTables =
+              Arrays.asList(cleanupTableInfo.cleanupTables());
+          for (String table : mutatedTables) {
+            if (!cleanupTables.contains(table)) {
+              missingCleanupTables.add(sourceFile + " creates " +
+                  responseClassName + " but mutates " + table +
+                  " without listing it in CleanupTableInfo");
+            }
+          }
+        }
+      }
+    }
+
+    assertTrue(missingCleanupTables.isEmpty(),
+        String.join(System.lineSeparator(), missingCleanupTables));
   }
 
-  @Test
-  public void testKeyCreateRequestSetsAllTouchedTableCachesForEviction() {
-    OMKeyCreateRequest request = anOMKeyCreateRequest();
-    when(om.getEnableFileSystemPaths()).thenReturn(true);
-    when(om.getOzoneLockProvider()).thenReturn(
-        new OzoneLockProvider(false, false));
-    when(om.getPerfMetrics()).thenReturn(perfMetrics);
-
+  @ParameterizedTest
+  @EnumSource(CleanupTableInfoTestCase.class)
+  public void testRequestsSetAllTouchedTableCachesForEviction(
+      CleanupTableInfoTestCase testCase) throws IOException {
+    setupOzoneManagerMock();
+    OMClientRequest request = requestFor(testCase);
     Map<String, Integer> cacheItemCount = recordCacheItemCounts();
 
     request.validateAndUpdateCache(om, 1);
 
-    assertCacheItemCounts(cacheItemCount, OMKeyCreateResponse.class);
-    verify(omMetrics, times(1)).incNumKeyAllocates();
+    assertCacheItemCounts(cacheItemCount, testCase.responseClass);
+    verifyMetrics(testCase);
+  }
+
+  private enum CleanupTableInfoTestCase {
+    FILE_CREATE(OMFileCreateResponse.class),
+    KEY_CREATE(OMKeyCreateResponse.class),
+    VOLUME_CREATE(OMVolumeCreateResponse.class);
+
+    private final Class<? extends OMClientResponse> responseClass;
+
+    CleanupTableInfoTestCase(
+        Class<? extends OMClientResponse> responseClass) {
+      this.responseClass = responseClass;
+    }
+  }
+
+  private OMClientRequest requestFor(CleanupTableInfoTestCase testCase) {
+    switch (testCase) {
+    case FILE_CREATE:
+      stubDefaultReplicationConfig();
+      return anOMFileCreateRequest();
+    case KEY_CREATE:
+      stubDefaultReplicationConfig();
+      when(om.getEnableFileSystemPaths()).thenReturn(true);
+      when(om.getOzoneLockProvider()).thenReturn(
+          new OzoneLockProvider(false, false));
+      when(om.getPerfMetrics()).thenReturn(perfMetrics);
+      return anOMKeyCreateRequest();
+    case VOLUME_CREATE:
+      return anOMVolumeCreateRequest();
+    default:
+      throw new IllegalArgumentException("Unexpected test case: " + testCase);
+    }
+  }
+
+  private void stubDefaultReplicationConfig() {
+    when(om.getDefaultReplicationConfig()).thenReturn(ReplicationConfig
+        .getDefault(new OzoneConfiguration()));
+  }
+
+  private Path requestSourcePath() {
+    Path fromRepoRoot = Paths.get(OM_REQUEST_SOURCE_PATH);
+    if (Files.exists(fromRepoRoot)) {
+      return fromRepoRoot;
+    }
+    return Paths.get("src/main/java/org/apache/hadoop/ozone/om/request");
+  }
+
+  private Set<String> directCacheMutatedTables(String source,
+      boolean fileSystemOptimizedRequest) {
+    Set<String> mutatedTables = new LinkedHashSet<>();
+    Map<String, String> tableGetterToName =
+        tableGetterToName(fileSystemOptimizedRequest);
+    Matcher directMatcher = TABLE_GETTER_CACHE_MUTATION.matcher(source);
+    while (directMatcher.find()) {
+      String tableName = tableGetterToName.get(directMatcher.group(1));
+      if (tableName != null) {
+        mutatedTables.add(tableName);
+      }
+    }
+
+    Matcher aliasMatcher = TABLE_ALIAS.matcher(source);
+    Map<String, String> tableAliases = new HashMap<>();
+    while (aliasMatcher.find()) {
+      String tableName = tableGetterToName.get(aliasMatcher.group(2));
+      if (tableName != null) {
+        tableAliases.put(aliasMatcher.group(1), tableName);
+      }
+    }
+    tableAliases.forEach((alias, tableName) -> {
+      Pattern aliasCacheMutation =
+          Pattern.compile("\\b" + Pattern.quote(alias) +
+              "\\s*\\.addCacheEntry");
+      if (aliasCacheMutation.matcher(source).find()) {
+        mutatedTables.add(tableName);
+      }
+    });
+    return mutatedTables;
+  }
+
+  private Set<String> responseClassNames(String source) {
+    Set<String> responseClassNames = new LinkedHashSet<>();
+    Matcher responseMatcher = RESPONSE_CREATION.matcher(source);
+    while (responseMatcher.find()) {
+      responseClassNames.add(responseMatcher.group(1));
+    }
+    return responseClassNames;
+  }
+
+  private boolean isFileSystemOptimizedRequest(String source, Path sourceFile) {
+    return sourceFile.getFileName().toString().contains("WithFSO") ||
+        source.contains("FILE_SYSTEM_OPTIMIZED");
+  }
+
+  private static Map<String, String> tableGetterToName(
+      boolean fileSystemOptimizedRequest) {
+    Map<String, String> tableGetterToName =
+        new LinkedHashMap<>(TABLE_GETTER_TO_NAME);
+    if (fileSystemOptimizedRequest) {
+      tableGetterToName.put("getKeyTable", OMDBDefinition.FILE_TABLE);
+      tableGetterToName.put("getOpenKeyTable",
+          OMDBDefinition.OPEN_FILE_TABLE);
+    }
+    return tableGetterToName;
+  }
+
+  private static Map<String, String> tableGetterToName() {
+    Map<String, String> tableGetterToName = new LinkedHashMap<>();
+    for (Field field : OMDBDefinition.class.getFields()) {
+      if (Modifier.isStatic(field.getModifiers()) &&
+          field.getType().equals(String.class) &&
+          field.getName().endsWith("_TABLE")) {
+        String getterName = tableGetterName(field.getName());
+        if (hasTableGetter(getterName)) {
+          tableGetterToName.put(getterName, tableName(field));
+        }
+      }
+    }
+    return tableGetterToName;
+  }
+
+  private static boolean hasTableGetter(String getterName) {
+    for (Method method : OMMetadataManager.class.getMethods()) {
+      if (method.getName().equals(getterName)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static String tableGetterName(String tableConstantName) {
+    String tableName = tableConstantName.substring(0,
+        tableConstantName.length() - "_TABLE".length());
+    StringBuilder getterName = new StringBuilder("get");
+    for (String word : tableName.toLowerCase(Locale.ROOT).split("_")) {
+      getterName.append(Character.toUpperCase(word.charAt(0)))
+          .append(word.substring(1));
+    }
+    return getterName.append("Table").toString();
+  }
+
+  private static String tableName(Field tableNameField) {
+    try {
+      return (String)tableNameField.get(null);
+    } catch (IllegalAccessException e) {
+      throw new IllegalStateException("Cannot read table name from " +
+          tableNameField, e);
+    }
+  }
+
+  private void verifyMetrics(CleanupTableInfoTestCase testCase) {
+    switch (testCase) {
+    case FILE_CREATE:
+      verify(omMetrics, times(1)).incNumCreateFile();
+      break;
+    case KEY_CREATE:
+      verify(omMetrics, times(1)).incNumKeyAllocates();
+      break;
+    case VOLUME_CREATE:
+      verify(omMetrics, times(1)).incNumVolumeCreates();
+      break;
+    default:
+      throw new IllegalArgumentException("Unexpected test case: " + testCase);
+    }
   }
 
   private Map<String, Integer> recordCacheItemCounts() {
@@ -215,6 +450,11 @@ public class TestCleanupTableInfo {
       Class<? extends OMClientResponse> responseClass
   ) {
     CleanupTableInfo ann = responseClass.getAnnotation(CleanupTableInfo.class);
+    assertNotNull(ann, "CleanupTableInfo is null for class " +
+        responseClass.getSimpleName());
+    if (ann.cleanupAll()) {
+      return;
+    }
     List<String> cleanup = Arrays.asList(ann.cleanupTables());
     for (String tableName : om.getMetadataManager().listTableNames()) {
       if (!cleanup.contains(tableName)) {
@@ -298,6 +538,15 @@ public class TestCleanupTableInfo {
         aBucketInfo().getBucketLayout());
   }
 
+  private OMVolumeCreateRequest anOMVolumeCreateRequest() {
+    OMRequest protoRequest = mock(OMRequest.class);
+    when(protoRequest.getCreateVolumeRequest())
+        .thenReturn(aCreateVolumeRequest());
+    when(protoRequest.getCmdType()).thenReturn(Type.CreateVolume);
+    when(protoRequest.getTraceID()).thenReturn("");
+    return new OMVolumeCreateRequest(protoRequest);
+  }
+
   private OmBucketInfo aBucketInfo() {
     return OmBucketInfo.newBuilder()
         .setVolumeName(TEST_VOLUME_NAME)
@@ -328,6 +577,17 @@ public class TestCleanupTableInfo {
     return CreateKeyRequest.newBuilder()
         .setKeyArgs(aKeyArgs())
         .setClientID(1L)
+        .build();
+  }
+
+  private CreateVolumeRequest aCreateVolumeRequest() {
+    VolumeInfo volumeInfo = VolumeInfo.newBuilder()
+        .setVolume(TEST_VOLUME_NAME + "-new")
+        .setAdminName("admin")
+        .setOwnerName("owner")
+        .build();
+    return CreateVolumeRequest.newBuilder()
+        .setVolumeInfo(volumeInfo)
         .build();
   }
 

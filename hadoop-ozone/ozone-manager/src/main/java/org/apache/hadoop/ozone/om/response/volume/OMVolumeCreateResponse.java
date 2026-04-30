@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.ozone.om.response.volume;
 
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.USER_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.VOLUME_TABLE;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -33,7 +34,7 @@ import org.apache.hadoop.ozone.storage.proto.OzoneManagerStorageProtos.Persisted
 /**
  * Response for CreateVolume request.
  */
-@CleanupTableInfo(cleanupTables = VOLUME_TABLE)
+@CleanupTableInfo(cleanupTables = {VOLUME_TABLE, USER_TABLE})
 public class OMVolumeCreateResponse extends OMClientResponse {
 
   private PersistedUserVolumeInfo userVolumeInfo;
@@ -77,4 +78,3 @@ public class OMVolumeCreateResponse extends OMClientResponse {
   }
 
 }
-

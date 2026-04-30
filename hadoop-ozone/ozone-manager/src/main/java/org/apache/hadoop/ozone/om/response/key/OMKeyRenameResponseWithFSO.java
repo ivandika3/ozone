@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.ozone.om.response.key;
 
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.DIRECTORY_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.FILE_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.SNAPSHOT_RENAMED_TABLE;
@@ -37,7 +38,7 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRespo
 /**
  * Response for RenameKey request - prefix layout.
  */
-@CleanupTableInfo(cleanupTables = {FILE_TABLE, DIRECTORY_TABLE,
+@CleanupTableInfo(cleanupTables = {FILE_TABLE, DIRECTORY_TABLE, BUCKET_TABLE,
     SNAPSHOT_RENAMED_TABLE})
 public class OMKeyRenameResponseWithFSO extends OMKeyRenameResponse {
 

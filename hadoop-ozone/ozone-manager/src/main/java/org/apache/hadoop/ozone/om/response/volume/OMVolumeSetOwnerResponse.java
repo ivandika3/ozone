@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.ozone.om.response.volume;
 
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.USER_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.VOLUME_TABLE;
 
 import jakarta.annotation.Nonnull;
@@ -33,7 +34,7 @@ import org.apache.hadoop.ozone.storage.proto.OzoneManagerStorageProtos.Persisted
 /**
  * Response for set owner request.
  */
-@CleanupTableInfo(cleanupTables = {VOLUME_TABLE})
+@CleanupTableInfo(cleanupTables = {VOLUME_TABLE, USER_TABLE})
 public class OMVolumeSetOwnerResponse extends OMClientResponse {
   private String oldOwner;
   private PersistedUserVolumeInfo oldOwnerVolumeList;
