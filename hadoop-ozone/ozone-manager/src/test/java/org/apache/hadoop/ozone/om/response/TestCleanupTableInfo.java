@@ -356,7 +356,7 @@ public class TestCleanupTableInfo {
   }
 
   private boolean isFileSystemOptimizedRequest(String source, Path sourceFile) {
-    return sourceFile.getFileName().toString().contains("WithFSO") ||
+    return sourceFile.toString().contains("WithFSO") ||
         source.contains("FILE_SYSTEM_OPTIMIZED");
   }
 
