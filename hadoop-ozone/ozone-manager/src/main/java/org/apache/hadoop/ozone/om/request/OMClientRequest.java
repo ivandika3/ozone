@@ -27,10 +27,10 @@ import java.nio.file.InvalidPathException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.hdds.utils.TransactionInfo;
 import org.apache.hadoop.hdds.utils.db.TableCacheUpdateTracker;
+import org.apache.hadoop.hdds.utils.db.TableCacheUpdateTracker.Tracker;
 import org.apache.hadoop.ipc_.ProtobufRpcEngine;
 import org.apache.hadoop.ozone.OmUtils;
 import org.apache.hadoop.ozone.OzoneConsts;
@@ -151,15 +151,10 @@ public abstract class OMClientRequest implements RequestAuditor {
   public OMClientResponse validateAndUpdateCache(OzoneManager ozoneManager, long transactionLogIndex) {
     ExecutionContext context = ExecutionContext.of(transactionLogIndex,
         TransactionInfo.getTermIndex(transactionLogIndex));
-    TableCacheUpdateTracker.startTracking();
-    try {
+    try (Tracker tracker = TableCacheUpdateTracker.track()) {
       OMClientResponse response = validateAndUpdateCache(ozoneManager, context);
-      Set<String> cleanupTables = TableCacheUpdateTracker.stopTracking();
-      response.setCleanupTables(cleanupTables);
+      response.setCleanupTables(tracker.getUpdatedTables());
       return response;
-    } catch (RuntimeException | Error e) {
-      TableCacheUpdateTracker.stopTracking();
-      throw e;
     }
   }
 

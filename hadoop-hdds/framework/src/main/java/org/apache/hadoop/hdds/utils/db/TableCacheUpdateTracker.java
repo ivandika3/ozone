@@ -26,34 +26,63 @@ import java.util.Set;
  */
 public final class TableCacheUpdateTracker {
 
-  private static final ThreadLocal<Set<String>> UPDATED_TABLES =
+  private static final ThreadLocal<Tracker> CURRENT_TRACKER =
       new ThreadLocal<>();
   private static final Set<String> TRACKING = Collections.emptySet();
 
   private TableCacheUpdateTracker() {
   }
 
-  public static void startTracking() {
-    UPDATED_TABLES.set(TRACKING);
-  }
-
-  public static Set<String> stopTracking() {
-    Set<String> tables = UPDATED_TABLES.get();
-    UPDATED_TABLES.remove();
-    if (tables == null || tables == TRACKING || tables.isEmpty()) {
-      return Collections.emptySet();
+  public static Tracker track() {
+    if (CURRENT_TRACKER.get() != null) {
+      throw new IllegalStateException("Table cache updates are already being tracked");
     }
-    return Collections.unmodifiableSet(new LinkedHashSet<>(tables));
+    Tracker tracker = new Tracker();
+    CURRENT_TRACKER.set(tracker);
+    return tracker;
   }
 
   public static void recordCacheUpdate(String tableName) {
-    Set<String> tables = UPDATED_TABLES.get();
-    if (tables != null && tableName != null && !tableName.isEmpty()) {
-      if (tables == TRACKING) {
-        tables = new LinkedHashSet<>();
-        UPDATED_TABLES.set(tables);
+    Tracker tracker = CURRENT_TRACKER.get();
+    if (tracker != null) {
+      tracker.recordCacheUpdate(tableName);
+    }
+  }
+
+  /**
+   * Tracks updated tables until the scope is closed.
+   */
+  public static final class Tracker implements AutoCloseable {
+    private Set<String> tables = TRACKING;
+    private boolean closed;
+
+    private Tracker() {
+    }
+
+    public Set<String> getUpdatedTables() {
+      if (tables == TRACKING || tables.isEmpty()) {
+        return Collections.emptySet();
       }
-      tables.add(tableName);
+      return Collections.unmodifiableSet(new LinkedHashSet<>(tables));
+    }
+
+    @Override
+    public void close() {
+      if (!closed) {
+        if (CURRENT_TRACKER.get() == this) {
+          CURRENT_TRACKER.remove();
+        }
+        closed = true;
+      }
+    }
+
+    private void recordCacheUpdate(String tableName) {
+      if (!closed && tableName != null && !tableName.isEmpty()) {
+        if (tables == TRACKING) {
+          tables = new LinkedHashSet<>();
+        }
+        tables.add(tableName);
+      }
     }
   }
 }
