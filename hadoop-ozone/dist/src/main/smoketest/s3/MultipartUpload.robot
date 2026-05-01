@@ -141,9 +141,8 @@ Test Multipart Upload Complete
                                 Should contain             ${result}        ContentRange
                                 Should contain             ${result}        bytes 2-4/1047552
                                 Should contain             ${result}        AcceptRanges
-    ${expectedData} =           Execute                    dd if=/tmp/part2 skip=2 bs=1 count=3 2>/dev/null
-    ${actualData} =             Execute                    cat /tmp/${PREFIX}-multipartKey1-part2-range.result
-                                Should Be Equal            ${expectedData}            ${actualData}
+                                Execute                    dd if=/tmp/part2 of=/tmp/${PREFIX}-multipartKey1-part2-range.expected skip=2 bs=1 count=3 2>/dev/null
+    Compare files               /tmp/${PREFIX}-multipartKey1-part2-range.expected        /tmp/${PREFIX}-multipartKey1-part2-range.result
 
 Test Multipart Upload with user defined metadata size larger than 2 KB
     ${custom_metadata_value} =  Generate Random String   3000
