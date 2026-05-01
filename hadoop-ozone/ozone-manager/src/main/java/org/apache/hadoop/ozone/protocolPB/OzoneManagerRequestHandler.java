@@ -426,7 +426,7 @@ public class OzoneManagerRequestHandler implements RequestHandler {
           impl.getPerfMetrics().getValidateAndUpdateCacheLatencyNs(),
           () -> Objects.requireNonNull(omClientRequest.validateAndUpdateCache(getOzoneManager(), context),
               "omClientResponse returned by validateAndUpdateCache cannot be null"));
-      omClientResponse.setCleanupTables(tracker.getUpdatedTables());
+      omClientResponse.addCleanupTables(tracker.getUpdatedTables());
       OMAuditLogger.log(omClientRequest.getAuditBuilder(), context.getTermIndex());
       return omClientResponse;
     } catch (Throwable th) {

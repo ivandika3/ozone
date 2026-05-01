@@ -97,10 +97,22 @@ public abstract class OMClientResponse {
   }
 
   public void setCleanupTables(Collection<String> tables) {
+    cleanupTables = toCleanupTables(tables);
+  }
+
+  public void addCleanupTables(Collection<String> tables) {
     if (tables == null || tables.isEmpty()) {
-      cleanupTables = Collections.emptySet();
       return;
     }
-    cleanupTables = Collections.unmodifiableSet(new LinkedHashSet<>(tables));
+    Set<String> merged = new LinkedHashSet<>(cleanupTables);
+    merged.addAll(tables);
+    cleanupTables = toCleanupTables(merged);
+  }
+
+  private static Set<String> toCleanupTables(Collection<String> tables) {
+    if (tables == null || tables.isEmpty()) {
+      return Collections.emptySet();
+    }
+    return Collections.unmodifiableSet(new LinkedHashSet<>(tables));
   }
 }
