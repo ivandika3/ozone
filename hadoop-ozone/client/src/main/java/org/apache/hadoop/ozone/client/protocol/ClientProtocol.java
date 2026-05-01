@@ -18,6 +18,7 @@
 package org.apache.hadoop.ozone.client.protocol;
 
 import jakarta.annotation.Nonnull;
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.URI;
 import java.util.List;
@@ -189,10 +190,37 @@ public interface ClientProtocol {
    * @return {@link OzoneKey}
    * @throws IOException
    */
-  OzoneKeyDetails getS3KeyDetails(String bucketName, String keyName,
-                                  int partNumber, long startOffset,
-                                  long endOffset)
-      throws IOException;
+  default OzoneKeyDetails getS3KeyDetails(String bucketName, String keyName,
+      int partNumber, long startOffset, long endOffset)
+      throws IOException {
+    OzoneKeyDetails keyDetails = partNumber == 0
+        ? getS3KeyDetails(bucketName, keyName)
+        : getS3KeyDetails(bucketName, keyName, partNumber);
+    return new OzoneKeyDetails(
+        keyDetails.getVolumeName(), keyDetails.getBucketName(),
+        keyDetails.getName(), keyDetails.getDataSize(),
+        keyDetails.getCreationTime().toEpochMilli(),
+        keyDetails.getModificationTime().toEpochMilli(),
+        keyDetails.getOzoneKeyLocations(),
+        keyDetails.getReplicationConfig(), keyDetails.getMetadata(),
+        keyDetails.getFileEncryptionInfo(), () -> {
+          OzoneInputStream stream = keyDetails.getContent();
+          long remaining = startOffset;
+          while (remaining > 0) {
+            long skipped = stream.skip(remaining);
+            if (skipped <= 0) {
+              if (stream.read() == -1) {
+                throw new EOFException("Unable to skip to S3 byte range "
+                    + "start offset " + startOffset + " for key " + keyName);
+              }
+              skipped = 1;
+            }
+            remaining -= skipped;
+          }
+          return stream;
+        }, keyDetails.isFile(), keyDetails.getOwner(), keyDetails.getTags(),
+        keyDetails.getGeneration());
+  }
 
   OzoneVolume buildOzoneVolume(OmVolumeArgs volume);
 
