@@ -137,6 +137,14 @@ Test Multipart Upload Complete
     ${result} =                 Execute AWSS3ApiCli        get-object --bucket ${BUCKET} --key ${PREFIX}/multipartKey1 --part-number 2 /tmp/${PREFIX}-multipartKey1-part2.result
     Compare files               /tmp/part2        /tmp/${PREFIX}-multipartKey1-part2.result
 
+    ${result} =                 Execute AWSS3ApiCli        get-object --bucket ${BUCKET} --key ${PREFIX}/multipartKey1 --part-number 2 --range bytes=2-4 /tmp/${PREFIX}-multipartKey1-part2-range.result
+                                Should contain             ${result}        ContentRange
+                                Should contain             ${result}        bytes 2-4/1047552
+                                Should contain             ${result}        AcceptRanges
+    ${expectedData} =           Execute                    dd if=/tmp/part2 skip=2 bs=1 count=3 2>/dev/null
+    ${actualData} =             Execute                    cat /tmp/${PREFIX}-multipartKey1-part2-range.result
+                                Should Be Equal            ${expectedData}            ${actualData}
+
 Test Multipart Upload with user defined metadata size larger than 2 KB
     ${custom_metadata_value} =  Generate Random String   3000
     ${result} =    Initiate MPU    ${BUCKET}    ${PREFIX}/mpuWithLargeMetadata    255     --metadata="custom-key1=${custom_metadata_value}"
@@ -456,4 +464,3 @@ Test Multipart Upload Part with wrong Content-MD5 header
 
     # Abort the multipart upload (cleanup)
                                 Abort MPU                  ${BUCKET}    ${PREFIX}/mpu/md5test/key2    ${uploadID}
-
