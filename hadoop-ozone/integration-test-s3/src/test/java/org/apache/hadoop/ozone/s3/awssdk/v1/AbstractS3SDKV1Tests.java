@@ -1291,6 +1291,37 @@ public abstract class AbstractS3SDKV1Tests extends OzoneTestBase implements NonH
   }
 
   @Test
+  public void testGetParticularPartWithRange(@TempDir Path tempDir) throws Exception {
+    final String bucketName = getBucketName();
+    final String keyName = getKeyName();
+    final int partSize = (int) (5 * MB);
+    final int rangeStart = 2;
+    final int rangeEnd = 4;
+
+    s3Client.createBucket(bucketName);
+
+    File multipartUploadFile = Files.createFile(tempDir.resolve("multipartupload.txt")).toFile();
+    createFile(multipartUploadFile, (int) (15 * MB));
+    multipartUpload(bucketName, keyName, multipartUploadFile, partSize, null, null, null);
+
+    GetObjectRequest getObjectRequest = new GetObjectRequest(bucketName, keyName)
+        .withPartNumber(2)
+        .withRange(rangeStart, rangeEnd);
+    S3Object s3Object = s3Client.getObject(getObjectRequest);
+
+    assertEquals(rangeEnd - rangeStart + 1, s3Object.getObjectMetadata().getContentLength());
+    assertThat(s3Object.getObjectMetadata().getContentRange())
+        .containsExactly((long) rangeStart, (long) rangeEnd, (long) partSize);
+
+    byte[] uploadedBytes = Files.readAllBytes(multipartUploadFile.toPath());
+    byte[] expectedBytes = Arrays.copyOfRange(uploadedBytes, partSize + rangeStart,
+        partSize + rangeEnd + 1);
+    try (S3ObjectInputStream objectContent = s3Object.getObjectContent()) {
+      assertThat(IOUtils.toByteArray(objectContent)).containsExactly(expectedBytes);
+    }
+  }
+
+  @Test
   public void testGetNotExistedPart(@TempDir Path tempDir) throws Exception {
     final String bucketName = getBucketName();
     final String keyName = getKeyName();
