@@ -49,4 +49,24 @@ public class TestTableCacheUpdateTracker {
 
     assertThat(tracker.getUpdatedTables()).containsExactly("table1");
   }
+
+  @Test
+  public void nestedTrackerMergesUpdatesIntoParent() {
+    try (TableCacheUpdateTracker.Tracker parent =
+             TableCacheUpdateTracker.track()) {
+      TableCacheUpdateTracker.recordCacheUpdate("table1");
+
+      try (TableCacheUpdateTracker.Tracker child =
+               TableCacheUpdateTracker.track()) {
+        TableCacheUpdateTracker.recordCacheUpdate("table2");
+
+        assertThat(child.getUpdatedTables()).containsExactly("table2");
+      }
+
+      TableCacheUpdateTracker.recordCacheUpdate("table3");
+
+      assertThat(parent.getUpdatedTables())
+          .containsExactly("table1", "table2", "table3");
+    }
+  }
 }

@@ -34,10 +34,7 @@ public final class TableCacheUpdateTracker {
   }
 
   public static Tracker track() {
-    if (CURRENT_TRACKER.get() != null) {
-      throw new IllegalStateException("Table cache updates are already being tracked");
-    }
-    Tracker tracker = new Tracker();
+    Tracker tracker = new Tracker(CURRENT_TRACKER.get());
     CURRENT_TRACKER.set(tracker);
     return tracker;
   }
@@ -53,10 +50,12 @@ public final class TableCacheUpdateTracker {
    * Tracks updated tables until the scope is closed.
    */
   public static final class Tracker implements AutoCloseable {
+    private final Tracker parent;
     private Set<String> tables = TRACKING;
     private boolean closed;
 
-    private Tracker() {
+    private Tracker(Tracker parent) {
+      this.parent = parent;
     }
 
     public Set<String> getUpdatedTables() {
@@ -69,8 +68,16 @@ public final class TableCacheUpdateTracker {
     @Override
     public void close() {
       if (!closed) {
+        Tracker activeParent = getActiveParent();
+        if (activeParent != null) {
+          activeParent.addTables(tables);
+        }
         if (CURRENT_TRACKER.get() == this) {
-          CURRENT_TRACKER.remove();
+          if (activeParent != null) {
+            CURRENT_TRACKER.set(activeParent);
+          } else {
+            CURRENT_TRACKER.remove();
+          }
         }
         closed = true;
       }
@@ -82,6 +89,23 @@ public final class TableCacheUpdateTracker {
           tables = new LinkedHashSet<>();
         }
         tables.add(tableName);
+      }
+    }
+
+    private Tracker getActiveParent() {
+      Tracker current = parent;
+      while (current != null && current.closed) {
+        current = current.parent;
+      }
+      return current;
+    }
+
+    private void addTables(Set<String> tableNames) {
+      if (!closed && tableNames != TRACKING && !tableNames.isEmpty()) {
+        if (tables == TRACKING) {
+          tables = new LinkedHashSet<>();
+        }
+        tables.addAll(tableNames);
       }
     }
   }
