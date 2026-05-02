@@ -10,6 +10,7 @@
 [![Contributors](https://img.shields.io/github/contributors/apache/ozone)](https://github.com/apache/ozone/graphs/contributors)
 [![Commit Activity](https://img.shields.io/github/commit-activity/m/apache/ozone)](https://github.com/apache/ozone/commits/master)
 [![OSSRank](https://shields.io/endpoint?url=https://ossrank.com/shield/3018)](https://ossrank.com/p/3018-apache-ozone)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/apache/ozone)
 
 Apache Ozone
 ===
