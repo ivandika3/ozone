@@ -35,6 +35,7 @@ import com.amazonaws.AmazonServiceException;
 import com.amazonaws.AmazonServiceException.ErrorType;
 import com.amazonaws.HttpMethod;
 import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.Headers;
 import com.amazonaws.services.s3.model.AbortMultipartUploadRequest;
 import com.amazonaws.services.s3.model.AccessControlList;
 import com.amazonaws.services.s3.model.Bucket;
@@ -1309,9 +1310,13 @@ public abstract class AbstractS3SDKV1Tests extends OzoneTestBase implements NonH
         .withRange(rangeStart, rangeEnd);
     S3Object s3Object = s3Client.getObject(getObjectRequest);
 
-    assertEquals(rangeEnd - rangeStart + 1, s3Object.getObjectMetadata().getContentLength());
-    assertThat(s3Object.getObjectMetadata().getContentRange())
-        .containsExactly((long) rangeStart, (long) rangeEnd, (long) partSize);
+    ObjectMetadata objectMetadata = s3Object.getObjectMetadata();
+    assertEquals(rangeEnd - rangeStart + 1, objectMetadata.getContentLength());
+    assertThat(objectMetadata.getContentRange())
+        .containsExactly((long) rangeStart, (long) rangeEnd);
+    assertEquals(partSize, objectMetadata.getInstanceLength());
+    assertEquals("bytes " + rangeStart + "-" + rangeEnd + "/" + partSize,
+        objectMetadata.getRawMetadataValue(Headers.CONTENT_RANGE));
 
     byte[] uploadedBytes = Files.readAllBytes(multipartUploadFile.toPath());
     byte[] expectedBytes = Arrays.copyOfRange(uploadedBytes, partSize + rangeStart,
