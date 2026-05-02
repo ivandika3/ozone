@@ -18,14 +18,19 @@
 package org.apache.hadoop.ozone.s3.endpoint;
 
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import org.apache.hadoop.ozone.audit.S3GAction;
+import org.apache.hadoop.ozone.client.ObjectStore;
 import org.apache.hadoop.ozone.client.OzoneBucket;
+import org.apache.hadoop.ozone.client.OzoneClient;
 import org.apache.hadoop.ozone.client.OzoneVolume;
+import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -48,5 +53,41 @@ public class TestS3RequestContext {
     verify(endpoint, times(1)).getVolume();
     verify(volume, times(1)).getBucket("bucket");
     verify(endpoint, times(1)).cacheBucket("bucket", bucket);
+  }
+
+  @Test
+  public void getS3BucketCachesLoadedBuckets() throws Exception {
+    EndpointBase endpoint = mock(EndpointBase.class);
+    OzoneClient client = mock(OzoneClient.class);
+    ObjectStore objectStore = mock(ObjectStore.class);
+    OzoneBucket bucket = mock(OzoneBucket.class);
+    when(endpoint.getClient()).thenReturn(client);
+    when(client.getObjectStore()).thenReturn(objectStore);
+    when(objectStore.getS3Bucket("bucket")).thenReturn(bucket);
+
+    S3RequestContext context = new S3RequestContext(endpoint, S3GAction.GET_BUCKET);
+
+    assertSame(bucket, context.getS3Bucket("bucket"));
+    assertSame(bucket, context.getS3Bucket("bucket"));
+    verify(objectStore, times(1)).getS3Bucket("bucket");
+    verify(endpoint, times(1)).cacheBucket("bucket", bucket);
+    verify(endpoint, never()).getVolume();
+  }
+
+  @Test
+  public void getS3BucketPropagatesOmExceptions() throws Exception {
+    EndpointBase endpoint = mock(EndpointBase.class);
+    OzoneClient client = mock(OzoneClient.class);
+    ObjectStore objectStore = mock(ObjectStore.class);
+    OMException exception =
+        new OMException("missing", OMException.ResultCodes.BUCKET_NOT_FOUND);
+    when(endpoint.getClient()).thenReturn(client);
+    when(client.getObjectStore()).thenReturn(objectStore);
+    when(objectStore.getS3Bucket("bucket")).thenThrow(exception);
+
+    S3RequestContext context = new S3RequestContext(endpoint, S3GAction.GET_BUCKET);
+
+    assertSame(exception,
+        assertThrows(OMException.class, () -> context.getS3Bucket("bucket")));
   }
 }

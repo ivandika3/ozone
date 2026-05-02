@@ -260,6 +260,7 @@ public class TestPermissionCheck {
   @Test
   public void testPutKey() throws IOException {
     when(objectStore.getS3Volume()).thenReturn(volume);
+    when(objectStore.getS3Bucket("bucketName")).thenReturn(bucket);
     when(volume.getBucket("bucketName")).thenReturn(bucket);
     doThrow(exception).when(clientProtocol).createKey(
             anyString(), anyString(), anyString(), anyLong(), any(), anyMap(), anyMap());
@@ -307,6 +308,7 @@ public class TestPermissionCheck {
   public void testObjectTagging() throws Exception {
     when(objectStore.getVolume(anyString())).thenReturn(volume);
     when(objectStore.getS3Volume()).thenReturn(volume);
+    when(objectStore.getS3Bucket("bucketName")).thenReturn(bucket);
     when(volume.getBucket("bucketName")).thenReturn(bucket);
     when(bucket.getObjectTagging(anyString())).thenThrow(exception);
     doThrow(exception).when(bucket).putObjectTagging(anyString(), anyMap());

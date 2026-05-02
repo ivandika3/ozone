@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.Map;
 import org.apache.hadoop.ozone.audit.AuditLogger.PerformanceStringBuilder;
 import org.apache.hadoop.ozone.audit.S3GAction;
+import org.apache.hadoop.ozone.client.ObjectStore;
 import org.apache.hadoop.ozone.client.OzoneBucket;
 import org.apache.hadoop.ozone.client.OzoneVolume;
 import org.apache.hadoop.util.Time;
@@ -61,6 +62,17 @@ class S3RequestContext {
     OzoneBucket bucket = buckets.get(bucketName);
     if (bucket == null) {
       bucket = getVolume().getBucket(bucketName);
+      endpoint.cacheBucket(bucketName, bucket);
+      buckets.put(bucketName, bucket);
+    }
+    return bucket;
+  }
+
+  OzoneBucket getS3Bucket(String bucketName) throws IOException {
+    OzoneBucket bucket = buckets.get(bucketName);
+    if (bucket == null) {
+      ObjectStore objectStore = endpoint.getClient().getObjectStore();
+      bucket = objectStore.getS3Bucket(bucketName);
       endpoint.cacheBucket(bucketName, bucket);
       buckets.put(bucketName, bucket);
     }

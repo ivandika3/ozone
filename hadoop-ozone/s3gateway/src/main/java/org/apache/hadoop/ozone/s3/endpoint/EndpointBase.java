@@ -231,31 +231,6 @@ public abstract class EndpointBase {
     // hook method
   }
 
-  protected OzoneBucket getBucket(String bucketName)
-      throws OS3Exception, IOException {
-    OzoneBucket bucket;
-    try {
-      bucket = client.getObjectStore().getS3Bucket(bucketName);
-    } catch (OMException ex) {
-      if (ex.getResult() == ResultCodes.BUCKET_NOT_FOUND
-          || ex.getResult() == ResultCodes.VOLUME_NOT_FOUND) {
-        throw newError(S3ErrorTable.NO_SUCH_BUCKET, bucketName, ex);
-      } else if (ex.getResult() == ResultCodes.INVALID_TOKEN) {
-        throw newError(S3ErrorTable.ACCESS_DENIED,
-            s3Auth.getAccessID(), ex);
-      } else if (ex.getResult() == ResultCodes.PERMISSION_DENIED) {
-        throw newError(S3ErrorTable.ACCESS_DENIED, bucketName, ex);
-      } else if (ex.getResult() == ResultCodes.TIMEOUT ||
-          ex.getResult() == ResultCodes.INTERNAL_ERROR) {
-        throw newError(S3ErrorTable.INTERNAL_ERROR, bucketName, ex);
-      } else {
-        throw ex;
-      }
-    }
-    cacheBucket(bucketName, bucket);
-    return bucket;
-  }
-
   protected OzoneBucket loadBucket(String bucketName) throws IOException {
     OzoneBucket bucket = getVolume().getBucket(bucketName);
     cacheBucket(bucketName, bucket);
@@ -290,14 +265,18 @@ public abstract class EndpointBase {
         S3Consts.ACCESS_CONTROL_REQUEST_METHOD);
     String requestedHeaders = getHeaders().getHeaderString(
         S3Consts.ACCESS_CONTROL_REQUEST_HEADERS);
-    OzoneBucket bucket = getBucket(bucketName);
-    Optional<CorsRule> rule = S3CorsHeaders.findMatchingRule(
-        bucket.getCorsConfiguration(), origin, method, requestedHeaders);
-    if (!rule.isPresent()) {
-      throw newError(S3ErrorTable.ACCESS_DENIED, bucketName);
+    try {
+      OzoneBucket bucket = new S3RequestContext(this, null).getS3Bucket(bucketName);
+      Optional<CorsRule> rule = S3CorsHeaders.findMatchingRule(
+          bucket.getCorsConfiguration(), origin, method, requestedHeaders);
+      if (!rule.isPresent()) {
+        throw newError(S3ErrorTable.ACCESS_DENIED, bucketName);
+      }
+      return S3CorsHeaders.applyHeaders(Response.ok(), rule.get(), origin,
+          requestedHeaders, true).build();
+    } catch (OMException ex) {
+      throw newError(bucketName, ex);
     }
-    return S3CorsHeaders.applyHeaders(Response.ok(), rule.get(), origin,
-        requestedHeaders, true).build();
   }
 
   /**
