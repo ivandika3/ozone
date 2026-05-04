@@ -48,6 +48,7 @@ import org.apache.hadoop.ozone.om.helpers.OmMultipartUploadCompleteInfo;
 import org.apache.hadoop.ozone.om.helpers.OmVolumeArgs;
 import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
 import org.apache.hadoop.ozone.om.helpers.OzoneFileStatusLight;
+import org.apache.hadoop.ozone.om.helpers.ReadConsistency;
 import org.apache.hadoop.ozone.om.helpers.S3SecretValue;
 import org.apache.hadoop.ozone.om.helpers.S3VolumeContext;
 import org.apache.hadoop.ozone.om.helpers.TenantStateList;
@@ -72,6 +73,9 @@ public class ClientProtocolStub implements ClientProtocol {
   private static final String STUB_KERBEROS_ID = "stub_kerberos_id";
   private static final String STUB_SECRET = "stub_secret";
   private final ObjectStoreStub objectStoreStub;
+  private ReadConsistency readConsistency;
+  private Long localLeaseLogLimit;
+  private Long localLeaseTimeMs;
 
   public ClientProtocolStub(ObjectStoreStub objectStoreStub) {
     this.objectStoreStub = objectStoreStub;
@@ -679,6 +683,21 @@ public class ClientProtocolStub implements ClientProtocol {
   }
 
   @Override
+  public void setThreadLocalReadConsistency(ReadConsistency readConsistency) {
+    this.readConsistency = readConsistency;
+    this.localLeaseLogLimit = null;
+    this.localLeaseTimeMs = null;
+  }
+
+  @Override
+  public void setThreadLocalReadConsistency(ReadConsistency readConsistency,
+      Long newLocalLeaseLogLimit, Long newLocalLeaseTimeMs) {
+    this.readConsistency = readConsistency;
+    this.localLeaseLogLimit = newLocalLeaseLogLimit;
+    this.localLeaseTimeMs = newLocalLeaseTimeMs;
+  }
+
+  @Override
   public void setIsS3Request(boolean isS3Request) {
 
   }
@@ -689,8 +708,28 @@ public class ClientProtocolStub implements ClientProtocol {
   }
 
   @Override
+  public ReadConsistency getThreadLocalReadConsistency() {
+    return readConsistency;
+  }
+
+  public Long getThreadLocalLocalLeaseLogLimit() {
+    return localLeaseLogLimit;
+  }
+
+  public Long getThreadLocalLocalLeaseTimeMs() {
+    return localLeaseTimeMs;
+  }
+
+  @Override
   public void clearThreadLocalS3Auth() {
 
+  }
+
+  @Override
+  public void clearThreadLocalReadConsistency() {
+    readConsistency = null;
+    localLeaseLogLimit = null;
+    localLeaseTimeMs = null;
   }
 
   @Override

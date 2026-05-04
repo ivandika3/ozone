@@ -86,6 +86,7 @@ import org.apache.hadoop.ozone.om.helpers.OmVolumeArgs;
 import org.apache.hadoop.ozone.om.helpers.OpenKeySession;
 import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
 import org.apache.hadoop.ozone.om.helpers.OzoneFileStatusLight;
+import org.apache.hadoop.ozone.om.helpers.ReadConsistency;
 import org.apache.hadoop.ozone.om.helpers.S3SecretValue;
 import org.apache.hadoop.ozone.om.helpers.S3VolumeContext;
 import org.apache.hadoop.ozone.om.helpers.ServiceInfo;
@@ -194,6 +195,7 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.Prepare
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.PutObjectTaggingRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.RangerBGSyncRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.RangerBGSyncResponse;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.ReadConsistencyHint;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.RecoverLeaseRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.RecoverLeaseResponse;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.RefetchSecretKeyRequest;
@@ -265,6 +267,8 @@ public final class OzoneManagerProtocolClientSideTranslatorPB
   private OmTransport transport;
   private ThreadLocal<S3Auth> threadLocalS3Auth
       = new ThreadLocal<>();
+  private ThreadLocal<ReadConsistencyHint> threadLocalReadConsistencyHint
+      = new ThreadLocal<>();
   private boolean s3AuthCheck;
 
   public static final int BLOCK_ALLOCATION_RETRY_COUNT = 90;
@@ -331,6 +335,10 @@ public final class OzoneManagerProtocolClientSideTranslatorPB
     if (s3AuthCheck && getThreadLocalS3Auth() == null) {
       throw new IllegalArgumentException("S3 Auth expected to " +
           "be set but is null " + omRequest.toString());
+    }
+    if (!builder.hasReadConsistencyHint()
+        && threadLocalReadConsistencyHint.get() != null) {
+      builder.setReadConsistencyHint(threadLocalReadConsistencyHint.get());
     }
     if (threadLocalS3Auth.get() != null) {
       if (!Strings.isNullOrEmpty(threadLocalS3Auth.get().getAccessID())) {
@@ -2163,8 +2171,38 @@ public final class OzoneManagerProtocolClientSideTranslatorPB
   }
 
   @Override
+  public void setThreadLocalReadConsistency(ReadConsistency readConsistency) {
+    this.threadLocalReadConsistencyHint.set(readConsistency.getHint());
+  }
+
+  @Override
+  public void setThreadLocalReadConsistency(ReadConsistency readConsistency,
+      Long localLeaseLogLimit, Long localLeaseTimeMs) {
+    ReadConsistencyHint.Builder hint = ReadConsistencyHint.newBuilder()
+        .setReadConsistency(readConsistency.toProto());
+    if (readConsistency == ReadConsistency.LOCAL_LEASE
+        && (localLeaseLogLimit != null || localLeaseTimeMs != null)) {
+      ReadConsistencyHint.LocalLeaseContext.Builder localLeaseContext =
+          ReadConsistencyHint.LocalLeaseContext.newBuilder();
+      if (localLeaseLogLimit != null) {
+        localLeaseContext.setLogLimit(localLeaseLogLimit);
+      }
+      if (localLeaseTimeMs != null) {
+        localLeaseContext.setLeaseTimeMs(localLeaseTimeMs);
+      }
+      hint.setLocalLeaseContext(localLeaseContext);
+    }
+    this.threadLocalReadConsistencyHint.set(hint.build());
+  }
+
+  @Override
   public void clearThreadLocalS3Auth() {
     this.threadLocalS3Auth.remove();
+  }
+
+  @Override
+  public void clearThreadLocalReadConsistency() {
+    this.threadLocalReadConsistencyHint.remove();
   }
 
   @Override
@@ -2176,6 +2214,16 @@ public final class OzoneManagerProtocolClientSideTranslatorPB
   @SkipTracing
   public S3Auth getThreadLocalS3Auth() {
     return this.threadLocalS3Auth.get();
+  }
+
+  @Override
+  @SkipTracing
+  public ReadConsistency getThreadLocalReadConsistency() {
+    ReadConsistencyHint hint = this.threadLocalReadConsistencyHint.get();
+    if (hint == null) {
+      return null;
+    }
+    return ReadConsistency.fromProto(hint.getReadConsistency());
   }
 
   /**
