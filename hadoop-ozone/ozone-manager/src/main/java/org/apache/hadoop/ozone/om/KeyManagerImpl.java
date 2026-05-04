@@ -686,6 +686,8 @@ public class KeyManagerImpl implements KeyManager {
     if (!filteredLocations.isEmpty()) {
       keyInfo.setByteRangeStartOffset(byteRangeStart - firstBlockStart);
     }
+    keyInfo.setDataSize(filteredLocations.isEmpty() ? 0 :
+        byteRangeEnd - byteRangeStart + 1);
   }
 
   private OmKeyInfo getOmKeyInfo(String volumeName, String bucketName,

@@ -1882,8 +1882,7 @@ public class RpcClient implements ClientProtocol {
 
   @Override
   public OzoneKeyDetails getS3KeyDetails(String bucketName, String keyName,
-                                         int partNumber, long startOffset,
-                                         long endOffset) throws IOException {
+      int partNumber, long startOffset, long endOffset) throws IOException {
     OmKeyInfo keyInfo;
     if (omVersion.compareTo(OzoneManagerVersion.S3_BYTE_RANGE_GET) >= 0) {
       keyInfo = getS3RangedKeyInfo(bucketName, keyName, partNumber,

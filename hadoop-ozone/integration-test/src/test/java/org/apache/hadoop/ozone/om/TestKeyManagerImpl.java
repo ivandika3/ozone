@@ -1552,6 +1552,7 @@ public class TestKeyManagerImpl {
     assertEquals(1, locationList.get(0).getPartNumber());
     assertEquals(2, locationList.get(1).getPartNumber());
     assertEquals(50, omKeyInfo.getByteRangeStartOffset());
+    assertEquals(111, omKeyInfo.getDataSize());
   }
 
   @Test
@@ -1575,6 +1576,7 @@ public class TestKeyManagerImpl {
     assertEquals(1, locationList.size());
     assertEquals(3, locationList.get(0).getPartNumber());
     assertEquals(20, omKeyInfo.getByteRangeStartOffset());
+    assertEquals(21, omKeyInfo.getDataSize());
   }
 
   private OmKeyInfo getMockedOmKeyInfo(OmBucketInfo bucketInfo, long parentId, String key, long objectId) {
