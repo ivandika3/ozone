@@ -1053,6 +1053,12 @@ message ListBucketsResponse {
     repeated BucketInfo bucketInfo = 2;
 }
 
+message ByteRange {
+    // Inclusive start and end offsets: [start, end].
+    optional uint64 start = 1;
+    optional uint64 end = 2;
+}
+
 message KeyArgs {
     required string volumeName = 1;
     required string bucketName = 2;
@@ -1104,8 +1110,7 @@ message KeyArgs {
 
     // Byte range requested by S3 GET. OM uses it to return only the
     // key locations needed to satisfy the read.
-    optional uint64 byteRangeStart = 25;
-    optional uint64 byteRangeEnd = 26;
+    optional ByteRange byteRange = 25;
 }
 
 message KeyLocation {

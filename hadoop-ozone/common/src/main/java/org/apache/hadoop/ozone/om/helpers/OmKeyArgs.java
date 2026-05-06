@@ -29,6 +29,7 @@ import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.ozone.OzoneAcl;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.audit.Auditable;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.ByteRange;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.KeyArgs;
 import org.apache.hadoop.ozone.security.GDPRSymmetricKey;
 
@@ -235,8 +236,9 @@ public final class OmKeyArgs extends WithMetadata implements Auditable {
       builder.setExpectedETag(expectedETag);
     }
     if (hasByteRange()) {
-      builder.setByteRangeStart(byteRangeStart);
-      builder.setByteRangeEnd(byteRangeEnd);
+      builder.setByteRange(ByteRange.newBuilder()
+          .setStart(byteRangeStart)
+          .setEnd(byteRangeEnd));
     }
     return builder.build();
   }
