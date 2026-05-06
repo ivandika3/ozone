@@ -46,9 +46,11 @@ import org.apache.hadoop.ozone.client.io.OzoneInputStream;
 import org.apache.hadoop.ozone.client.io.OzoneOutputStream;
 import org.apache.hadoop.ozone.om.OMConfigKeys;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.DeleteTenantState;
 import org.apache.hadoop.ozone.om.helpers.ErrorInfo;
 import org.apache.hadoop.ozone.om.helpers.LeaseKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.ListBucketForksResponse;
 import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfo;
@@ -1276,6 +1278,52 @@ public interface ClientProtocol {
    */
   String createSnapshot(String volumeName,
       String bucketName, String snapshotName) throws IOException;
+
+  /**
+   * Create bucket fork.
+   * @param sourceVolumeName source volume name
+   * @param sourceBucketName source bucket name
+   * @param targetVolumeName target volume name
+   * @param targetBucketName target bucket name
+   * @param baseSnapshotName base snapshot name
+   * @return bucket fork metadata
+   * @throws IOException
+   */
+  BucketForkInfo createBucketFork(String sourceVolumeName,
+      String sourceBucketName, String targetVolumeName, String targetBucketName,
+      String baseSnapshotName) throws IOException;
+
+  /**
+   * Delete bucket fork.
+   * @param volumeName volume name
+   * @param bucketName bucket name
+   * @throws IOException
+   */
+  void deleteBucketFork(String volumeName, String bucketName)
+      throws IOException;
+
+  /**
+   * Returns bucket fork info.
+   * @param volumeName volume name
+   * @param bucketName bucket name
+   * @return bucket fork metadata
+   * @throws IOException
+   */
+  BucketForkInfo getBucketForkInfo(String volumeName, String bucketName)
+      throws IOException;
+
+  /**
+   * List bucket forks in a volume.
+   * @param volumeName volume name
+   * @param bucketNamePrefix bucket name prefix to match
+   * @param prevBucketName forks will be listed after this bucket name
+   * @param maxListResult max number of forks to return
+   * @return list bucket forks response
+   * @throws IOException
+   */
+  ListBucketForksResponse listBucketForks(String volumeName,
+      String bucketNamePrefix, String prevBucketName, int maxListResult)
+      throws IOException;
 
   /**
    * Rename snapshot.

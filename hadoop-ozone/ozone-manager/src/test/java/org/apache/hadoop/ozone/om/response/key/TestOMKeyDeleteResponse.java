@@ -23,10 +23,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.apache.hadoop.hdds.client.BlockID;
 import org.apache.hadoop.hdds.scm.pipeline.Pipeline;
 import org.apache.hadoop.hdds.scm.pipeline.PipelineID;
 import org.apache.hadoop.hdds.utils.db.Table;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
@@ -71,6 +73,41 @@ public class TestOMKeyDeleteResponse extends TestOMKeyResponse {
     // As default key entry does not have any blocks, it should not be in
     // deletedKeyTable.
     assertFalse(omMetadataManager.getDeletedTable().isExist(deletedKey));
+  }
+
+  @Test
+  public void testAddForkTombstoneToDBBatch() throws Exception {
+    OzoneManagerProtocolProtos.OMResponse omResponse =
+        OzoneManagerProtocolProtos.OMResponse.newBuilder()
+            .setDeleteKeyResponse(
+                OzoneManagerProtocolProtos.DeleteKeyResponse
+                    .getDefaultInstance())
+            .setStatus(OzoneManagerProtocolProtos.Status.OK)
+            .setCmdType(OzoneManagerProtocolProtos.Type.DeleteKey)
+            .build();
+    BucketForkTombstoneInfo tombstoneInfo =
+        BucketForkTombstoneInfo.newBuilder()
+            .setForkId(UUID.randomUUID())
+            .setTargetVolumeName(volumeName)
+            .setTargetBucketName(bucketName)
+            .setBaseSnapshotId(UUID.randomUUID())
+            .setLogicalPath(keyName)
+            .setObjectId(123L)
+            .setCreationTime(456L)
+            .setUpdateId(789L)
+            .setType(BucketForkTombstoneInfo.BucketForkTombstoneType.KEY)
+            .build();
+
+    OMKeyDeleteResponse omKeyDeleteResponse = new OMKeyDeleteResponse(
+        omResponse, tombstoneInfo, getBucketLayout());
+
+    omKeyDeleteResponse.addToDBBatch(omMetadataManager, batchOperation);
+    omMetadataManager.getStore().commitBatchOperation(batchOperation);
+
+    assertThat(omMetadataManager.getBucketForkTombstoneTable()
+        .get(tombstoneInfo.getTableKey())).isEqualTo(tombstoneInfo);
+    assertThat(omMetadataManager.countRowsInTable(
+        omMetadataManager.getDeletedTable())).isZero();
   }
 
   @Test

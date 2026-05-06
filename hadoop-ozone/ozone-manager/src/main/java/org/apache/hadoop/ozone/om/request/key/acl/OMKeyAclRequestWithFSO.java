@@ -27,6 +27,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
 import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
+import org.apache.hadoop.ozone.om.BucketForkManager;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.ResolvedBucket;
@@ -94,7 +95,13 @@ public abstract class OMKeyAclRequestWithFSO extends OMKeyAclRequest {
           omMetadataManager, volume, bucket, key, 0,
           ozoneManager.getDefaultReplicationConfig());
       if (keyStatus == null) {
-        throw new OMException("Key not found. Key:" + key, KEY_NOT_FOUND);
+        keyStatus = new BucketForkManager(omMetadataManager)
+            .getForkBaseFileStatusForCopyOnWrite(ozoneManager, volume, bucket,
+                key, ozoneManager.getObjectIdFromTxId(trxnLogIndex),
+                trxnLogIndex);
+        if (keyStatus == null) {
+          throw new OMException("Key not found. Key:" + key, KEY_NOT_FOUND);
+        }
       }
       omKeyInfo = keyStatus.getKeyInfo();
       final long volumeId = omMetadataManager.getVolumeId(volume);

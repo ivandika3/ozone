@@ -44,6 +44,8 @@ import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
 import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.audit.AuditLogger;
+import org.apache.hadoop.ozone.om.BucketForkManager;
+import org.apache.hadoop.ozone.om.IOmMetadataReader;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OMMetrics;
 import org.apache.hadoop.ozone.om.OMPerformanceMetrics;
@@ -51,9 +53,12 @@ import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.ResolvedBucket;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.execution.flowcontrol.ExecutionContext;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.ErrorInfo;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
+import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
 import org.apache.hadoop.ozone.om.request.util.OmResponseUtil;
@@ -73,6 +78,7 @@ import org.apache.hadoop.ozone.request.validation.RequestProcessingPhase;
 import org.apache.hadoop.ozone.security.acl.IAccessAuthorizer;
 import org.apache.hadoop.ozone.security.acl.OzoneObj;
 import org.apache.hadoop.util.Time;
+import org.apache.ratis.util.function.UncheckedAutoCloseableSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -113,6 +119,8 @@ public class OMKeysDeleteRequest extends OMKeyRequest {
     auditMap.put(VOLUME, volumeName);
     auditMap.put(BUCKET, bucketName);
     List<OmKeyInfo> omKeyInfoList = new ArrayList<>();
+    List<BucketForkTombstoneInfo> bucketForkTombstoneInfoList =
+        new ArrayList<>();
     // dirList is applicable for FSO implementation
     List<OmKeyInfo> dirList = new ArrayList<>();
 
@@ -148,6 +156,10 @@ public class OMKeysDeleteRequest extends OMKeyRequest {
       // Validate bucket and volume exists or not.
       validateBucketAndVolume(omMetadataManager, volumeName, bucketName);
       String volumeOwner = getVolumeOwner(omMetadataManager, volumeName);
+      BucketForkManager bucketForkManager =
+          new BucketForkManager(omMetadataManager);
+      BucketForkInfo forkInfo = bucketForkManager.getActiveForkInfo(
+          volumeName, bucketName);
 
       for (indexFailed = 0; indexFailed < length; indexFailed++) {
         String keyName = deleteKeyArgs.getKeys(indexFailed);
@@ -157,12 +169,46 @@ public class OMKeysDeleteRequest extends OMKeyRequest {
             volumeName, bucketName, keyName);
 
         if (omKeyInfo == null) {
-          deleteStatus = false;
-          LOG.error("Received a request to delete a Key does not exist {}",
-              objectKey);
-          deleteKeys.remove(keyName);
-          unDeletedKeys.addKeys(keyName);
-          keyToError.put(keyName, new ErrorInfo(OMException.ResultCodes.KEY_NOT_FOUND.name(), "Key does not exist"));
+          Pair<BucketForkTombstoneInfo, OmKeyInfo> forkBaseKeyDeleteInfo =
+              getForkBaseKeyTombstoneInfo(ozoneManager, bucketForkManager,
+                  forkInfo, volumeName, bucketName, keyName, trxnLogIndex);
+          if (forkBaseKeyDeleteInfo == null) {
+            deleteStatus = false;
+            LOG.error("Received a request to delete a Key does not exist {}",
+                objectKey);
+            deleteKeys.remove(keyName);
+            unDeletedKeys.addKeys(keyName);
+            keyToError.put(keyName, new ErrorInfo(
+                OMException.ResultCodes.KEY_NOT_FOUND.name(),
+                "Key does not exist"));
+            continue;
+          }
+
+          try {
+            BucketForkTombstoneInfo tombstoneInfo =
+                forkBaseKeyDeleteInfo.getLeft();
+            long startNanosDeleteKeysAclCheckLatency =
+                Time.monotonicNowNanos();
+            checkKeyAcls(ozoneManager, volumeName, bucketName, keyName,
+                IAccessAuthorizer.ACLType.DELETE, OzoneObj.ResourceType.KEY,
+                volumeOwner);
+            perfMetrics.setDeleteKeysAclCheckLatencyNs(
+                Time.monotonicNowNanos()
+                    - startNanosDeleteKeysAclCheckLatency);
+            omMetadataManager.getBucketForkTombstoneTable().addCacheEntry(
+                new CacheKey<>(tombstoneInfo.getTableKey()),
+                CacheValue.get(trxnLogIndex, tombstoneInfo));
+            bucketForkTombstoneInfoList.add(tombstoneInfo);
+            deleteKeysInfo.add(forkBaseKeyDeleteInfo.getRight());
+          } catch (Exception ex) {
+            deleteStatus = false;
+            LOG.error("Acl check failed for Key: {}", objectKey, ex);
+            deleteKeys.remove(keyName);
+            unDeletedKeys.addKeys(keyName);
+            keyToError.put(keyName, new ErrorInfo(
+                OMException.ResultCodes.ACCESS_DENIED.name(),
+                "ACL check failed"));
+          }
           continue;
         }
 
@@ -204,7 +250,8 @@ public class OMKeysDeleteRequest extends OMKeyRequest {
       final long volumeId = omMetadataManager.getVolumeId(volumeName);
       omClientResponse =
           getOmClientResponse(ozoneManager, omKeyInfoList, dirList, omResponse,
-              unDeletedKeys, keyToError, deleteStatus, omBucketInfo, volumeId, openKeyInfoMap);
+              unDeletedKeys, keyToError, deleteStatus, omBucketInfo, volumeId,
+              openKeyInfoMap, bucketForkTombstoneInfoList);
 
       result = Result.SUCCESS;
       long endNanosDeleteKeySuccessLatencyNs = Time.monotonicNowNanos();
@@ -285,7 +332,9 @@ public class OMKeysDeleteRequest extends OMKeyRequest {
       OMResponse.Builder omResponse,
       OzoneManagerProtocolProtos.DeleteKeyArgs.Builder unDeletedKeys,
       Map<String, ErrorInfo> keyToErrors,
-      boolean deleteStatus, OmBucketInfo omBucketInfo, long volumeId, Map<String, OmKeyInfo> openKeyInfoMap) {
+      boolean deleteStatus, OmBucketInfo omBucketInfo, long volumeId,
+      Map<String, OmKeyInfo> openKeyInfoMap,
+      List<BucketForkTombstoneInfo> bucketForkTombstoneInfoList) {
     OMClientResponse omClientResponse;
     List<OzoneManagerProtocolProtos.DeleteKeyError> deleteKeyErrors = new ArrayList<>();
     for (Map.Entry<String, ErrorInfo>  key : keyToErrors.entrySet()) {
@@ -298,8 +347,49 @@ public class OMKeysDeleteRequest extends OMKeyRequest {
                 .setUnDeletedKeys(unDeletedKeys).addAllErrors(deleteKeyErrors))
         .setStatus(deleteStatus ? OK : PARTIAL_DELETE).setSuccess(deleteStatus)
         .build(), omKeyInfoList,
-        omBucketInfo.copyObject(), openKeyInfoMap);
+        omBucketInfo.copyObject(), openKeyInfoMap,
+        bucketForkTombstoneInfoList);
     return omClientResponse;
+  }
+
+  private Pair<BucketForkTombstoneInfo, OmKeyInfo> getForkBaseKeyTombstoneInfo(
+      OzoneManager ozoneManager, BucketForkManager bucketForkManager,
+      BucketForkInfo forkInfo, String volumeName, String bucketName,
+      String keyName, long trxnLogIndex) throws IOException {
+    if (forkInfo == null) {
+      return null;
+    }
+
+    OmKeyArgs targetArgs = new OmKeyArgs.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setKeyName(keyName)
+        .build();
+    OmKeyInfo baseKeyInfo;
+    try (UncheckedAutoCloseableSupplier<? extends IOmMetadataReader> snapshot =
+             ozoneManager.getOmSnapshotManager().getSnapshot(
+                 forkInfo.getBaseSnapshotId())) {
+      baseKeyInfo = bucketForkManager.lookupBaseKey(forkInfo, targetArgs,
+          snapshot.get());
+    } catch (OMException ex) {
+      if (ex.getResult() == OMException.ResultCodes.KEY_NOT_FOUND) {
+        return null;
+      }
+      throw ex;
+    }
+
+    BucketForkTombstoneInfo tombstoneInfo = BucketForkTombstoneInfo.newBuilder()
+        .setForkId(forkInfo.getForkId())
+        .setTargetVolumeName(forkInfo.getTargetVolumeName())
+        .setTargetBucketName(forkInfo.getTargetBucketName())
+        .setBaseSnapshotId(forkInfo.getBaseSnapshotId())
+        .setLogicalPath(keyName)
+        .setObjectId(baseKeyInfo.getObjectID())
+        .setCreationTime(Time.now())
+        .setUpdateId(trxnLogIndex)
+        .setType(BucketForkTombstoneInfo.BucketForkTombstoneType.KEY)
+        .build();
+    return Pair.of(tombstoneInfo, baseKeyInfo);
   }
 
   protected Pair<Long, Integer> markKeysAsDeletedInCache(OzoneManager ozoneManager,

@@ -27,6 +27,7 @@ import java.util.Map;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
 import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
+import org.apache.hadoop.ozone.om.BucketForkManager;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
@@ -88,7 +89,13 @@ public class OMKeySetTimesRequestWithFSO extends OMKeySetTimesRequest {
           omMetadataManager, volume, bucket, key, 0,
           ozoneManager.getDefaultReplicationConfig());
       if (keyStatus == null) {
-        throw new OMException("Key not found. Key:" + key, KEY_NOT_FOUND);
+        keyStatus = new BucketForkManager(omMetadataManager)
+            .getForkBaseFileStatusForCopyOnWrite(ozoneManager, volume, bucket,
+                key, ozoneManager.getObjectIdFromTxId(trxnLogIndex),
+                trxnLogIndex);
+        if (keyStatus == null) {
+          throw new OMException("Key not found. Key:" + key, KEY_NOT_FOUND);
+        }
       }
       omKeyInfo = keyStatus.getKeyInfo();
       // setting Key name back to Ozone Key before updating cache value.

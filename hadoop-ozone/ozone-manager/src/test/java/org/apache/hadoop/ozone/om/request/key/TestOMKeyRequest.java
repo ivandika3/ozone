@@ -31,6 +31,7 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 import jakarta.annotation.Nonnull;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -69,14 +70,20 @@ import org.apache.hadoop.ozone.om.OMPerformanceMetrics;
 import org.apache.hadoop.ozone.om.OmConfig;
 import org.apache.hadoop.ozone.om.OmMetadataManagerImpl;
 import org.apache.hadoop.ozone.om.OmMetadataReader;
+import org.apache.hadoop.ozone.om.OmSnapshot;
 import org.apache.hadoop.ozone.om.OmSnapshotManager;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.OzoneManagerPrepareState;
 import org.apache.hadoop.ozone.om.ResolvedBucket;
 import org.apache.hadoop.ozone.om.ScmClient;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfo;
+import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfoGroup;
+import org.apache.hadoop.ozone.om.helpers.OzoneFSUtils;
+import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
 import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
 import org.apache.hadoop.ozone.om.request.OMClientRequest;
 import org.apache.hadoop.ozone.om.request.OMRequestTestUtils;
@@ -307,6 +314,99 @@ public class TestOMKeyRequest {
 
   public BucketLayout getBucketLayout() {
     return BucketLayout.DEFAULT;
+  }
+
+  protected String getForkLocalKeyTableKey() throws IOException {
+    if (getBucketLayout().isFileSystemOptimized()) {
+      final long volumeId = omMetadataManager.getVolumeId(volumeName);
+      final long bucketId = omMetadataManager.getBucketId(volumeName,
+          bucketName);
+      return omMetadataManager.getOzonePathKey(volumeId, bucketId, 0L,
+          OzoneFSUtils.getFileName(keyName));
+    }
+    return omMetadataManager.getOzoneKey(volumeName, bucketName, keyName);
+  }
+
+  protected void setupBaseVisibleForkKey(String sourceBucketName,
+      String snapshotName, UUID snapshotId, long baseObjectId,
+      long forkObjectId) throws Exception {
+    setupBaseVisibleForkKey(sourceBucketName, snapshotName, snapshotId,
+        baseObjectId, forkObjectId, new ArrayList<>());
+  }
+
+  protected void setupBaseVisibleForkKey(String sourceBucketName,
+      String snapshotName, UUID snapshotId, long baseObjectId,
+      long forkObjectId, List<OmKeyLocationInfo> baseLocationList)
+      throws Exception {
+    BucketForkInfo forkInfo = BucketForkInfo.newBuilder()
+        .setForkId(UUID.randomUUID())
+        .setSourceVolumeName(volumeName)
+        .setSourceBucketName(sourceBucketName)
+        .setTargetVolumeName(volumeName)
+        .setTargetBucketName(bucketName)
+        .setBaseSnapshotId(snapshotId)
+        .setBaseSnapshotName(snapshotName)
+        .setStatus(BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE)
+        .build();
+    omMetadataManager.getBucketForkTable().put(
+        BucketForkInfo.getTableKey(volumeName, bucketName), forkInfo);
+    when(ozoneManager.getObjectIdFromTxId(anyLong())).thenReturn(forkObjectId);
+
+    OmSnapshot baseSnapshot = Mockito.mock(OmSnapshot.class);
+    OmKeyInfo baseKeyInfo = new OmKeyInfo.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(sourceBucketName)
+        .setKeyName(".snapshot/" + snapshotName + "/" + keyName)
+        .setObjectID(baseObjectId)
+        .setModificationTime(100L)
+        .setReplicationConfig(replicationConfig)
+        .addOmKeyLocationInfoGroup(new OmKeyLocationInfoGroup(
+            0L, baseLocationList, false))
+        .build();
+    Mockito.when(baseSnapshot.lookupKey(Mockito.argThat(args ->
+        args != null
+            && volumeName.equals(args.getVolumeName())
+            && sourceBucketName.equals(args.getBucketName())
+            && keyName.equals(args.getKeyName()))))
+        .thenReturn(baseKeyInfo);
+    Mockito.when(baseSnapshot.getFileStatus(Mockito.argThat(args ->
+        args != null
+            && volumeName.equals(args.getVolumeName())
+            && sourceBucketName.equals(args.getBucketName())
+            && keyName.equals(args.getKeyName()))))
+        .thenReturn(new OzoneFileStatus(baseKeyInfo, 0L, false));
+    UncheckedAutoCloseableSupplier<OmSnapshot> snapshotSupplier =
+        mock(UncheckedAutoCloseableSupplier.class);
+    when(snapshotSupplier.get()).thenReturn(baseSnapshot);
+    OmSnapshotManager snapshotManager = mock(OmSnapshotManager.class);
+    when(snapshotManager.getSnapshot(snapshotId)).thenReturn(snapshotSupplier);
+    when(ozoneManager.getOmSnapshotManager()).thenReturn(snapshotManager);
+  }
+
+  protected void setupForkBucketWithEmptyBaseSnapshot(String sourceBucketName,
+      String snapshotName, UUID snapshotId) throws Exception {
+    BucketForkInfo forkInfo = BucketForkInfo.newBuilder()
+        .setForkId(UUID.randomUUID())
+        .setSourceVolumeName(volumeName)
+        .setSourceBucketName(sourceBucketName)
+        .setTargetVolumeName(volumeName)
+        .setTargetBucketName(bucketName)
+        .setBaseSnapshotId(snapshotId)
+        .setBaseSnapshotName(snapshotName)
+        .setStatus(BucketForkInfo.BucketForkStatus.BUCKET_FORK_ACTIVE)
+        .build();
+    omMetadataManager.getBucketForkTable().put(
+        BucketForkInfo.getTableKey(volumeName, bucketName), forkInfo);
+
+    OmSnapshot baseSnapshot = Mockito.mock(OmSnapshot.class);
+    Mockito.when(baseSnapshot.lookupKey(Mockito.any())).thenReturn(null);
+    Mockito.when(baseSnapshot.getFileStatus(Mockito.any())).thenReturn(null);
+    UncheckedAutoCloseableSupplier<OmSnapshot> snapshotSupplier =
+        mock(UncheckedAutoCloseableSupplier.class);
+    when(snapshotSupplier.get()).thenReturn(baseSnapshot);
+    OmSnapshotManager snapshotManager = mock(OmSnapshotManager.class);
+    when(snapshotManager.getSnapshot(snapshotId)).thenReturn(snapshotSupplier);
+    when(ozoneManager.getOmSnapshotManager()).thenReturn(snapshotManager);
   }
 
   @AfterEach

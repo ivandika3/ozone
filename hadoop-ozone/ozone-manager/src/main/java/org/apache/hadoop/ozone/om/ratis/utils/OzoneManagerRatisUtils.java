@@ -45,6 +45,8 @@ import org.apache.hadoop.ozone.om.request.BucketLayoutAwareOMKeyRequestFactory;
 import org.apache.hadoop.ozone.om.request.OMClientRequest;
 import org.apache.hadoop.ozone.om.request.bucket.OMBucketCreateRequest;
 import org.apache.hadoop.ozone.om.request.bucket.OMBucketDeleteRequest;
+import org.apache.hadoop.ozone.om.request.bucket.OMBucketForkCreateRequest;
+import org.apache.hadoop.ozone.om.request.bucket.OMBucketForkDeleteRequest;
 import org.apache.hadoop.ozone.om.request.bucket.OMBucketSetOwnerRequest;
 import org.apache.hadoop.ozone.om.request.bucket.OMBucketSetPropertyRequest;
 import org.apache.hadoop.ozone.om.request.bucket.acl.OMBucketAddAclRequest;
@@ -161,6 +163,10 @@ public final class OzoneManagerRatisUtils {
       return new OMVolumeDeleteRequest(omRequest);
     case CreateBucket:
       return new OMBucketCreateRequest(omRequest);
+    case CreateBucketFork:
+      return new OMBucketForkCreateRequest(omRequest);
+    case DeleteBucketFork:
+      return new OMBucketForkDeleteRequest(omRequest);
     case DeleteBucket:
       return new OMBucketDeleteRequest(omRequest);
     case SetBucketProperty:

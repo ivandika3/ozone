@@ -34,19 +34,26 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
+import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
 import org.apache.hadoop.ozone.OmUtils;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.OzoneManagerVersion;
 import org.apache.hadoop.ozone.audit.AuditLogger;
 import org.apache.hadoop.ozone.audit.OMAction;
+import org.apache.hadoop.ozone.om.BucketForkManager;
+import org.apache.hadoop.ozone.om.IOmMetadataReader;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OMMetrics;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.execution.flowcontrol.ExecutionContext;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.KeyValueUtil;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
+import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfo;
 import org.apache.hadoop.ozone.om.helpers.OzoneFSUtils;
@@ -70,6 +77,7 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.Type;
 import org.apache.hadoop.ozone.request.validation.RequestProcessingPhase;
 import org.apache.hadoop.ozone.security.acl.IAccessAuthorizer;
 import org.apache.hadoop.util.Time;
+import org.apache.ratis.util.function.UncheckedAutoCloseableSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -322,9 +330,21 @@ public class OMKeyCommitRequest extends OMKeyRequest {
 
       Map<String, RepeatedOmKeyInfo> oldKeyVersionsToDeleteMap = null;
       long correctedSpace = omKeyInfo.getReplicatedSize();
+      ForkBaseCommitInfo forkBaseCommitInfo = null;
+      if (keyToDelete == null && !isHSync) {
+        forkBaseCommitInfo = getForkBaseCommitInfo(ozoneManager,
+            omMetadataManager, volumeName, bucketName, keyName, trxnLogIndex,
+            commitKeyArgs.getModificationTime());
+        if (forkBaseCommitInfo != null) {
+          correctedSpace -= forkBaseCommitInfo.getQuotaReplaced();
+        }
+      }
       // if keyToDelete isn't null, usedNamespace needn't check and
       // increase.
-      if (keyToDelete != null && (isSameHsyncKey)) {
+      if (forkBaseCommitInfo != null) {
+        checkBucketQuotaInBytes(omMetadataManager, omBucketInfo,
+            correctedSpace);
+      } else if (keyToDelete != null && (isSameHsyncKey)) {
         correctedSpace -= keyToDelete.getReplicatedSize();
         checkBucketQuotaInBytes(omMetadataManager, omBucketInfo,
             correctedSpace);
@@ -375,7 +395,9 @@ public class OMKeyCommitRequest extends OMKeyRequest {
         checkBucketQuotaInBytes(omMetadataManager, omBucketInfo,
             correctedSpace);
       }
-      omBucketInfo.incrUsedNamespace(1L);
+      if (forkBaseCommitInfo == null) {
+        omBucketInfo.incrUsedNamespace(1L);
+      }
       // let the uncommitted blocks pretend as key's old version blocks
       // which will be deleted as RepeatedOmKeyInfo
       final OmKeyInfo pseudoKeyInfo = isHSync ? null
@@ -406,12 +428,21 @@ public class OMKeyCommitRequest extends OMKeyRequest {
 
       omMetadataManager.getKeyTable(getBucketLayout()).addCacheEntry(
           dbOzoneKey, omKeyInfo, trxnLogIndex);
+      if (forkBaseCommitInfo != null) {
+        BucketForkTombstoneInfo tombstoneInfo =
+            forkBaseCommitInfo.getTombstoneInfo();
+        omMetadataManager.getBucketForkTombstoneTable().addCacheEntry(
+            new CacheKey<>(tombstoneInfo.getTableKey()),
+            CacheValue.get(trxnLogIndex, tombstoneInfo));
+      }
 
       omBucketInfo.incrUsedBytes(correctedSpace);
 
       omClientResponse = new OMKeyCommitResponse(omResponse.build(),
           omKeyInfo, dbOzoneKey, dbOpenKey, omBucketInfo.copyObject(),
-          oldKeyVersionsToDeleteMap, isHSync, newOpenKeyInfo, dbOpenKeyToDeleteKey, openKeyToDelete);
+          oldKeyVersionsToDeleteMap, isHSync, newOpenKeyInfo,
+          dbOpenKeyToDeleteKey, openKeyToDelete, forkBaseCommitInfo == null
+          ? null : forkBaseCommitInfo.getTombstoneInfo());
 
       result = Result.SUCCESS;
     } catch (IOException | InvalidPathException ex) {
@@ -460,6 +491,81 @@ public class OMKeyCommitRequest extends OMKeyRequest {
       locationInfoList.add(locationInfo);
     }
     return locationInfoList;
+  }
+
+  protected ForkBaseCommitInfo getForkBaseCommitInfo(
+      OzoneManager ozoneManager, OMMetadataManager omMetadataManager,
+      String volumeName, String bucketName, String keyName,
+      long trxnLogIndex, long modificationTime) throws IOException {
+    BucketForkManager bucketForkManager =
+        new BucketForkManager(omMetadataManager);
+    BucketForkInfo forkInfo = bucketForkManager.getActiveForkInfo(volumeName,
+        bucketName);
+    if (forkInfo == null) {
+      return null;
+    }
+
+    OmKeyInfo baseKeyInfo = getForkBaseKeyInfoForCommit(ozoneManager,
+        bucketForkManager, forkInfo, volumeName, bucketName, keyName);
+    if (baseKeyInfo == null) {
+      return null;
+    }
+
+    BucketForkTombstoneInfo tombstoneInfo =
+        BucketForkTombstoneInfo.newBuilder()
+            .setForkId(forkInfo.getForkId())
+            .setTargetVolumeName(forkInfo.getTargetVolumeName())
+            .setTargetBucketName(forkInfo.getTargetBucketName())
+            .setBaseSnapshotId(forkInfo.getBaseSnapshotId())
+            .setLogicalPath(keyName)
+            .setObjectId(baseKeyInfo.getObjectID())
+            .setCreationTime(modificationTime)
+            .setUpdateId(trxnLogIndex)
+            .setType(BucketForkTombstoneInfo.BucketForkTombstoneType.KEY)
+            .build();
+    return new ForkBaseCommitInfo(tombstoneInfo,
+        sumBlockLengths(baseKeyInfo));
+  }
+
+  protected OmKeyInfo getForkBaseKeyInfoForCommit(
+      OzoneManager ozoneManager, BucketForkManager bucketForkManager,
+      BucketForkInfo forkInfo, String volumeName, String bucketName,
+      String keyName) throws IOException {
+    OmKeyArgs targetArgs = new OmKeyArgs.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setKeyName(keyName)
+        .build();
+    try (UncheckedAutoCloseableSupplier<? extends IOmMetadataReader> snapshot =
+             ozoneManager.getOmSnapshotManager().getSnapshot(
+                 forkInfo.getBaseSnapshotId())) {
+      return bucketForkManager.lookupBaseKey(forkInfo, targetArgs,
+          snapshot.get());
+    } catch (OMException ex) {
+      if (ex.getResult() == KEY_NOT_FOUND) {
+        return null;
+      }
+      throw ex;
+    }
+  }
+
+  protected static final class ForkBaseCommitInfo {
+    private final BucketForkTombstoneInfo tombstoneInfo;
+    private final long quotaReplaced;
+
+    private ForkBaseCommitInfo(BucketForkTombstoneInfo tombstoneInfo,
+        long quotaReplaced) {
+      this.tombstoneInfo = tombstoneInfo;
+      this.quotaReplaced = quotaReplaced;
+    }
+
+    protected BucketForkTombstoneInfo getTombstoneInfo() {
+      return tombstoneInfo;
+    }
+
+    protected long getQuotaReplaced() {
+      return quotaReplaced;
+    }
   }
 
   /**

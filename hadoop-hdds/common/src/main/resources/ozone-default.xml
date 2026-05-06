@@ -4852,6 +4852,15 @@
       maximum number of buckets across all volumes.
     </description>
   </property>
+  <property>
+    <name>ozone.om.bucket.fork.enabled</name>
+    <value>false</value>
+    <tag>OZONE, OM</tag>
+    <description>
+      Enables experimental Ozone Manager bucket fork APIs. Bucket forks expose
+      a mutable target bucket as an overlay over a retained base snapshot.
+    </description>
+  </property>
 
   <property>
     <name>ozone.volume.io.percentiles.intervals.seconds</name>

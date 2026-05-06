@@ -249,10 +249,12 @@ import org.apache.hadoop.ozone.om.execution.OMExecutionFlow;
 import org.apache.hadoop.ozone.om.ha.OMHAMetrics;
 import org.apache.hadoop.ozone.om.ha.OMHANodeDetails;
 import org.apache.hadoop.ozone.om.helpers.BasicOmKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.DBUpdates;
 import org.apache.hadoop.ozone.om.helpers.KeyInfoWithVolumeContext;
 import org.apache.hadoop.ozone.om.helpers.LeaseKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.ListBucketForksResponse;
 import org.apache.hadoop.ozone.om.helpers.ListKeysLightResult;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.ListOpenFilesResult;
@@ -3184,6 +3186,90 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
       metrics.incNumSnapshotListFails();
       AUDIT.logReadFailure(buildAuditMessageForFailure(OMAction.LIST_SNAPSHOT,
           auditMap, ex));
+      throw ex;
+    }
+  }
+
+  @Override
+  public BucketForkInfo getBucketForkInfo(String volumeName, String bucketName)
+      throws IOException {
+    Map<String, String> auditMap = buildAuditMap(volumeName);
+    auditMap.put(OzoneConsts.BUCKET, bucketName);
+    try {
+      if (getAclsEnabled()) {
+        omMetadataReader.checkAcls(ResourceType.BUCKET, StoreType.OZONE,
+            ACLType.READ, volumeName, bucketName, null);
+      }
+      BucketForkInfo bucketForkInfo = metadataManager.getBucketForkTable()
+          .get(BucketForkInfo.getTableKey(volumeName, bucketName));
+      if (bucketForkInfo == null || !bucketForkInfo.isActive()) {
+        throw new OMException("Bucket fork doesn't exist",
+            OMException.ResultCodes.BUCKET_NOT_FOUND);
+      }
+      AUDIT.logReadSuccess(buildAuditMessageForSuccess(
+          OMAction.READ_BUCKET_FORK, auditMap));
+      return bucketForkInfo;
+    } catch (Exception ex) {
+      AUDIT.logReadFailure(buildAuditMessageForFailure(
+          OMAction.READ_BUCKET_FORK, auditMap, ex));
+      throw ex;
+    }
+  }
+
+  @Override
+  public ListBucketForksResponse listBucketForks(String volumeName,
+      String bucketNamePrefix, String prevBucketName, int maxListResult)
+      throws IOException {
+    Map<String, String> auditMap = buildAuditMap(volumeName);
+    auditMap.put(OzoneConsts.PREFIX, bucketNamePrefix);
+    auditMap.put(OzoneConsts.START_KEY, prevBucketName);
+    auditMap.put(OzoneConsts.MAX_NUM_OF_BUCKETS,
+        String.valueOf(maxListResult));
+    try {
+      if (getAclsEnabled()) {
+        omMetadataReader.checkAcls(ResourceType.VOLUME, StoreType.OZONE,
+            ACLType.LIST, volumeName, null, null);
+      }
+      List<BucketForkInfo> forkInfos = new ArrayList<>();
+      if (maxListResult <= 0) {
+        return new ListBucketForksResponse(forkInfos, null);
+      }
+      String volumePrefix = BucketForkInfo.getTableKey(volumeName, "");
+      String startKey = StringUtils.isEmpty(prevBucketName) ? null :
+          BucketForkInfo.getTableKey(volumeName, prevBucketName);
+      try (ListIterator.MinHeapIterator iterator =
+               new ListIterator.MinHeapIterator(metadataManager, volumePrefix,
+                   startKey, volumeName, null,
+                   metadataManager.getBucketForkTable())) {
+        while (iterator.hasNext() && forkInfos.size() < maxListResult) {
+          ListIterator.HeapEntry entry = iterator.next();
+          if (!entry.getKey().startsWith(volumePrefix)) {
+            break;
+          }
+          BucketForkInfo forkInfo = (BucketForkInfo) entry.getValue();
+          if (!forkInfo.isActive()) {
+            continue;
+          }
+          String targetBucketName = forkInfo.getTargetBucketName();
+          if (StringUtils.isNotEmpty(bucketNamePrefix)
+              && !targetBucketName.startsWith(bucketNamePrefix)) {
+            continue;
+          }
+          if (StringUtils.isNotEmpty(prevBucketName)
+              && targetBucketName.compareTo(prevBucketName) <= 0) {
+            continue;
+          }
+          forkInfos.add(forkInfo);
+        }
+      }
+      AUDIT.logReadSuccess(buildAuditMessageForSuccess(
+          OMAction.READ_BUCKET_FORK, auditMap));
+      String lastBucketName = forkInfos.isEmpty() ? null :
+          forkInfos.get(forkInfos.size() - 1).getTargetBucketName();
+      return new ListBucketForksResponse(forkInfos, lastBucketName);
+    } catch (IOException | RuntimeException ex) {
+      AUDIT.logReadFailure(buildAuditMessageForFailure(
+          OMAction.READ_BUCKET_FORK, auditMap, ex));
       throw ex;
     }
   }

@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.ozone.om.request.snapshot;
 
+import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.CONTAINS_SNAPSHOT;
 import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.FILE_NOT_FOUND;
 import static org.apache.hadoop.ozone.om.lock.OzoneManagerLock.LeveledResource.BUCKET_LOCK;
 import static org.apache.hadoop.ozone.om.lock.OzoneManagerLock.LeveledResource.SNAPSHOT_LOCK;
@@ -25,6 +26,7 @@ import static org.apache.hadoop.ozone.om.upgrade.OMLayoutFeature.FILESYSTEM_SNAP
 import java.io.IOException;
 import java.nio.file.InvalidPathException;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.hdds.utils.db.TableIterator;
 import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
 import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
 import org.apache.hadoop.ozone.OmUtils;
@@ -36,6 +38,7 @@ import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.ResolvedBucket;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.execution.flowcontrol.ExecutionContext;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
 import org.apache.hadoop.ozone.om.request.OMClientRequest;
 import org.apache.hadoop.ozone.om.request.util.OmResponseUtil;
@@ -177,6 +180,8 @@ public class OMSnapshotDeleteRequest extends OMClientRequest {
                 FILE_NOT_FOUND);
       }
 
+      assertSnapshotNotReferencedByActiveFork(omMetadataManager, snapshotInfo);
+
       // Mark snapshot as deleted
       snapshotInfo.setSnapshotStatus(
           SnapshotInfo.SnapshotStatus.SNAPSHOT_DELETED);
@@ -238,4 +243,20 @@ public class OMSnapshotDeleteRequest extends OMClientRequest {
     return omClientResponse;
   }
 
+  private static void assertSnapshotNotReferencedByActiveFork(
+      OMMetadataManager omMetadataManager, SnapshotInfo snapshotInfo)
+      throws IOException {
+    try (TableIterator<String, BucketForkInfo> iterator =
+             omMetadataManager.getBucketForkTable().valueIterator()) {
+      while (iterator.hasNext()) {
+        BucketForkInfo bucketForkInfo = iterator.next();
+        if (bucketForkInfo.isActive()
+            && snapshotInfo.getSnapshotId().equals(
+                bucketForkInfo.getBaseSnapshotId())) {
+          throw new OMException("Snapshot is referenced by active bucket fork "
+              + bucketForkInfo.getTableKey(), CONTAINS_SNAPSHOT);
+        }
+      }
+    }
+  }
 }

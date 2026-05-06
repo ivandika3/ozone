@@ -21,6 +21,8 @@ import static org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationFactor
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
@@ -30,6 +32,7 @@ import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.ozone.OmUtils;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmDirectoryInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
@@ -95,6 +98,54 @@ public class TestOMKeyRenameRequestWithFSO extends TestOMKeyRenameRequest {
         omKeyRenameRequest.validateAndUpdateCache(ozoneManager, 100L);
     assertEquals(OzoneManagerProtocolProtos.Status.RENAME_OPEN_FILE,
         response.getOMResponse().getStatus());
+  }
+
+  @Override
+  @Test
+  public void testValidateAndUpdateCacheRenamesBaseVisibleForkKey()
+      throws Exception {
+    String sourceBucketName = bucketName + "-source";
+    String snapshotName = "snap";
+    UUID snapshotId = UUID.randomUUID();
+    long baseObjectId = 123L;
+    long forkObjectId = 999L;
+    keyName = fromKeyName;
+    setupBaseVisibleForkKey(sourceBucketName, snapshotName, snapshotId,
+        baseObjectId, forkObjectId);
+
+    String dbFromKey = getDBKeyName(fromKeyInfo);
+    assertNull(omMetadataManager.getKeyTable(getBucketLayout()).get(dbFromKey));
+    assertNull(omMetadataManager.getKeyTable(getBucketLayout()).get(dbToKey));
+
+    OMRequest modifiedOmRequest = doPreExecute(createRenameKeyRequest(
+        volumeName, bucketName, fromKeyName, toKeyName));
+    OMKeyRenameRequest omKeyRenameRequest =
+        getOMKeyRenameRequest(modifiedOmRequest);
+
+    OMClientResponse omKeyRenameResponse =
+        omKeyRenameRequest.validateAndUpdateCache(ozoneManager, 100L);
+
+    assertEquals(OzoneManagerProtocolProtos.Status.OK,
+        omKeyRenameResponse.getOMResponse().getStatus());
+    assertNull(omMetadataManager.getKeyTable(getBucketLayout()).get(dbFromKey));
+
+    OmKeyInfo toKeyInfo =
+        omMetadataManager.getKeyTable(getBucketLayout()).get(dbToKey);
+    assertNotNull(toKeyInfo);
+    assertEquals(volumeName, toKeyInfo.getVolumeName());
+    assertEquals(bucketName, toKeyInfo.getBucketName());
+    assertEquals("toKey", toKeyInfo.getFileName());
+    assertEquals(toKeyParentInfo.getObjectID(), toKeyInfo.getParentObjectID());
+    assertEquals(forkObjectId, toKeyInfo.getObjectID());
+
+    BucketForkTombstoneInfo tombstone = omMetadataManager
+        .getBucketForkTombstoneTable()
+        .get(BucketForkTombstoneInfo.getTableKey(volumeName, bucketName,
+            fromKeyName));
+    assertNotNull(tombstone);
+    assertEquals(fromKeyName, tombstone.getLogicalPath());
+    assertEquals(snapshotId, tombstone.getBaseSnapshotId());
+    assertEquals(100L, tombstone.getUpdateId());
   }
 
   @Override

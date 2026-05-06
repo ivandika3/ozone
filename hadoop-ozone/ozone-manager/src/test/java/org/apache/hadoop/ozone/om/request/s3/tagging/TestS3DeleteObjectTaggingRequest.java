@@ -20,6 +20,7 @@ package org.apache.hadoop.ozone.om.request.s3.tagging;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -81,6 +82,38 @@ public class TestS3DeleteObjectTaggingRequest extends TestOMKeyRequest {
     assertEquals(omKeyInfo.getBucketName(), updatedKeyInfo.getBucketName());
     assertEquals(omKeyInfo.getKeyName(), updatedKeyInfo.getKeyName());
     assertEquals(0, updatedKeyInfo.getTags().size());
+  }
+
+  @Test
+  public void testDeleteObjectTaggingOnBaseVisibleForkKeyClonesMetadata()
+      throws Exception {
+    String sourceBucketName = bucketName + "-source";
+    String snapshotName = "snap";
+    UUID snapshotId = UUID.randomUUID();
+    long forkObjectId = 999L;
+
+    OMRequestTestUtils.addVolumeAndBucketToDB(volumeName, bucketName,
+        omMetadataManager, getBucketLayout());
+    setupBaseVisibleForkKey(sourceBucketName, snapshotName, snapshotId,
+        123L, forkObjectId);
+    String ozoneKey = getForkLocalKeyTableKey();
+    assertNull(omMetadataManager.getKeyTable(getBucketLayout()).get(ozoneKey));
+
+    OMRequest modifiedOmRequest =
+        doPreExecute(volumeName, bucketName, keyName);
+    S3DeleteObjectTaggingRequest request =
+        getDeleteObjectTaggingRequest(modifiedOmRequest);
+
+    OMClientResponse omClientResponse =
+        request.validateAndUpdateCache(ozoneManager, 2L);
+
+    assertEquals(OzoneManagerProtocolProtos.Status.OK,
+        omClientResponse.getOMResponse().getStatus());
+    OmKeyInfo forkLocalKeyInfo =
+        omMetadataManager.getKeyTable(getBucketLayout()).get(ozoneKey);
+    assertNotNull(forkLocalKeyInfo);
+    assertEquals(forkObjectId, forkLocalKeyInfo.getObjectID());
+    assertEquals(0, forkLocalKeyInfo.getTags().size());
   }
 
   @Test
