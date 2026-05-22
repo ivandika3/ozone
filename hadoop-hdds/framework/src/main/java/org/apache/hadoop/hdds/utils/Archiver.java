@@ -18,10 +18,14 @@
 package org.apache.hadoop.hdds.utils;
 
 import static java.util.stream.Collectors.toList;
+import static org.apache.hadoop.io.nativeio.NativeIO.POSIX.POSIX_FADV_DONTNEED;
 
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileDescriptor;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -39,6 +43,8 @@ import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.apache.commons.compress.archivers.tar.TarConstants;
 import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.hdds.HddsUtils;
+import org.apache.hadoop.io.nativeio.NativeIO;
+import org.apache.hadoop.io.nativeio.NativeIOException;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -113,6 +119,17 @@ public final class Archiver {
 
   public static void includePath(Path dir, String subdir,
       ArchiveOutputStream<TarArchiveEntry> archiveOutput) throws IOException {
+    includePath(dir, subdir, archiveOutput, false);
+  }
+
+  public static void includePathAndDropCache(Path dir, String subdir,
+      ArchiveOutputStream<TarArchiveEntry> archiveOutput) throws IOException {
+    includePath(dir, subdir, archiveOutput, true);
+  }
+
+  private static void includePath(Path dir, String subdir,
+      ArchiveOutputStream<TarArchiveEntry> archiveOutput, boolean dropCache)
+      throws IOException {
 
     // Add a directory entry before adding files, in case the directory is
     // empty.
@@ -126,9 +143,9 @@ public final class Archiver {
         File file = path.toFile();
         String entryName = subdir + "/" + path.getFileName();
         if (file.isDirectory()) {
-          includePath(path, entryName, archiveOutput);
+          includePath(path, entryName, archiveOutput, dropCache);
         } else {
-          includeFile(file, entryName, archiveOutput);
+          includeFile(file, entryName, archiveOutput, dropCache);
         }
       }
     }
@@ -136,11 +153,25 @@ public final class Archiver {
 
   public static long includeFile(File file, String entryName,
       ArchiveOutputStream<TarArchiveEntry> archiveOutput) throws IOException {
+    return includeFile(file, entryName, archiveOutput, false);
+  }
+
+  public static long includeFileAndDropCache(File file, String entryName,
+      ArchiveOutputStream<TarArchiveEntry> archiveOutput) throws IOException {
+    return includeFile(file, entryName, archiveOutput, true);
+  }
+
+  private static long includeFile(File file, String entryName,
+      ArchiveOutputStream<TarArchiveEntry> archiveOutput, boolean dropCache)
+      throws IOException {
     final long bytes;
     TarArchiveEntry entry = createBasicTarArchiveEntry(file, entryName);
     archiveOutput.putArchiveEntry(entry);
-    try (InputStream input = Files.newInputStream(file.toPath())) {
+    try (FileInputStream input = new FileInputStream(file)) {
       bytes = IOUtils.copy(input, archiveOutput, getBufferSize(file.length()));
+      if (dropCache) {
+        adviseDontNeed(file, input);
+      }
     }
     archiveOutput.closeArchiveEntry();
     return bytes;
@@ -188,6 +219,16 @@ public final class Archiver {
 
   public static void extractEntry(ArchiveEntry entry, InputStream input, long size,
       Path ancestor, Path path) throws IOException {
+    extractEntry(entry, input, size, ancestor, path, false);
+  }
+
+  public static void extractEntryAndDropCache(ArchiveEntry entry, InputStream input, long size,
+      Path ancestor, Path path) throws IOException {
+    extractEntry(entry, input, size, ancestor, path, true);
+  }
+
+  private static void extractEntry(ArchiveEntry entry, InputStream input, long size,
+      Path ancestor, Path path, boolean dropCache) throws IOException {
     HddsUtils.validatePath(path, ancestor);
 
     if (entry.isDirectory()) {
@@ -198,10 +239,39 @@ public final class Archiver {
         Files.createDirectories(parent);
       }
 
-      try (OutputStream fileOutput = Files.newOutputStream(path);
+      try (FileOutputStream fileOutput = new FileOutputStream(path.toFile());
            OutputStream output = new BufferedOutputStream(fileOutput)) {
         IOUtils.copy(input, output, getBufferSize(size));
+        if (dropCache) {
+          output.flush();
+          adviseDontNeed(path.toFile(), fileOutput);
+        }
       }
+    }
+  }
+
+  private static void adviseDontNeed(File file, FileInputStream input) {
+    try {
+      adviseDontNeed(file, input.getFD());
+    } catch (IOException e) {
+      LOG.debug("Failed to get file descriptor for {}", file, e);
+    }
+  }
+
+  private static void adviseDontNeed(File file, FileOutputStream output) {
+    try {
+      adviseDontNeed(file, output.getFD());
+    } catch (IOException e) {
+      LOG.debug("Failed to get file descriptor for {}", file, e);
+    }
+  }
+
+  private static void adviseDontNeed(File file, FileDescriptor fd) {
+    try {
+      NativeIO.POSIX.getCacheManipulator().posixFadviseIfPossible(
+          file.getAbsolutePath(), fd, 0, 0, POSIX_FADV_DONTNEED);
+    } catch (NativeIOException e) {
+      LOG.debug("Failed to advise DONTNEED for {}", file, e);
     }
   }
 

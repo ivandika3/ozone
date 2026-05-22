@@ -59,6 +59,6 @@ public class OnDemandContainerReplicationSource
 
     controller.exportContainer(
         container.getContainerType(), containerId, destination,
-        new TarContainerPacker(compression));
+        TarContainerPacker.forReplication(compression));
   }
 }

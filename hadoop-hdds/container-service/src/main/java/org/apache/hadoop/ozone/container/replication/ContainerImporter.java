@@ -171,7 +171,7 @@ public class ContainerImporter {
   }
 
   protected TarContainerPacker getPacker(CopyContainerCompression compression) {
-    return new TarContainerPacker(compression);
+    return TarContainerPacker.forReplication(compression);
   }
 
   public long getDefaultReplicationSpace() {

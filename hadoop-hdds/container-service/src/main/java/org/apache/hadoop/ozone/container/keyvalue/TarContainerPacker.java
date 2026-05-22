@@ -19,8 +19,11 @@ package org.apache.hadoop.ozone.container.keyvalue;
 
 import static org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.Result.CONTAINER_ALREADY_EXISTS;
 import static org.apache.hadoop.hdds.utils.Archiver.extractEntry;
+import static org.apache.hadoop.hdds.utils.Archiver.extractEntryAndDropCache;
 import static org.apache.hadoop.hdds.utils.Archiver.includeFile;
+import static org.apache.hadoop.hdds.utils.Archiver.includeFileAndDropCache;
 import static org.apache.hadoop.hdds.utils.Archiver.includePath;
+import static org.apache.hadoop.hdds.utils.Archiver.includePathAndDropCache;
 import static org.apache.hadoop.hdds.utils.Archiver.readEntry;
 import static org.apache.hadoop.hdds.utils.Archiver.tar;
 import static org.apache.hadoop.hdds.utils.Archiver.untar;
@@ -68,11 +71,23 @@ public class TarContainerPacker
   static final String CONTAINER_FILE_NAME = "container.yaml";
 
   private final CopyContainerCompression compression;
+  private final boolean dropCache;
 
   private final ConfigurationSource conf = new OzoneConfiguration();
 
   public TarContainerPacker(CopyContainerCompression compression) {
+    this(compression, false);
+  }
+
+  private TarContainerPacker(CopyContainerCompression compression,
+      boolean dropCache) {
     this.compression = compression;
+    this.dropCache = dropCache;
+  }
+
+  public static TarContainerPacker forReplication(
+      CopyContainerCompression compression) {
+    return new TarContainerPacker(compression, true);
   }
 
   /**
@@ -144,19 +159,20 @@ public class TarContainerPacker
     KeyValueContainerData containerData = container.getContainerData();
 
     try (ArchiveOutputStream<TarArchiveEntry> archiveOutput = tar(compress(output))) {
-      includeFile(container.getContainerFile(), CONTAINER_FILE_NAME,
+      includeContainerFile(container.getContainerFile(), CONTAINER_FILE_NAME,
           archiveOutput);
 
       File containerChecksumFile = ContainerChecksumTreeManager.getContainerChecksumFile(containerData);
       if (containerChecksumFile.exists()) {
-        includeFile(containerChecksumFile, containerChecksumFile.getName(), archiveOutput);
+        includeContainerFile(containerChecksumFile,
+            containerChecksumFile.getName(), archiveOutput);
       }
 
-      includePath(getDbPath(containerData), DB_DIR_NAME,
+      includeContainerPath(getDbPath(containerData), DB_DIR_NAME,
           archiveOutput);
 
-      includePath(Paths.get(containerData.getChunksPath()), CHUNKS_DIR_NAME,
-          archiveOutput);
+      includeContainerPath(Paths.get(containerData.getChunksPath()),
+          CHUNKS_DIR_NAME, archiveOutput);
     }
   }
 
@@ -230,6 +246,31 @@ public class TarContainerPacker
     return compression.wrap(output);
   }
 
+  private long includeContainerFile(File file, String entryName,
+      ArchiveOutputStream<TarArchiveEntry> archiveOutput) throws IOException {
+    return dropCache
+        ? includeFileAndDropCache(file, entryName, archiveOutput)
+        : includeFile(file, entryName, archiveOutput);
+  }
+
+  private void includeContainerPath(Path path, String entryName,
+      ArchiveOutputStream<TarArchiveEntry> archiveOutput) throws IOException {
+    if (dropCache) {
+      includePathAndDropCache(path, entryName, archiveOutput);
+    } else {
+      includePath(path, entryName, archiveOutput);
+    }
+  }
+
+  private void extractContainerEntry(ArchiveEntry entry, InputStream input,
+      long size, Path ancestor, Path path) throws IOException {
+    if (dropCache) {
+      extractEntryAndDropCache(entry, input, size, ancestor, path);
+    } else {
+      extractEntry(entry, input, size, ancestor, path);
+    }
+  }
+
   private byte[] innerUnpack(InputStream input, Path dbRoot, Path chunksRoot, Path metadataRoot)
       throws IOException {
     byte[] descriptorFileContent = null;
@@ -241,16 +282,16 @@ public class TarContainerPacker
         if (name.startsWith(DB_DIR_NAME + "/")) {
           Path destinationPath = dbRoot
               .resolve(name.substring(DB_DIR_NAME.length() + 1));
-          extractEntry(entry, archiveInput, size, dbRoot,
+          extractContainerEntry(entry, archiveInput, size, dbRoot,
               destinationPath);
         } else if (name.startsWith(CHUNKS_DIR_NAME + "/")) {
           Path destinationPath = chunksRoot
               .resolve(name.substring(CHUNKS_DIR_NAME.length() + 1));
-          extractEntry(entry, archiveInput, size, chunksRoot,
+          extractContainerEntry(entry, archiveInput, size, chunksRoot,
               destinationPath);
         } else if (name.endsWith(CONTAINER_DATA_CHECKSUM_EXTENSION)) {
           Path destinationPath = metadataRoot.resolve(name);
-          extractEntry(entry, archiveInput, size, metadataRoot,
+          extractContainerEntry(entry, archiveInput, size, metadataRoot,
               destinationPath);
         } else if (CONTAINER_FILE_NAME.equals(name)) {
           //Don't do anything. Container file should be unpacked in a

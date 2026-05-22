@@ -20,6 +20,7 @@ package org.apache.hadoop.ozone.container.keyvalue;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.nio.file.Files.newInputStream;
 import static java.nio.file.Files.newOutputStream;
+import static org.apache.hadoop.io.nativeio.NativeIO.POSIX.POSIX_FADV_DONTNEED;
 import static org.apache.hadoop.ozone.container.checksum.ContainerMerkleTreeTestUtils.assertTreesSortedAndMatch;
 import static org.apache.hadoop.ozone.container.checksum.ContainerMerkleTreeTestUtils.buildTestTree;
 import static org.apache.hadoop.ozone.container.keyvalue.TarContainerPacker.CONTAINER_FILE_NAME;
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -49,6 +51,8 @@ import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.utils.Archiver;
+import org.apache.hadoop.io.nativeio.NativeIO;
+import org.apache.hadoop.io.nativeio.NativeIOException;
 import org.apache.hadoop.ozone.container.checksum.ContainerChecksumTreeManager;
 import org.apache.hadoop.ozone.container.checksum.ContainerMerkleTreeWriter;
 import org.apache.hadoop.ozone.container.common.impl.ContainerLayoutVersion;
@@ -56,6 +60,8 @@ import org.apache.hadoop.ozone.container.replication.CopyContainerCompression;
 import org.apache.ozone.test.SpyInputStream;
 import org.apache.ozone.test.SpyOutputStream;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -63,6 +69,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * Test the tar/untar for a given container.
  */
+@Execution(ExecutionMode.SAME_THREAD)
 public class TestTarContainerPacker {
 
   private static final String TEST_DB_FILE_NAME = "test1";
@@ -102,6 +109,8 @@ public class TestTarContainerPacker {
   private Path tempDir;
 
   private static final AtomicInteger CONTAINER_ID = new AtomicInteger(1);
+
+  private static final Object CACHE_MANIPULATOR_LOCK = new Object();
 
   private ContainerLayoutVersion layout;
   private String schemaVersion;
@@ -354,6 +363,131 @@ public class TestTarContainerPacker {
         () -> unpackContainerData(containerFile));
   }
 
+  @ParameterizedTest
+  @MethodSource("getLayoutAndCompression")
+  public void packDropsCacheForPackedContainerFiles(
+      ContainerTestVersionInfo versionInfo,
+      CopyContainerCompression compression) throws Exception {
+    initTests(versionInfo, compression);
+    TarContainerPacker replicationPacker =
+        TarContainerPacker.forReplication(compression);
+    KeyValueContainerData sourceContainerData =
+        createContainer(sourceContainerRoot, true, false);
+    KeyValueContainer sourceContainer =
+        new KeyValueContainer(sourceContainerData, conf);
+    File dbFile = writeDbFile(sourceContainerData, TEST_DB_FILE_NAME);
+    File chunkFile = writeChunkFile(sourceContainerData, TEST_CHUNK_FILE_NAME);
+    writeDescriptor(sourceContainer);
+    Path targetFile = tempDir.resolve("container.tar");
+
+    RecordingCacheManipulator tracker = new RecordingCacheManipulator();
+    synchronized (CACHE_MANIPULATOR_LOCK) {
+      NativeIO.POSIX.CacheManipulator previous =
+          NativeIO.POSIX.getCacheManipulator();
+      NativeIO.POSIX.setCacheManipulator(tracker);
+      try (OutputStream output = newOutputStream(targetFile)) {
+        replicationPacker.pack(sourceContainer, output);
+        tracker.assertDropped(sourceContainer.getContainerFile());
+        tracker.assertDropped(dbFile);
+        tracker.assertDropped(chunkFile);
+      } finally {
+        NativeIO.POSIX.setCacheManipulator(previous);
+      }
+    }
+  }
+
+  @ParameterizedTest
+  @MethodSource("getLayoutAndCompression")
+  public void unpackDropsCacheForExtractedContainerFiles(
+      ContainerTestVersionInfo versionInfo,
+      CopyContainerCompression compression) throws Exception {
+    initTests(versionInfo, compression);
+    TarContainerPacker replicationPacker =
+        TarContainerPacker.forReplication(compression);
+    KeyValueContainerData sourceContainerData =
+        createContainer(sourceContainerRoot);
+    String fileName = "sub/dir/" + TEST_CHUNK_FILE_NAME;
+    File file = writeChunkFile(sourceContainerData, fileName);
+    String entryName = TarContainerPacker.CHUNKS_DIR_NAME + "/" + fileName;
+    File containerFile = packContainerWithSingleFile(file, entryName);
+    KeyValueContainerData data = createContainer(destContainerRoot, false, true);
+    KeyValueContainer container = new KeyValueContainer(data, conf);
+
+    RecordingCacheManipulator tracker = new RecordingCacheManipulator();
+    synchronized (CACHE_MANIPULATOR_LOCK) {
+      NativeIO.POSIX.CacheManipulator previous =
+          NativeIO.POSIX.getCacheManipulator();
+      NativeIO.POSIX.setCacheManipulator(tracker);
+      try (InputStream input = newInputStream(containerFile.toPath())) {
+        replicationPacker.unpackContainerData(container, input, tempDir,
+            destContainerRoot.resolve(String.valueOf(data.getContainerID())));
+        tracker.assertDropped(tempDir.resolve(String.valueOf(data.getContainerID()))
+            .resolve(TarContainerPacker.CHUNKS_DIR_NAME).resolve(fileName).toFile());
+      } finally {
+        NativeIO.POSIX.setCacheManipulator(previous);
+      }
+    }
+  }
+
+  @ParameterizedTest
+  @MethodSource("getLayoutAndCompression")
+  public void defaultPackerDoesNotDropCacheForPackedContainerFiles(
+      ContainerTestVersionInfo versionInfo,
+      CopyContainerCompression compression) throws Exception {
+    initTests(versionInfo, compression);
+    KeyValueContainerData sourceContainerData =
+        createContainer(sourceContainerRoot, true, false);
+    KeyValueContainer sourceContainer =
+        new KeyValueContainer(sourceContainerData, conf);
+    writeDbFile(sourceContainerData, TEST_DB_FILE_NAME);
+    writeChunkFile(sourceContainerData, TEST_CHUNK_FILE_NAME);
+    writeDescriptor(sourceContainer);
+    Path targetFile = tempDir.resolve("container.tar");
+
+    RecordingCacheManipulator tracker = new RecordingCacheManipulator();
+    synchronized (CACHE_MANIPULATOR_LOCK) {
+      NativeIO.POSIX.CacheManipulator previous =
+          NativeIO.POSIX.getCacheManipulator();
+      NativeIO.POSIX.setCacheManipulator(tracker);
+      try (OutputStream output = newOutputStream(targetFile)) {
+        packer.pack(sourceContainer, output);
+        tracker.assertNoDrops();
+      } finally {
+        NativeIO.POSIX.setCacheManipulator(previous);
+      }
+    }
+  }
+
+  @ParameterizedTest
+  @MethodSource("getLayoutAndCompression")
+  public void defaultPackerDoesNotDropCacheForExtractedContainerFiles(
+      ContainerTestVersionInfo versionInfo,
+      CopyContainerCompression compression) throws Exception {
+    initTests(versionInfo, compression);
+    KeyValueContainerData sourceContainerData =
+        createContainer(sourceContainerRoot);
+    String fileName = "sub/dir/" + TEST_CHUNK_FILE_NAME;
+    File file = writeChunkFile(sourceContainerData, fileName);
+    String entryName = TarContainerPacker.CHUNKS_DIR_NAME + "/" + fileName;
+    File containerFile = packContainerWithSingleFile(file, entryName);
+    KeyValueContainerData data = createContainer(destContainerRoot, false, true);
+    KeyValueContainer container = new KeyValueContainer(data, conf);
+
+    RecordingCacheManipulator tracker = new RecordingCacheManipulator();
+    synchronized (CACHE_MANIPULATOR_LOCK) {
+      NativeIO.POSIX.CacheManipulator previous =
+          NativeIO.POSIX.getCacheManipulator();
+      NativeIO.POSIX.setCacheManipulator(tracker);
+      try (InputStream input = newInputStream(containerFile.toPath())) {
+        packer.unpackContainerData(container, input, tempDir,
+            destContainerRoot.resolve(String.valueOf(data.getContainerID())));
+        tracker.assertNoDrops();
+      } finally {
+        NativeIO.POSIX.setCacheManipulator(previous);
+      }
+    }
+  }
+
   private KeyValueContainerData unpackContainerData(File containerFile)
       throws IOException {
     try (InputStream input = newInputStream(containerFile.toPath())) {
@@ -438,4 +572,42 @@ public class TestTarContainerPacker {
     }
   }
 
+  private static final class RecordingCacheManipulator
+      extends NativeIO.POSIX.CacheManipulator {
+    private final List<FadviseCall> calls = new ArrayList<>();
+
+    @Override
+    public void posixFadviseIfPossible(String identifier,
+        FileDescriptor fd, long offset, long len, int flags)
+        throws NativeIOException {
+      calls.add(new FadviseCall(identifier, offset, len, flags));
+    }
+
+    void assertDropped(File file) {
+      assertThat(calls).anySatisfy(call -> {
+        assertThat(call.identifier).isEqualTo(file.getAbsolutePath());
+        assertThat(call.offset).isZero();
+        assertThat(call.len).isZero();
+        assertThat(call.flags).isEqualTo(POSIX_FADV_DONTNEED);
+      });
+    }
+
+    void assertNoDrops() {
+      assertThat(calls).isEmpty();
+    }
+  }
+
+  private static final class FadviseCall {
+    private final String identifier;
+    private final long offset;
+    private final long len;
+    private final int flags;
+
+    private FadviseCall(String identifier, long offset, long len, int flags) {
+      this.identifier = identifier;
+      this.offset = offset;
+      this.len = len;
+      this.flags = flags;
+    }
+  }
 }
