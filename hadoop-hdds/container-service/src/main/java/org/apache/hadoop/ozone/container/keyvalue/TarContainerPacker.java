@@ -19,7 +19,6 @@ package org.apache.hadoop.ozone.container.keyvalue;
 
 import static org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.Result.CONTAINER_ALREADY_EXISTS;
 import static org.apache.hadoop.hdds.utils.Archiver.extractEntry;
-import static org.apache.hadoop.hdds.utils.Archiver.extractEntryAndDropCache;
 import static org.apache.hadoop.hdds.utils.Archiver.includeFile;
 import static org.apache.hadoop.hdds.utils.Archiver.includeFileAndDropCache;
 import static org.apache.hadoop.hdds.utils.Archiver.includePath;
@@ -262,15 +261,6 @@ public class TarContainerPacker
     }
   }
 
-  private void extractContainerEntry(ArchiveEntry entry, InputStream input,
-      long size, Path ancestor, Path path) throws IOException {
-    if (dropCache) {
-      extractEntryAndDropCache(entry, input, size, ancestor, path);
-    } else {
-      extractEntry(entry, input, size, ancestor, path);
-    }
-  }
-
   private byte[] innerUnpack(InputStream input, Path dbRoot, Path chunksRoot, Path metadataRoot)
       throws IOException {
     byte[] descriptorFileContent = null;
@@ -282,16 +272,16 @@ public class TarContainerPacker
         if (name.startsWith(DB_DIR_NAME + "/")) {
           Path destinationPath = dbRoot
               .resolve(name.substring(DB_DIR_NAME.length() + 1));
-          extractContainerEntry(entry, archiveInput, size, dbRoot,
+          extractEntry(entry, archiveInput, size, dbRoot,
               destinationPath);
         } else if (name.startsWith(CHUNKS_DIR_NAME + "/")) {
           Path destinationPath = chunksRoot
               .resolve(name.substring(CHUNKS_DIR_NAME.length() + 1));
-          extractContainerEntry(entry, archiveInput, size, chunksRoot,
+          extractEntry(entry, archiveInput, size, chunksRoot,
               destinationPath);
         } else if (name.endsWith(CONTAINER_DATA_CHECKSUM_EXTENSION)) {
           Path destinationPath = metadataRoot.resolve(name);
-          extractContainerEntry(entry, archiveInput, size, metadataRoot,
+          extractEntry(entry, archiveInput, size, metadataRoot,
               destinationPath);
         } else if (CONTAINER_FILE_NAME.equals(name)) {
           //Don't do anything. Container file should be unpacked in a

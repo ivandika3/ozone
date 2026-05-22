@@ -398,7 +398,7 @@ public class TestTarContainerPacker {
 
   @ParameterizedTest
   @MethodSource("getLayoutAndCompression")
-  public void unpackDropsCacheForExtractedContainerFiles(
+  public void replicationPackerDoesNotDropCacheForExtractedContainerFiles(
       ContainerTestVersionInfo versionInfo,
       CopyContainerCompression compression) throws Exception {
     initTests(versionInfo, compression);
@@ -421,8 +421,7 @@ public class TestTarContainerPacker {
       try (InputStream input = newInputStream(containerFile.toPath())) {
         replicationPacker.unpackContainerData(container, input, tempDir,
             destContainerRoot.resolve(String.valueOf(data.getContainerID())));
-        tracker.assertDropped(tempDir.resolve(String.valueOf(data.getContainerID()))
-            .resolve(TarContainerPacker.CHUNKS_DIR_NAME).resolve(fileName).toFile());
+        tracker.assertNoDrops();
       } finally {
         NativeIO.POSIX.setCacheManipulator(previous);
       }

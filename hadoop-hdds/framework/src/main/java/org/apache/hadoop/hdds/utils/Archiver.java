@@ -24,11 +24,11 @@ import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileDescriptor;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
+import java.nio.channels.Channels;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -167,10 +167,11 @@ public final class Archiver {
     final long bytes;
     TarArchiveEntry entry = createBasicTarArchiveEntry(file, entryName);
     archiveOutput.putArchiveEntry(entry);
-    try (FileInputStream input = new FileInputStream(file)) {
+    try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r");
+         InputStream input = Channels.newInputStream(randomAccessFile.getChannel())) {
       bytes = IOUtils.copy(input, archiveOutput, getBufferSize(file.length()));
       if (dropCache) {
-        adviseDontNeed(file, input);
+        adviseDontNeed(file, randomAccessFile);
       }
     }
     archiveOutput.closeArchiveEntry();
@@ -219,16 +220,6 @@ public final class Archiver {
 
   public static void extractEntry(ArchiveEntry entry, InputStream input, long size,
       Path ancestor, Path path) throws IOException {
-    extractEntry(entry, input, size, ancestor, path, false);
-  }
-
-  public static void extractEntryAndDropCache(ArchiveEntry entry, InputStream input, long size,
-      Path ancestor, Path path) throws IOException {
-    extractEntry(entry, input, size, ancestor, path, true);
-  }
-
-  private static void extractEntry(ArchiveEntry entry, InputStream input, long size,
-      Path ancestor, Path path, boolean dropCache) throws IOException {
     HddsUtils.validatePath(path, ancestor);
 
     if (entry.isDirectory()) {
@@ -239,28 +230,15 @@ public final class Archiver {
         Files.createDirectories(parent);
       }
 
-      try (FileOutputStream fileOutput = new FileOutputStream(path.toFile());
-           OutputStream output = new BufferedOutputStream(fileOutput)) {
+      try (OutputStream output = new BufferedOutputStream(Files.newOutputStream(path))) {
         IOUtils.copy(input, output, getBufferSize(size));
-        if (dropCache) {
-          output.flush();
-          adviseDontNeed(path.toFile(), fileOutput);
-        }
       }
     }
   }
 
-  private static void adviseDontNeed(File file, FileInputStream input) {
+  private static void adviseDontNeed(File file, RandomAccessFile input) {
     try {
       adviseDontNeed(file, input.getFD());
-    } catch (IOException e) {
-      LOG.debug("Failed to get file descriptor for {}", file, e);
-    }
-  }
-
-  private static void adviseDontNeed(File file, FileOutputStream output) {
-    try {
-      adviseDontNeed(file, output.getFD());
     } catch (IOException e) {
       LOG.debug("Failed to get file descriptor for {}", file, e);
     }
