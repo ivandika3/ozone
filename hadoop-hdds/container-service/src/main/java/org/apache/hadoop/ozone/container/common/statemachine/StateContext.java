@@ -89,7 +89,7 @@ import org.slf4j.LoggerFactory;
 public class StateContext {
 
   @VisibleForTesting
-  static final String CONTAINER_REPORTS_PROTO_NAME =
+  public static final String CONTAINER_REPORTS_PROTO_NAME =
       ContainerReportsProto.getDescriptor().getFullName();
   @VisibleForTesting
   static final String NODE_REPORT_PROTO_NAME =
@@ -377,6 +377,12 @@ public class StateContext {
   public List<Message> getAllAvailableReports(
       InetSocketAddress endpoint
   ) {
+    return getAllAvailableReports(endpoint, null);
+  }
+
+  public List<Message> getAllAvailableReports(
+      InetSocketAddress endpoint, String excludedFullReportType
+  ) {
     int maxLimit = Integer.MAX_VALUE;
     // TODO: It is highly unlikely that we will reach maxLimit for the number
     //       for the number of reports, specially as it does not apply to the
@@ -384,7 +390,14 @@ public class StateContext {
     //       heartbeat be scheduled ASAP? Should full reports not included be
     //       dropped? Currently this code will keep the full reports not sent
     //       and include it in the next heartbeat.
-    return getAllAvailableReportsUpToLimit(endpoint, maxLimit);
+    return getAllAvailableReportsUpToLimit(endpoint, maxLimit,
+        excludedFullReportType);
+  }
+
+  public boolean isFullContainerReportReady(InetSocketAddress endpoint) {
+    Map<String, AtomicBoolean> mp = isFullReportReadyToBeSent.get(endpoint);
+    return mp != null && mp.containsKey(CONTAINER_REPORTS_PROTO_NAME)
+        && mp.get(CONTAINER_REPORTS_PROTO_NAME).get();
   }
 
   /**
@@ -421,7 +434,15 @@ public class StateContext {
   List<Message> getAllAvailableReportsUpToLimit(
       InetSocketAddress endpoint,
       int limit) {
-    List<Message> reports = getFullReports(endpoint, limit);
+    return getAllAvailableReportsUpToLimit(endpoint, limit, null);
+  }
+
+  List<Message> getAllAvailableReportsUpToLimit(
+      InetSocketAddress endpoint,
+      int limit,
+      String excludedFullReportType) {
+    List<Message> reports = getFullReports(endpoint, limit,
+        excludedFullReportType);
     List<Message> incrementalReports = getIncrementalReports(endpoint,
         limit - reports.size()); // get all (MAX_VALUE)
     reports.addAll(incrementalReports);
@@ -446,6 +467,11 @@ public class StateContext {
 
   List<Message> getFullReports(
       InetSocketAddress endpoint, int maxLimit) {
+    return getFullReports(endpoint, maxLimit, null);
+  }
+
+  List<Message> getFullReports(
+      InetSocketAddress endpoint, int maxLimit, String excludedFullReportType) {
     int count = 0;
     Map<String, AtomicBoolean> mp = isFullReportReadyToBeSent.get(endpoint);
     List<Message> fullReports = new LinkedList<>();
@@ -456,6 +482,9 @@ public class StateContext {
         }
         if (kv.getValue().get()) {
           String reportType = kv.getKey();
+          if (reportType.equals(excludedFullReportType)) {
+            continue;
+          }
           final AtomicReference<Message> ref =
               type2Reports.get(reportType);
           if (ref == null) {
