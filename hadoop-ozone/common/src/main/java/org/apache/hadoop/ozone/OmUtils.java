@@ -258,6 +258,8 @@ public final class OmUtils {
       // printCompactionLogDag is deprecated by HDDS-12053,
       // keeping it here for compatibility
     case GetSnapshotInfo:
+    case GetBucketForkInfo:
+    case ListBucketForks:
     case GetObjectTagging:
     case GetQuotaRepairStatus:
     case StartQuotaRepair:
@@ -319,6 +321,8 @@ public final class OmUtils {
     case SetTimes:
     case AbortExpiredMultiPartUploads:
     case SetSnapshotProperty:
+    case CreateBucketFork:
+    case DeleteBucketFork:
     case QuotaRepair:
     case PutObjectTagging:
     case DeleteObjectTagging:
@@ -375,6 +379,8 @@ public final class OmUtils {
     case RefetchSecretKey:
     case GetKeyInfo:
     case GetSnapshotInfo:
+    case GetBucketForkInfo:
+    case ListBucketForks:
     case GetObjectTagging:
       return true;
     case CreateVolume:
@@ -434,6 +440,8 @@ public final class OmUtils {
     case SetTimes:
     case AbortExpiredMultiPartUploads:
     case SetSnapshotProperty:
+    case CreateBucketFork:
+    case DeleteBucketFork:
     case QuotaRepair:
     case PutObjectTagging:
     case DeleteObjectTagging:

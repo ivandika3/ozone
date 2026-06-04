@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.ozone.om.response.key;
 
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_TOMBSTONE_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.DELETED_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.KEY_TABLE;
@@ -26,12 +27,14 @@ import static org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.
 
 import jakarta.annotation.Nonnull;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
@@ -41,11 +44,14 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRespo
 /**
  * Response for DeleteKey request.
  */
-@CleanupTableInfo(cleanupTables = {KEY_TABLE, OPEN_KEY_TABLE, DELETED_TABLE, BUCKET_TABLE})
+@CleanupTableInfo(cleanupTables = {KEY_TABLE, OPEN_KEY_TABLE, DELETED_TABLE,
+    BUCKET_TABLE, BUCKET_FORK_TOMBSTONE_TABLE})
 public class OMKeysDeleteResponse extends AbstractOMKeyDeleteResponse {
   private List<OmKeyInfo> omKeyInfoList;
   private OmBucketInfo omBucketInfo;
   private Map<String, OmKeyInfo> openKeyInfoMap = new HashMap<>();
+  private List<BucketForkTombstoneInfo> bucketForkTombstoneInfoList =
+      Collections.emptyList();
 
   public OMKeysDeleteResponse(@Nonnull OMResponse omResponse,
       @Nonnull List<OmKeyInfo> keyDeleteList,
@@ -55,6 +61,15 @@ public class OMKeysDeleteResponse extends AbstractOMKeyDeleteResponse {
     this.omKeyInfoList = keyDeleteList;
     this.omBucketInfo = omBucketInfo;
     this.openKeyInfoMap = openKeyInfoMap;
+  }
+
+  public OMKeysDeleteResponse(@Nonnull OMResponse omResponse,
+      @Nonnull List<OmKeyInfo> keyDeleteList,
+      @Nonnull OmBucketInfo omBucketInfo,
+      @Nonnull Map<String, OmKeyInfo> openKeyInfoMap,
+      @Nonnull List<BucketForkTombstoneInfo> bucketForkTombstoneInfoList) {
+    this(omResponse, keyDeleteList, omBucketInfo, openKeyInfoMap);
+    this.bucketForkTombstoneInfoList = bucketForkTombstoneInfoList;
   }
 
   /**
@@ -96,6 +111,13 @@ public class OMKeysDeleteResponse extends AbstractOMKeyDeleteResponse {
           deleteKey, omKeyInfo, getOmBucketInfo().getObjectID(), true);
     }
 
+    for (BucketForkTombstoneInfo bucketForkTombstoneInfo
+        : bucketForkTombstoneInfoList) {
+      omMetadataManager.getBucketForkTombstoneTable().putWithBatch(
+          batchOperation, bucketForkTombstoneInfo.getTableKey(),
+          bucketForkTombstoneInfo);
+    }
+
     // update bucket usedBytes.
     omMetadataManager.getBucketTable().putWithBatch(batchOperation,
         omMetadataManager.getBucketKey(omBucketInfo.getVolumeName(),
@@ -119,5 +141,9 @@ public class OMKeysDeleteResponse extends AbstractOMKeyDeleteResponse {
 
   protected Map<String, OmKeyInfo> getOpenKeyInfoMap() {
     return openKeyInfoMap;
+  }
+
+  protected List<BucketForkTombstoneInfo> getBucketForkTombstoneInfoList() {
+    return bucketForkTombstoneInfoList;
   }
 }

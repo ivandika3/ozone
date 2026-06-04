@@ -147,6 +147,7 @@ import org.apache.hadoop.ozone.om.PendingKeysDeletion.PurgedKey;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes;
 import org.apache.hadoop.ozone.om.helpers.BucketEncryptionKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
@@ -186,6 +187,7 @@ import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.util.Time;
 import org.apache.ratis.util.function.CheckedFunction;
+import org.apache.ratis.util.function.UncheckedAutoCloseableSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -1717,9 +1719,37 @@ public class KeyManagerImpl implements KeyManager {
       return fileStatus;
     }
 
+    OzoneFileStatus forkBaseStatus = lookupForkBaseFileStatus(args);
+    if (forkBaseStatus != null) {
+      return forkBaseStatus;
+    }
+
     throw new OMException("Unable to get file status: volume: " +
             volumeName + " bucket: " + bucketName + " key: " + keyName,
             FILE_NOT_FOUND);
+  }
+
+  private OzoneFileStatus lookupForkBaseFileStatus(OmKeyArgs args)
+      throws IOException {
+    BucketForkManager bucketForkManager =
+        new BucketForkManager(metadataManager);
+    BucketForkInfo forkInfo = bucketForkManager.getActiveForkInfo(
+        args.getVolumeName(), args.getBucketName());
+    if (forkInfo == null) {
+      return null;
+    }
+
+    try (UncheckedAutoCloseableSupplier<? extends IOmMetadataReader> snapshot =
+             ozoneManager.getOmSnapshotManager().getSnapshot(
+                 forkInfo.getBaseSnapshotId())) {
+      return bucketForkManager.lookupBaseFileStatus(forkInfo, args,
+          snapshot.get());
+    } catch (OMException ex) {
+      if (ex.getResult() == FILE_NOT_FOUND || ex.getResult() == KEY_NOT_FOUND) {
+        return null;
+      }
+      throw ex;
+    }
   }
 
   private OmKeyInfo createDirectoryKey(OmKeyInfo keyInfo, String keyName)

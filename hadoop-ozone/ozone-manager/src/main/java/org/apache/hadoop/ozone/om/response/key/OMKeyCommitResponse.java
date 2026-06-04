@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.ozone.om.response.key;
 
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_TOMBSTONE_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.DELETED_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.KEY_TABLE;
@@ -28,6 +29,7 @@ import java.io.IOException;
 import java.util.Map;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
@@ -39,7 +41,7 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRespo
  * Response for CommitKey request.
  */
 @CleanupTableInfo(cleanupTables = {OPEN_KEY_TABLE, KEY_TABLE, DELETED_TABLE,
-    BUCKET_TABLE})
+    BUCKET_TABLE, BUCKET_FORK_TOMBSTONE_TABLE})
 public class OMKeyCommitResponse extends OmKeyResponse {
 
   private OmKeyInfo omKeyInfo;
@@ -51,6 +53,7 @@ public class OMKeyCommitResponse extends OmKeyResponse {
   private OmKeyInfo newOpenKeyInfo;
   private OmKeyInfo openKeyToUpdate;
   private String openKeyNameToUpdate;
+  private BucketForkTombstoneInfo bucketForkTombstoneInfo;
 
   @SuppressWarnings("checkstyle:ParameterNumber")
   public OMKeyCommitResponse(
@@ -60,6 +63,21 @@ public class OMKeyCommitResponse extends OmKeyResponse {
       Map<String, RepeatedOmKeyInfo> keyToDeleteMap,
       boolean isHSync,
       OmKeyInfo newOpenKeyInfo, String openKeyNameToUpdate, OmKeyInfo openKeyToUpdate) {
+    this(omResponse, omKeyInfo, ozoneKeyName, openKeyName, omBucketInfo,
+        keyToDeleteMap, isHSync, newOpenKeyInfo, openKeyNameToUpdate,
+        openKeyToUpdate, null);
+  }
+
+  @SuppressWarnings("checkstyle:ParameterNumber")
+  public OMKeyCommitResponse(
+      @Nonnull OMResponse omResponse,
+      @Nonnull OmKeyInfo omKeyInfo, String ozoneKeyName, String openKeyName,
+      @Nonnull OmBucketInfo omBucketInfo,
+      Map<String, RepeatedOmKeyInfo> keyToDeleteMap,
+      boolean isHSync,
+      OmKeyInfo newOpenKeyInfo, String openKeyNameToUpdate,
+      OmKeyInfo openKeyToUpdate,
+      BucketForkTombstoneInfo bucketForkTombstoneInfo) {
     super(omResponse, omBucketInfo.getBucketLayout());
     this.omKeyInfo = omKeyInfo;
     this.ozoneKeyName = ozoneKeyName;
@@ -70,6 +88,7 @@ public class OMKeyCommitResponse extends OmKeyResponse {
     this.newOpenKeyInfo = newOpenKeyInfo;
     this.openKeyNameToUpdate = openKeyNameToUpdate;
     this.openKeyToUpdate = openKeyToUpdate;
+    this.bucketForkTombstoneInfo = bucketForkTombstoneInfo;
   }
 
   /**
@@ -100,6 +119,7 @@ public class OMKeyCommitResponse extends OmKeyResponse {
 
     updateDeletedTable(omMetadataManager, batchOperation);
     handleOpenKeyToUpdate(omMetadataManager, batchOperation);
+    addBucketForkTombstoneToBatch(omMetadataManager, batchOperation);
 
     // update bucket usedBytes.
     omMetadataManager.getBucketTable().putWithBatch(batchOperation,
@@ -144,6 +164,16 @@ public class OMKeyCommitResponse extends OmKeyResponse {
     if (this.openKeyToUpdate != null) {
       omMetadataManager.getOpenKeyTable(getBucketLayout()).putWithBatch(
           batchOperation, openKeyNameToUpdate, openKeyToUpdate);
+    }
+  }
+
+  protected void addBucketForkTombstoneToBatch(
+      OMMetadataManager omMetadataManager, BatchOperation batchOperation)
+      throws IOException {
+    if (bucketForkTombstoneInfo != null) {
+      omMetadataManager.getBucketForkTombstoneTable().putWithBatch(
+          batchOperation, bucketForkTombstoneInfo.getTableKey(),
+          bucketForkTombstoneInfo);
     }
   }
 

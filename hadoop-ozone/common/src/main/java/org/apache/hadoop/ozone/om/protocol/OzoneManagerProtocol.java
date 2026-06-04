@@ -29,11 +29,13 @@ import org.apache.hadoop.ozone.OzoneAcl;
 import org.apache.hadoop.ozone.om.IOmMetadataReader;
 import org.apache.hadoop.ozone.om.OMConfigKeys;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.DBUpdates;
 import org.apache.hadoop.ozone.om.helpers.DeleteTenantState;
 import org.apache.hadoop.ozone.om.helpers.ErrorInfo;
 import org.apache.hadoop.ozone.om.helpers.KeyInfoWithVolumeContext;
 import org.apache.hadoop.ozone.om.helpers.LeaseKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.ListBucketForksResponse;
 import org.apache.hadoop.ozone.om.helpers.ListOpenFilesResult;
 import org.apache.hadoop.ozone.om.helpers.OmBucketArgs;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
@@ -707,6 +709,64 @@ public interface OzoneManagerProtocol
    */
   default String createSnapshot(String volumeName,
       String bucketName, String snapshotName) throws IOException {
+    throw new UnsupportedOperationException("OzoneManager does not require " +
+        "this to be implemented");
+  }
+
+  /**
+   * Create bucket fork.
+   * @param sourceVolumeName source volume name
+   * @param sourceBucketName source bucket name
+   * @param targetVolumeName target volume name
+   * @param targetBucketName target bucket name
+   * @param baseSnapshotName base snapshot name
+   * @return bucket fork metadata
+   * @throws IOException
+   */
+  default BucketForkInfo createBucketFork(String sourceVolumeName,
+      String sourceBucketName, String targetVolumeName, String targetBucketName,
+      String baseSnapshotName) throws IOException {
+    throw new UnsupportedOperationException("OzoneManager does not require " +
+        "this to be implemented");
+  }
+
+  /**
+   * Delete bucket fork.
+   * @param volumeName volume name
+   * @param bucketName bucket name
+   * @throws IOException
+   */
+  default void deleteBucketFork(String volumeName, String bucketName)
+      throws IOException {
+    throw new UnsupportedOperationException("OzoneManager does not require " +
+        "this to be implemented");
+  }
+
+  /**
+   * Returns bucket fork info.
+   * @param volumeName volume name
+   * @param bucketName bucket name
+   * @return bucket fork metadata
+   * @throws IOException
+   */
+  default BucketForkInfo getBucketForkInfo(String volumeName,
+      String bucketName) throws IOException {
+    throw new UnsupportedOperationException("OzoneManager does not require " +
+        "this to be implemented");
+  }
+
+  /**
+   * List bucket forks in a volume.
+   * @param volumeName volume name
+   * @param bucketNamePrefix bucket name prefix to match
+   * @param prevBucketName forks will be listed after this bucket name
+   * @param maxListResult max number of forks to return
+   * @return list bucket forks response
+   * @throws IOException
+   */
+  default ListBucketForksResponse listBucketForks(String volumeName,
+      String bucketNamePrefix, String prevBucketName, int maxListResult)
+      throws IOException {
     throw new UnsupportedOperationException("OzoneManager does not require " +
         "this to be implemented");
   }

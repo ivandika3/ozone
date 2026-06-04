@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.ozone.om.response.key;
 
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.BUCKET_FORK_TOMBSTONE_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.KEY_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.SNAPSHOT_RENAMED_TABLE;
 
@@ -24,6 +25,7 @@ import jakarta.annotation.Nonnull;
 import java.io.IOException;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.request.OMClientRequestUtils;
@@ -33,12 +35,15 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRespo
 /**
  * Response for RenameKey request.
  */
-@CleanupTableInfo(cleanupTables = {KEY_TABLE, SNAPSHOT_RENAMED_TABLE})
+@CleanupTableInfo(cleanupTables = {
+    KEY_TABLE, BUCKET_FORK_TOMBSTONE_TABLE, SNAPSHOT_RENAMED_TABLE
+})
 public class OMKeyRenameResponse extends OmKeyResponse {
 
   private String fromKeyName;
   private String toKeyName;
   private OmKeyInfo renameKeyInfo;
+  private BucketForkTombstoneInfo bucketForkTombstoneInfo;
 
   public OMKeyRenameResponse(@Nonnull OMResponse omResponse,
       String fromKeyName, String toKeyName, @Nonnull OmKeyInfo renameKeyInfo) {
@@ -51,10 +56,19 @@ public class OMKeyRenameResponse extends OmKeyResponse {
   public OMKeyRenameResponse(@Nonnull OMResponse omResponse, String fromKeyName,
       String toKeyName, @Nonnull OmKeyInfo renameKeyInfo,
       BucketLayout bucketLayout) {
+    this(omResponse, fromKeyName, toKeyName, renameKeyInfo, null,
+        bucketLayout);
+  }
+
+  public OMKeyRenameResponse(@Nonnull OMResponse omResponse, String fromKeyName,
+      String toKeyName, @Nonnull OmKeyInfo renameKeyInfo,
+      BucketForkTombstoneInfo bucketForkTombstoneInfo,
+      BucketLayout bucketLayout) {
     super(omResponse, bucketLayout);
     this.fromKeyName = fromKeyName;
     this.toKeyName = toKeyName;
     this.renameKeyInfo = renameKeyInfo;
+    this.bucketForkTombstoneInfo = bucketForkTombstoneInfo;
   }
 
   /**
@@ -80,6 +94,11 @@ public class OMKeyRenameResponse extends OmKeyResponse {
         .putWithBatch(batchOperation,
             omMetadataManager.getOzoneKey(volumeName, bucketName, toKeyName),
             renameKeyInfo);
+    if (bucketForkTombstoneInfo != null) {
+      omMetadataManager.getBucketForkTombstoneTable().putWithBatch(
+          batchOperation, bucketForkTombstoneInfo.getTableKey(),
+          bucketForkTombstoneInfo);
+    }
 
     // Check if the bucket is in snapshot scope, if yes
     // add the key to snapshotRenamedTable.

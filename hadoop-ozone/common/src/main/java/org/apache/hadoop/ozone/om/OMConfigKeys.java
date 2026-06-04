@@ -165,6 +165,9 @@ public final class OMConfigKeys {
       "ozone.om.snapshot.rocksdb.metrics.enabled";
   public static final boolean
       OZONE_OM_SNAPSHOT_ROCKSDB_METRICS_ENABLED_DEFAULT = false;
+  public static final String OZONE_OM_BUCKET_FORK_ENABLED =
+      "ozone.om.bucket.fork.enabled";
+  public static final boolean OZONE_OM_BUCKET_FORK_ENABLED_DEFAULT = false;
 
   public static final String OZONE_OM_SNAPSHOT_DIRECTORY_METRICS_UPDATE_INTERVAL =
       "ozone.om.snapshot.directory.metrics.update.interval";

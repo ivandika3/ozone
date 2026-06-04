@@ -27,6 +27,7 @@ import java.util.Objects;
 import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
 import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
 import org.apache.hadoop.ozone.audit.OMAction;
+import org.apache.hadoop.ozone.om.BucketForkManager;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OMMetrics;
 import org.apache.hadoop.ozone.om.OzoneManager;
@@ -124,7 +125,14 @@ public class S3DeleteObjectTaggingRequest extends OMKeyRequest {
       OmKeyInfo omKeyInfo =
           omMetadataManager.getKeyTable(getBucketLayout()).get(dbOzoneKey);
       if (omKeyInfo == null) {
-        throw new OMException("Key not found", KEY_NOT_FOUND);
+        omKeyInfo = new BucketForkManager(omMetadataManager)
+            .getForkBaseKeyForCopyOnWrite(ozoneManager, volumeName,
+                bucketName, keyName,
+                ozoneManager.getObjectIdFromTxId(trxnLogIndex),
+                trxnLogIndex);
+        if (omKeyInfo == null) {
+          throw new OMException("Key not found", KEY_NOT_FOUND);
+        }
       }
 
       // Clear / delete the tags

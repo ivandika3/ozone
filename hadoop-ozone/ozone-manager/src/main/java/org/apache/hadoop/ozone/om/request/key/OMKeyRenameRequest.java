@@ -27,16 +27,22 @@ import java.util.Objects;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
 import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
+import org.apache.hadoop.ozone.ClientVersion;
 import org.apache.hadoop.ozone.OmUtils;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.audit.AuditLogger;
 import org.apache.hadoop.ozone.audit.OMAction;
+import org.apache.hadoop.ozone.om.BucketForkManager;
+import org.apache.hadoop.ozone.om.IOmMetadataReader;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OMMetrics;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.execution.flowcontrol.ExecutionContext;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
+import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.request.util.OmResponseUtil;
 import org.apache.hadoop.ozone.om.request.validation.RequestFeatureValidator;
@@ -55,6 +61,7 @@ import org.apache.hadoop.ozone.request.validation.RequestProcessingPhase;
 import org.apache.hadoop.ozone.security.acl.IAccessAuthorizer;
 import org.apache.hadoop.ozone.security.acl.OzoneObj;
 import org.apache.hadoop.util.Time;
+import org.apache.ratis.util.function.UncheckedAutoCloseableSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -142,6 +149,7 @@ public class OMKeyRenameRequest extends OMKeyRequest {
     OMClientResponse omClientResponse = null;
     Exception exception = null;
     OmKeyInfo fromKeyValue = null;
+    BucketForkTombstoneInfo bucketForkTombstoneInfo = null;
     String toKey = null, fromKey = null;
     Result result = null;
     try {
@@ -168,9 +176,30 @@ public class OMKeyRenameRequest extends OMKeyRequest {
               OMException.ResultCodes.KEY_ALREADY_EXISTS);
       }
 
+      BucketForkManager bucketForkManager =
+          new BucketForkManager(omMetadataManager);
+      BucketForkInfo forkInfo = bucketForkManager.getActiveForkInfo(
+          volumeName, bucketName);
+      if (getForkBaseKeyInfo(ozoneManager, bucketForkManager, forkInfo,
+          volumeName, bucketName, toKeyName) != null) {
+        throw new OMException("Key already exists " + toKeyName,
+            OMException.ResultCodes.KEY_ALREADY_EXISTS);
+      }
+
       // fromKeyName should exist
       fromKeyValue =
           omMetadataManager.getKeyTable(getBucketLayout()).get(fromKey);
+      if (fromKeyValue == null) {
+        OmKeyInfo baseFromKeyValue = getForkBaseKeyInfo(ozoneManager,
+            bucketForkManager, forkInfo, volumeName, bucketName, fromKeyName);
+        if (baseFromKeyValue != null) {
+          fromKeyValue = forkOwnedCopy(baseFromKeyValue,
+              ozoneManager.getObjectIdFromTxId(trxnLogIndex), trxnLogIndex);
+          bucketForkTombstoneInfo = createKeyTombstoneInfo(forkInfo,
+              fromKeyName, baseFromKeyValue, keyArgs.getModificationTime(),
+              trxnLogIndex);
+        }
+      }
       if (fromKeyValue == null) {
           // TODO: Add support for renaming open key
         throw new OMException("Key not found " + fromKey, KEY_NOT_FOUND);
@@ -197,9 +226,16 @@ public class OMKeyRenameRequest extends OMKeyRequest {
       keyTable.addCacheEntry(new CacheKey<>(toKey),
           CacheValue.get(trxnLogIndex, fromKeyValue));
 
+      if (bucketForkTombstoneInfo != null) {
+        omMetadataManager.getBucketForkTombstoneTable().addCacheEntry(
+            new CacheKey<>(bucketForkTombstoneInfo.getTableKey()),
+            CacheValue.get(trxnLogIndex, bucketForkTombstoneInfo));
+      }
+
       omClientResponse = new OMKeyRenameResponse(omResponse
           .setRenameKeyResponse(RenameKeyResponse.newBuilder()).build(),
-          fromKeyName, toKeyName, fromKeyValue, getBucketLayout());
+          fromKeyName, toKeyName, fromKeyValue, bucketForkTombstoneInfo,
+          getBucketLayout());
 
       result = Result.SUCCESS;
     } catch (IOException | InvalidPathException ex) {
@@ -248,6 +284,57 @@ public class OMKeyRenameRequest extends OMKeyRequest {
     return auditMap;
   }
 
+  private OmKeyInfo getForkBaseKeyInfo(OzoneManager ozoneManager,
+      BucketForkManager bucketForkManager, BucketForkInfo forkInfo,
+      String volumeName, String bucketName, String keyName)
+      throws IOException {
+    if (forkInfo == null) {
+      return null;
+    }
+
+    OmKeyArgs targetArgs = new OmKeyArgs.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setKeyName(keyName)
+        .build();
+    try (UncheckedAutoCloseableSupplier<? extends IOmMetadataReader> snapshot =
+             ozoneManager.getOmSnapshotManager().getSnapshot(
+                 forkInfo.getBaseSnapshotId())) {
+      return bucketForkManager.lookupBaseKey(forkInfo, targetArgs,
+          snapshot.get());
+    } catch (OMException ex) {
+      if (ex.getResult() == KEY_NOT_FOUND) {
+        return null;
+      }
+      throw ex;
+    }
+  }
+
+  private OmKeyInfo forkOwnedCopy(OmKeyInfo baseKeyInfo, long forkObjectId,
+      long updateId) throws IOException {
+    OzoneManagerProtocolProtos.KeyInfo forkKeyProto =
+        baseKeyInfo.getProtobuf(ClientVersion.CURRENT_VERSION).toBuilder()
+            .setObjectID(forkObjectId)
+            .setUpdateID(updateId)
+            .build();
+    return OmKeyInfo.getFromProtobuf(forkKeyProto);
+  }
+
+  private BucketForkTombstoneInfo createKeyTombstoneInfo(
+      BucketForkInfo forkInfo, String logicalPath, OmKeyInfo baseKeyInfo,
+      long creationTime, long updateId) {
+    return BucketForkTombstoneInfo.newBuilder()
+        .setForkId(forkInfo.getForkId())
+        .setTargetVolumeName(forkInfo.getTargetVolumeName())
+        .setTargetBucketName(forkInfo.getTargetBucketName())
+        .setBaseSnapshotId(forkInfo.getBaseSnapshotId())
+        .setLogicalPath(logicalPath)
+        .setObjectId(baseKeyInfo.getObjectID())
+        .setCreationTime(creationTime)
+        .setUpdateId(updateId)
+        .setType(BucketForkTombstoneInfo.BucketForkTombstoneType.KEY)
+        .build();
+  }
 
   /**
    * Validates rename key requests.

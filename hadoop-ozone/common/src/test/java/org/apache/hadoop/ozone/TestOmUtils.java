@@ -384,4 +384,34 @@ public class TestOmUtils {
       }
     }
   }
+
+  @Test
+  public void testBucketForkRequestReadWriteClassification() {
+    String clientId = UUID.randomUUID().toString();
+    OMRequest getForkInfo = OMRequest.newBuilder()
+        .setCmdType(OzoneManagerProtocolProtos.Type.GetBucketForkInfo)
+        .setClientId(clientId)
+        .build();
+    OMRequest listForks = OMRequest.newBuilder()
+        .setCmdType(OzoneManagerProtocolProtos.Type.ListBucketForks)
+        .setClientId(clientId)
+        .build();
+    OMRequest createFork = OMRequest.newBuilder()
+        .setCmdType(OzoneManagerProtocolProtos.Type.CreateBucketFork)
+        .setClientId(clientId)
+        .build();
+    OMRequest deleteFork = OMRequest.newBuilder()
+        .setCmdType(OzoneManagerProtocolProtos.Type.DeleteBucketFork)
+        .setClientId(clientId)
+        .build();
+
+    assertTrue(OmUtils.isReadOnly(getForkInfo));
+    assertTrue(OmUtils.shouldSendToFollower(getForkInfo));
+    assertTrue(OmUtils.isReadOnly(listForks));
+    assertTrue(OmUtils.shouldSendToFollower(listForks));
+    assertFalse(OmUtils.isReadOnly(createFork));
+    assertFalse(OmUtils.shouldSendToFollower(createFork));
+    assertFalse(OmUtils.isReadOnly(deleteFork));
+    assertFalse(OmUtils.shouldSendToFollower(deleteFork));
+  }
 }

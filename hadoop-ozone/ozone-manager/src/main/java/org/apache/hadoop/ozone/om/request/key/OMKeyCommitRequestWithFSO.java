@@ -17,6 +17,7 @@
 
 package org.apache.hadoop.ozone.om.request.key;
 
+import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.FILE_NOT_FOUND;
 import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.KEY_ALREADY_CLOSED;
 import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.KEY_NOT_FOUND;
 import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.KEY_UNDER_LEASE_RECOVERY;
@@ -29,20 +30,28 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.hdds.utils.db.cache.CacheKey;
+import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.audit.AuditLogger;
 import org.apache.hadoop.ozone.audit.OMAction;
+import org.apache.hadoop.ozone.om.BucketForkManager;
+import org.apache.hadoop.ozone.om.IOmMetadataReader;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OMMetrics;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.execution.flowcontrol.ExecutionContext;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.KeyValueUtil;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmFSOFile;
+import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfo;
+import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
 import org.apache.hadoop.ozone.om.helpers.QuotaUtil;
 import org.apache.hadoop.ozone.om.helpers.RepeatedOmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.WithMetadata;
@@ -56,6 +65,7 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.KeyArgs
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMResponse;
 import org.apache.hadoop.util.Time;
+import org.apache.ratis.util.function.UncheckedAutoCloseableSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -248,8 +258,20 @@ public class OMKeyCommitRequestWithFSO extends OMKeyCommitRequest {
       omKeyInfo.setExpectedDataGeneration(null);
 
       long correctedSpace = omKeyInfo.getReplicatedSize();
+      ForkBaseCommitInfo forkBaseCommitInfo = null;
+      if (keyToDelete == null && !isHSync) {
+        forkBaseCommitInfo = getForkBaseCommitInfo(ozoneManager,
+            omMetadataManager, volumeName, bucketName, keyName, trxnLogIndex,
+            commitKeyArgs.getModificationTime());
+        if (forkBaseCommitInfo != null) {
+          correctedSpace -= forkBaseCommitInfo.getQuotaReplaced();
+        }
+      }
       // if keyToDelete isn't null, usedNamespace shouldn't check and increase.
-      if (keyToDelete != null && isSameHsyncKey) {
+      if (forkBaseCommitInfo != null) {
+        checkBucketQuotaInBytes(omMetadataManager, omBucketInfo,
+            correctedSpace);
+      } else if (keyToDelete != null && isSameHsyncKey) {
         correctedSpace -= keyToDelete.getReplicatedSize();
         checkBucketQuotaInBytes(omMetadataManager, omBucketInfo,
             correctedSpace);
@@ -302,7 +324,9 @@ public class OMKeyCommitRequestWithFSO extends OMKeyCommitRequest {
         checkBucketQuotaInBytes(omMetadataManager, omBucketInfo,
             correctedSpace);
       }
-      omBucketInfo.incrUsedNamespace(1L);
+      if (forkBaseCommitInfo == null) {
+        omBucketInfo.incrUsedNamespace(1L);
+      }
 
       // let the uncommitted blocks pretend as key's old version blocks
       // which will be deleted as RepeatedOmKeyInfo
@@ -344,12 +368,21 @@ public class OMKeyCommitRequestWithFSO extends OMKeyCommitRequest {
 
       OMFileRequest.addFileTableCacheEntry(omMetadataManager, dbFileKey,
               omKeyInfo, fileName, trxnLogIndex);
+      if (forkBaseCommitInfo != null) {
+        BucketForkTombstoneInfo tombstoneInfo =
+            forkBaseCommitInfo.getTombstoneInfo();
+        omMetadataManager.getBucketForkTombstoneTable().addCacheEntry(
+            new CacheKey<>(tombstoneInfo.getTableKey()),
+            CacheValue.get(trxnLogIndex, tombstoneInfo));
+      }
 
       omBucketInfo.incrUsedBytes(correctedSpace);
 
       omClientResponse = new OMKeyCommitResponseWithFSO(omResponse.build(),
           omKeyInfo, dbFileKey, dbOpenFileKey, omBucketInfo.copyObject(),
-          oldKeyVersionsToDeleteMap, volumeId, isHSync, newOpenKeyInfo, dbOpenKeyToDeleteKey, openKeyToDelete);
+          oldKeyVersionsToDeleteMap, volumeId, isHSync, newOpenKeyInfo,
+          dbOpenKeyToDeleteKey, openKeyToDelete, forkBaseCommitInfo == null
+          ? null : forkBaseCommitInfo.getTombstoneInfo());
 
       result = Result.SUCCESS;
     } catch (IOException | InvalidPathException ex) {
@@ -379,5 +412,30 @@ public class OMKeyCommitRequestWithFSO extends OMKeyCommitRequest {
     }
 
     return omClientResponse;
+  }
+
+  @Override
+  protected OmKeyInfo getForkBaseKeyInfoForCommit(
+      OzoneManager ozoneManager, BucketForkManager bucketForkManager,
+      BucketForkInfo forkInfo, String volumeName, String bucketName,
+      String keyName) throws IOException {
+    OmKeyArgs targetArgs = new OmKeyArgs.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setKeyName(keyName)
+        .build();
+    try (UncheckedAutoCloseableSupplier<? extends IOmMetadataReader> snapshot =
+             ozoneManager.getOmSnapshotManager().getSnapshot(
+                 forkInfo.getBaseSnapshotId())) {
+      OzoneFileStatus fileStatus =
+          bucketForkManager.lookupBaseFileStatus(forkInfo, targetArgs,
+              snapshot.get());
+      return fileStatus.getKeyInfo();
+    } catch (OMException ex) {
+      if (ex.getResult() == FILE_NOT_FOUND || ex.getResult() == KEY_NOT_FOUND) {
+        return null;
+      }
+      throw ex;
+    }
   }
 }

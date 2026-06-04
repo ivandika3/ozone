@@ -27,7 +27,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.RepeatedOmKeyInfo;
@@ -128,5 +130,39 @@ public class TestOMKeysDeleteResponse extends TestOMKeyResponse {
 
     }
 
+  }
+
+  @Test
+  public void testKeysDeleteResponseWritesForkTombstones() throws Exception {
+    OMResponse omResponse =
+        OMResponse.newBuilder().setCmdType(DeleteKeys).setStatus(OK)
+            .setSuccess(true)
+            .setDeleteKeysResponse(DeleteKeysResponse.newBuilder()
+                .setStatus(true)).build();
+    BucketForkTombstoneInfo tombstoneInfo =
+        BucketForkTombstoneInfo.newBuilder()
+            .setForkId(UUID.randomUUID())
+            .setTargetVolumeName(volumeName)
+            .setTargetBucketName(bucketName)
+            .setBaseSnapshotId(UUID.randomUUID())
+            .setLogicalPath("base-key")
+            .setObjectId(1024L)
+            .setCreationTime(100L)
+            .setUpdateId(200L)
+            .setType(BucketForkTombstoneInfo.BucketForkTombstoneType.KEY)
+            .build();
+
+    OMClientResponse omKeysDeleteResponse = new OMKeysDeleteResponse(
+        omResponse, Collections.emptyList(), omBucketInfo,
+        Collections.emptyMap(), Collections.singletonList(tombstoneInfo));
+
+    omKeysDeleteResponse.checkAndUpdateDB(omMetadataManager, batchOperation);
+
+    omMetadataManager.getStore().commitBatchOperation(batchOperation);
+
+    assertNotNull(omMetadataManager.getBucketForkTombstoneTable()
+        .get(tombstoneInfo.getTableKey()));
+    assertNull(omMetadataManager.getDeletedTable()
+        .get(tombstoneInfo.getTableKey()));
   }
 }

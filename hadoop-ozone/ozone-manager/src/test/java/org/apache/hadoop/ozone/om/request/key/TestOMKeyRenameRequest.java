@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import java.io.IOException;
 import java.util.UUID;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.request.OMRequestTestUtils;
 import org.apache.hadoop.ozone.om.response.OMClientResponse;
@@ -111,6 +112,53 @@ public class TestOMKeyRenameRequest extends TestOMKeyRequest {
 
     assertEquals(OzoneManagerProtocolProtos.Status.KEY_NOT_FOUND,
         omKeyRenameResponse.getOMResponse().getStatus());
+  }
+
+  @Test
+  public void testValidateAndUpdateCacheRenamesBaseVisibleForkKey()
+      throws Exception {
+    String sourceBucketName = bucketName + "-source";
+    String snapshotName = "snap";
+    UUID snapshotId = UUID.randomUUID();
+    long baseObjectId = 123L;
+    long forkObjectId = 999L;
+    keyName = fromKeyName;
+    setupBaseVisibleForkKey(sourceBucketName, snapshotName, snapshotId,
+        baseObjectId, forkObjectId);
+
+    String dbFromKey = omMetadataManager.getOzoneKey(volumeName, bucketName,
+        fromKeyName);
+    assertNull(omMetadataManager.getKeyTable(getBucketLayout()).get(dbFromKey));
+    assertNull(omMetadataManager.getKeyTable(getBucketLayout()).get(dbToKey));
+
+    OMRequest modifiedOmRequest = doPreExecute(createRenameKeyRequest(
+        volumeName, bucketName, fromKeyName, toKeyName));
+    OMKeyRenameRequest omKeyRenameRequest =
+        getOMKeyRenameRequest(modifiedOmRequest);
+
+    OMClientResponse omKeyRenameResponse =
+        omKeyRenameRequest.validateAndUpdateCache(ozoneManager, 100L);
+
+    assertEquals(OzoneManagerProtocolProtos.Status.OK,
+        omKeyRenameResponse.getOMResponse().getStatus());
+    assertNull(omMetadataManager.getKeyTable(getBucketLayout()).get(dbFromKey));
+
+    OmKeyInfo toKeyInfo =
+        omMetadataManager.getKeyTable(getBucketLayout()).get(dbToKey);
+    assertNotNull(toKeyInfo);
+    assertEquals(volumeName, toKeyInfo.getVolumeName());
+    assertEquals(bucketName, toKeyInfo.getBucketName());
+    assertEquals(toKeyName, toKeyInfo.getKeyName());
+    assertEquals(forkObjectId, toKeyInfo.getObjectID());
+
+    BucketForkTombstoneInfo tombstone = omMetadataManager
+        .getBucketForkTombstoneTable()
+        .get(BucketForkTombstoneInfo.getTableKey(volumeName, bucketName,
+            fromKeyName));
+    assertNotNull(tombstone);
+    assertEquals(fromKeyName, tombstone.getLogicalPath());
+    assertEquals(snapshotId, tombstone.getBaseSnapshotId());
+    assertEquals(100L, tombstone.getUpdateId());
   }
 
   @Test

@@ -32,20 +32,26 @@ import org.apache.hadoop.hdds.utils.db.cache.CacheValue;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.audit.AuditLogger;
 import org.apache.hadoop.ozone.audit.OMAction;
+import org.apache.hadoop.ozone.om.BucketForkManager;
+import org.apache.hadoop.ozone.om.IOmMetadataReader;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OMMetrics;
 import org.apache.hadoop.ozone.om.OMPerformanceMetrics;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.execution.flowcontrol.ExecutionContext;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkTombstoneInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
+import org.apache.hadoop.ozone.om.helpers.OmKeyArgs;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.OzoneFSUtils;
 import org.apache.hadoop.ozone.om.helpers.OzoneFileStatus;
 import org.apache.hadoop.ozone.om.request.file.OMFileRequest;
 import org.apache.hadoop.ozone.om.request.util.OmResponseUtil;
 import org.apache.hadoop.ozone.om.response.OMClientResponse;
+import org.apache.hadoop.ozone.om.response.key.OMKeyDeleteResponse;
 import org.apache.hadoop.ozone.om.response.key.OMKeyDeleteResponseWithFSO;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.DeleteKeyRequest;
@@ -54,6 +60,7 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMReque
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMResponse;
 import org.apache.hadoop.ozone.security.acl.IAccessAuthorizer;
 import org.apache.hadoop.util.Time;
+import org.apache.ratis.util.function.UncheckedAutoCloseableSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -114,87 +121,126 @@ public class OMKeyDeleteRequestWithFSO extends OMKeyDeleteRequest {
           ozoneManager.getDefaultReplicationConfig());
 
       if (keyStatus == null) {
+        ForkBaseDeleteInfo forkBaseDeleteInfo =
+            getForkBaseFileDeleteInfo(ozoneManager, omMetadataManager,
+                volumeName, bucketName, keyName, trxnLogIndex);
+        if (forkBaseDeleteInfo != null) {
+          BucketForkTombstoneInfo tombstoneInfo =
+              forkBaseDeleteInfo.getTombstoneInfo();
+          omBucketInfo = getBucketInfo(omMetadataManager, volumeName,
+              bucketName);
+          omBucketInfo.decrUsedBytes(forkBaseDeleteInfo.getQuotaReleased(),
+              false);
+          omBucketInfo.decrUsedNamespace(1L, false);
+          omMetadataManager.getBucketTable().addCacheEntry(
+              new CacheKey<>(omMetadataManager.getBucketKey(volumeName,
+                  bucketName)),
+              CacheValue.get(trxnLogIndex, omBucketInfo));
+          omMetadataManager.getBucketForkTombstoneTable().addCacheEntry(
+              new CacheKey<>(tombstoneInfo.getTableKey()),
+              CacheValue.get(trxnLogIndex, tombstoneInfo));
+          omClientResponse = new OMKeyDeleteResponse(omResponse
+              .setDeleteKeyResponse(DeleteKeyResponse.newBuilder()).build(),
+              tombstoneInfo, getBucketLayout(), omBucketInfo.copyObject());
+          result = Result.SUCCESS;
+          long endNanosDeleteKeySuccessLatencyNs = Time.monotonicNowNanos();
+          perfMetrics.setDeleteKeySuccessLatencyNs(
+              endNanosDeleteKeySuccessLatencyNs - startNanos);
+        }
+      }
+
+      if (keyStatus == null && omClientResponse == null) {
         throw new OMException("Key not found. Key:" + keyName, KEY_NOT_FOUND);
       }
 
-      OmKeyInfo omKeyInfo = keyStatus.getKeyInfo();
-      // New key format for the fileTable & dirTable.
-      // For example, the user given key path is '/a/b/c/d/e/file1', then in DB
-      // keyName field stores only the leaf node name, which is 'file1'.
-      String fileName = OzoneFSUtils.getFileName(keyName);
-      omKeyInfo.setKeyName(fileName);
+      if (keyStatus != null) {
+        OmKeyInfo omKeyInfo = keyStatus.getKeyInfo();
+        // New key format for the fileTable & dirTable.
+        // For example, the user given key path is '/a/b/c/d/e/file1', then in
+        // DB keyName field stores only the leaf node name, which is 'file1'.
+        String fileName = OzoneFSUtils.getFileName(keyName);
+        omKeyInfo.setKeyName(fileName);
 
-      // Set the UpdateID to current transactionLogIndex
-      omKeyInfo = omKeyInfo.toBuilder()
-          .setUpdateID(trxnLogIndex)
-          .build();
+        // Set the UpdateID to current transactionLogIndex
+        omKeyInfo = omKeyInfo.toBuilder()
+            .setUpdateID(trxnLogIndex)
+            .build();
 
-      final long volumeId = omMetadataManager.getVolumeId(volumeName);
-      final long bucketId = omMetadataManager.getBucketId(volumeName,
-              bucketName);
-      String ozonePathKey = omMetadataManager.getOzonePathKey(volumeId,
-              bucketId, omKeyInfo.getParentObjectID(),
-              omKeyInfo.getFileName());
-      OmKeyInfo deletedOpenKeyInfo = null;
+        final long volumeId = omMetadataManager.getVolumeId(volumeName);
+        final long bucketId = omMetadataManager.getBucketId(volumeName,
+                bucketName);
+        String ozonePathKey = omMetadataManager.getOzonePathKey(volumeId,
+                bucketId, omKeyInfo.getParentObjectID(),
+                omKeyInfo.getFileName());
+        OmKeyInfo deletedOpenKeyInfo = null;
 
-      if (keyStatus.isDirectory()) {
-        // Check if there are any sub path exists under the user requested path
-        if (!recursive &&
-            OMFileRequest.hasChildren(omKeyInfo, omMetadataManager)) {
-          throw new OMException("Directory is not empty. Key:" + keyName,
-                  DIRECTORY_NOT_EMPTY);
-        }
+        if (keyStatus.isDirectory()) {
+          // Check if there are any sub path exists under the requested path.
+          if (!recursive &&
+              OMFileRequest.hasChildren(omKeyInfo, omMetadataManager)) {
+            throw new OMException("Directory is not empty. Key:" + keyName,
+                    DIRECTORY_NOT_EMPTY);
+          }
 
-        // Update dir cache.
-        omMetadataManager.getDirectoryTable().addCacheEntry(
-                new CacheKey<>(ozonePathKey),
-                CacheValue.get(trxnLogIndex));
-      } else {
-        // Update table cache.
-        omMetadataManager.getKeyTable(getBucketLayout()).addCacheEntry(
-                new CacheKey<>(ozonePathKey),
-                CacheValue.get(trxnLogIndex));
-      }
-
-      omBucketInfo = getBucketInfo(omMetadataManager, volumeName, bucketName);
-
-      long quotaReleased = sumBlockLengths(omKeyInfo);
-      // Empty entries won't be added to deleted table so this key shouldn't get added to snapshotUsed space.
-      boolean isKeyNonEmpty = !OmKeyInfo.isKeyEmpty(omKeyInfo);
-      omBucketInfo.decrUsedBytes(quotaReleased, isKeyNonEmpty);
-      omBucketInfo.decrUsedNamespace(1L, isKeyNonEmpty);
-
-      // If omKeyInfo has hsync metadata, delete its corresponding open key as well
-      String dbOpenKey = null;
-      String hsyncClientId = omKeyInfo.getMetadata().get(OzoneConsts.HSYNC_CLIENT_ID);
-      if (hsyncClientId != null) {
-        Table<String, OmKeyInfo> openKeyTable = omMetadataManager.getOpenKeyTable(getBucketLayout());
-        long parentId = omKeyInfo.getParentObjectID();
-        dbOpenKey = omMetadataManager.getOpenFileName(volumeId, bucketId, parentId, fileName, hsyncClientId);
-        OmKeyInfo openKeyInfo = openKeyTable.get(dbOpenKey);
-        if (openKeyInfo != null) {
-          openKeyInfo = openKeyInfo.withMetadataMutations(
-              metadata -> metadata.put(DELETED_HSYNC_KEY, "true"));
-          openKeyTable.addCacheEntry(dbOpenKey, openKeyInfo, trxnLogIndex);
-          deletedOpenKeyInfo = openKeyInfo;
+          // Update dir cache.
+          omMetadataManager.getDirectoryTable().addCacheEntry(
+                  new CacheKey<>(ozonePathKey),
+                  CacheValue.get(trxnLogIndex));
         } else {
-          LOG.warn("Potentially inconsistent DB state: open key not found with dbOpenKey '{}'", dbOpenKey);
+          // Update table cache.
+          omMetadataManager.getKeyTable(getBucketLayout()).addCacheEntry(
+                  new CacheKey<>(ozonePathKey),
+                  CacheValue.get(trxnLogIndex));
         }
+
+        omBucketInfo = getBucketInfo(omMetadataManager, volumeName, bucketName);
+
+        long quotaReleased = sumBlockLengths(omKeyInfo);
+        // Empty entries won't be added to deleted table so this key shouldn't
+        // get added to snapshotUsed space.
+        boolean isKeyNonEmpty = !OmKeyInfo.isKeyEmpty(omKeyInfo);
+        omBucketInfo.decrUsedBytes(quotaReleased, isKeyNonEmpty);
+        omBucketInfo.decrUsedNamespace(1L, isKeyNonEmpty);
+
+        // If omKeyInfo has hsync metadata, delete its corresponding open key
+        // as well.
+        String hsyncClientId = omKeyInfo.getMetadata()
+            .get(OzoneConsts.HSYNC_CLIENT_ID);
+        if (hsyncClientId != null) {
+          Table<String, OmKeyInfo> openKeyTable =
+              omMetadataManager.getOpenKeyTable(getBucketLayout());
+          long parentId = omKeyInfo.getParentObjectID();
+          String dbOpenKey = omMetadataManager.getOpenFileName(volumeId,
+              bucketId, parentId, fileName, hsyncClientId);
+          OmKeyInfo openKeyInfo = openKeyTable.get(dbOpenKey);
+          if (openKeyInfo != null) {
+            openKeyInfo = openKeyInfo.withMetadataMutations(
+                metadata -> metadata.put(DELETED_HSYNC_KEY, "true"));
+            openKeyTable.addCacheEntry(dbOpenKey, openKeyInfo, trxnLogIndex);
+            deletedOpenKeyInfo = openKeyInfo;
+          } else {
+            LOG.warn("Potentially inconsistent DB state: open key not found "
+                + "with dbOpenKey '{}'", dbOpenKey);
+          }
+        }
+
+        if (keyStatus.isFile()) {
+          auditMap.put(OzoneConsts.DATA_SIZE,
+              String.valueOf(omKeyInfo.getDataSize()));
+          auditMap.put(OzoneConsts.REPLICATION_CONFIG,
+              omKeyInfo.getReplicationConfig().toString());
+        }
+
+        omClientResponse = new OMKeyDeleteResponseWithFSO(omResponse
+            .setDeleteKeyResponse(DeleteKeyResponse.newBuilder()).build(),
+            keyName, omKeyInfo, omBucketInfo.copyObject(),
+            keyStatus.isDirectory(), volumeId, deletedOpenKeyInfo);
+
+        result = Result.SUCCESS;
+        long endNanosDeleteKeySuccessLatencyNs = Time.monotonicNowNanos();
+        perfMetrics.setDeleteKeySuccessLatencyNs(
+            endNanosDeleteKeySuccessLatencyNs - startNanos);
       }
-
-      if (keyStatus.isFile()) {
-        auditMap.put(OzoneConsts.DATA_SIZE, String.valueOf(omKeyInfo.getDataSize()));
-        auditMap.put(OzoneConsts.REPLICATION_CONFIG, omKeyInfo.getReplicationConfig().toString());
-      }
-
-      omClientResponse = new OMKeyDeleteResponseWithFSO(omResponse
-          .setDeleteKeyResponse(DeleteKeyResponse.newBuilder()).build(),
-          keyName, omKeyInfo,
-          omBucketInfo.copyObject(), keyStatus.isDirectory(), volumeId, deletedOpenKeyInfo);
-
-      result = Result.SUCCESS;
-      long endNanosDeleteKeySuccessLatencyNs = Time.monotonicNowNanos();
-      perfMetrics.setDeleteKeySuccessLatencyNs(endNanosDeleteKeySuccessLatencyNs - startNanos);
     } catch (IOException | InvalidPathException ex) {
       result = Result.FAILURE;
       exception = ex;
@@ -234,6 +280,55 @@ public class OMKeyDeleteRequestWithFSO extends OMKeyDeleteRequest {
     }
 
     return omClientResponse;
+  }
+
+  private ForkBaseDeleteInfo getForkBaseFileDeleteInfo(
+      OzoneManager ozoneManager, OMMetadataManager omMetadataManager,
+      String volumeName, String bucketName, String keyName,
+      long transactionLogIndex) throws IOException {
+    BucketForkManager bucketForkManager =
+        new BucketForkManager(omMetadataManager);
+    BucketForkInfo forkInfo =
+        bucketForkManager.getActiveForkInfo(volumeName, bucketName);
+    if (forkInfo == null) {
+      return null;
+    }
+
+    OmKeyArgs targetArgs = new OmKeyArgs.Builder()
+        .setVolumeName(volumeName)
+        .setBucketName(bucketName)
+        .setKeyName(keyName)
+        .build();
+    OzoneFileStatus baseFileStatus;
+    try (UncheckedAutoCloseableSupplier<? extends IOmMetadataReader>
+             snapshot = ozoneManager.getOmSnapshotManager().getSnapshot(
+                 forkInfo.getBaseSnapshotId())) {
+      baseFileStatus = bucketForkManager.lookupBaseFileStatus(forkInfo,
+          targetArgs, snapshot.get());
+    } catch (OMException ex) {
+      if (ex.getResult() == OMException.ResultCodes.FILE_NOT_FOUND
+          || ex.getResult() == OMException.ResultCodes.KEY_NOT_FOUND) {
+        return null;
+      }
+      throw ex;
+    }
+
+    BucketForkTombstoneInfo tombstoneInfo =
+        BucketForkTombstoneInfo.newBuilder()
+        .setForkId(forkInfo.getForkId())
+        .setTargetVolumeName(volumeName)
+        .setTargetBucketName(bucketName)
+        .setBaseSnapshotId(forkInfo.getBaseSnapshotId())
+        .setLogicalPath(keyName)
+        .setObjectId(baseFileStatus.getKeyInfo().getObjectID())
+        .setCreationTime(Time.now())
+        .setUpdateId(transactionLogIndex)
+        .setType(baseFileStatus.isDirectory()
+            ? BucketForkTombstoneInfo.BucketForkTombstoneType.DIRECTORY
+            : BucketForkTombstoneInfo.BucketForkTombstoneType.KEY)
+        .build();
+    return new ForkBaseDeleteInfo(tombstoneInfo,
+        sumBlockLengths(baseFileStatus.getKeyInfo()));
   }
 
   @Override

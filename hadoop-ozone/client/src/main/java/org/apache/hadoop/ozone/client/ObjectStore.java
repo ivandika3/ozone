@@ -35,8 +35,10 @@ import org.apache.hadoop.ozone.OzoneConfigKeys;
 import org.apache.hadoop.ozone.OzoneFsServerDefaults;
 import org.apache.hadoop.ozone.client.protocol.ClientProtocol;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.DeleteTenantState;
+import org.apache.hadoop.ozone.om.helpers.ListBucketForksResponse;
 import org.apache.hadoop.ozone.om.helpers.OmVolumeArgs;
 import org.apache.hadoop.ozone.om.helpers.S3SecretValue;
 import org.apache.hadoop.ozone.om.helpers.S3VolumeContext;
@@ -564,6 +566,60 @@ public class ObjectStore {
   }
 
   /**
+   * Create bucket fork.
+   * @param sourceVolumeName source volume name
+   * @param sourceBucketName source bucket name
+   * @param targetVolumeName target volume name
+   * @param targetBucketName target bucket name
+   * @param baseSnapshotName base snapshot name
+   * @return bucket fork metadata
+   * @throws IOException
+   */
+  public BucketForkInfo createBucketFork(String sourceVolumeName,
+      String sourceBucketName, String targetVolumeName, String targetBucketName,
+      String baseSnapshotName) throws IOException {
+    return proxy.createBucketFork(sourceVolumeName, sourceBucketName,
+        targetVolumeName, targetBucketName, baseSnapshotName);
+  }
+
+  /**
+   * Delete bucket fork.
+   * @param volumeName volume name
+   * @param bucketName bucket name
+   * @throws IOException
+   */
+  public void deleteBucketFork(String volumeName, String bucketName)
+      throws IOException {
+    proxy.deleteBucketFork(volumeName, bucketName);
+  }
+
+  /**
+   * Returns bucket fork info.
+   * @param volumeName volume name
+   * @param bucketName bucket name
+   * @return bucket fork metadata
+   * @throws IOException
+   */
+  public BucketForkInfo getBucketForkInfo(String volumeName, String bucketName)
+      throws IOException {
+    return proxy.getBucketForkInfo(volumeName, bucketName);
+  }
+
+  /**
+   * List bucket forks in a volume.
+   * @param volumeName volume name
+   * @param bucketNamePrefix bucket name prefix to match
+   * @param prevBucketName forks will be listed after this bucket name
+   * @return an iterator of bucket fork metadata.
+   * @throws IOException
+   */
+  public Iterator<BucketForkInfo> listBucketForks(String volumeName,
+      String bucketNamePrefix, String prevBucketName) throws IOException {
+    return new BucketForkIterator(volumeName, bucketNamePrefix,
+        prevBucketName);
+  }
+
+  /**
    * Rename snapshot.
    *
    * @param volumeName vol to be used
@@ -669,6 +725,54 @@ public class ObjectStore {
           proxy.listSnapshot(volumeName, bucketName, snapshotPrefix, startSnapshot, listCacheSize);
       currentIterator = response.getSnapshotInfos().stream().map(OzoneSnapshot::fromSnapshotInfo).iterator();
       lastSnapshot = response.getLastSnapshot();
+    }
+  }
+
+  /**
+   * An Iterator to iterate over {@link BucketForkInfo} list.
+   */
+  private final class BucketForkIterator implements Iterator<BucketForkInfo> {
+
+    private final String volumeName;
+    private final String bucketNamePrefix;
+    private String lastBucketName = null;
+
+    private Iterator<BucketForkInfo> currentIterator;
+
+    BucketForkIterator(String volumeName, String bucketNamePrefix,
+        String prevBucketName) throws IOException {
+      this.volumeName = volumeName;
+      this.bucketNamePrefix = bucketNamePrefix;
+      getNextListOfBucketForks(prevBucketName);
+    }
+
+    @Override
+    public boolean hasNext() {
+      if (!currentIterator.hasNext()
+          && StringUtils.isNotEmpty(lastBucketName)) {
+        try {
+          getNextListOfBucketForks(lastBucketName);
+        } catch (IOException e) {
+          LOG.error("Error retrieving next batch of list results", e);
+        }
+      }
+      return currentIterator.hasNext();
+    }
+
+    @Override
+    public BucketForkInfo next() {
+      if (hasNext()) {
+        return currentIterator.next();
+      }
+      throw new NoSuchElementException();
+    }
+
+    private void getNextListOfBucketForks(String startBucketName)
+        throws IOException {
+      ListBucketForksResponse response = proxy.listBucketForks(volumeName,
+          bucketNamePrefix, startBucketName, listCacheSize);
+      currentIterator = response.getBucketForkInfos().iterator();
+      lastBucketName = response.getLastBucketName();
     }
   }
 

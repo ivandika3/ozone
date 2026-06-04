@@ -58,12 +58,14 @@ import org.apache.hadoop.ozone.ClientVersion;
 import org.apache.hadoop.ozone.OzoneAcl;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
 import org.apache.hadoop.ozone.om.helpers.BasicOmKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.BucketForkInfo;
 import org.apache.hadoop.ozone.om.helpers.DBUpdates;
 import org.apache.hadoop.ozone.om.helpers.DeleteTenantState;
 import org.apache.hadoop.ozone.om.helpers.ErrorInfo;
 import org.apache.hadoop.ozone.om.helpers.KeyInfoWithVolumeContext;
 import org.apache.hadoop.ozone.om.helpers.KeyValueUtil;
 import org.apache.hadoop.ozone.om.helpers.LeaseKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.ListBucketForksResponse;
 import org.apache.hadoop.ozone.om.helpers.ListKeysLightResult;
 import org.apache.hadoop.ozone.om.helpers.ListKeysResult;
 import org.apache.hadoop.ozone.om.helpers.ListOpenFilesResult;
@@ -108,6 +110,7 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.CancelP
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.CancelPrepareResponse;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.CheckVolumeAccessRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.CommitKeyRequest;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.CreateBucketForkRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.CreateBucketRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.CreateDirectoryRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.CreateFileRequest;
@@ -119,6 +122,7 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.CreateT
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.CreateVolumeRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.DBUpdatesRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.DBUpdatesResponse;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.DeleteBucketForkRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.DeleteBucketRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.DeleteKeyArgs;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.DeleteKeyRequest;
@@ -136,6 +140,7 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.Finaliz
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.FinalizeUpgradeResponse;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.GetAclRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.GetAclResponse;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.GetBucketForkInfoRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.GetDelegationTokenResponseProto;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.GetFileStatusRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.GetFileStatusResponse;
@@ -152,6 +157,7 @@ import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.InfoBuc
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.InfoVolumeRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.InfoVolumeResponse;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.KeyArgs;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.ListBucketForksRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.ListBucketsRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.ListBucketsResponse;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.ListKeysLightResponse;
@@ -1270,6 +1276,103 @@ public final class OzoneManagerProtocolClientSideTranslatorPB
     SnapshotInfo snapshotInfo = SnapshotInfo.getFromProtobuf(
         omResponse.getCreateSnapshotResponse().getSnapshotInfo());
     return snapshotInfo.getName();
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public BucketForkInfo createBucketFork(String sourceVolumeName,
+      String sourceBucketName, String targetVolumeName, String targetBucketName,
+      String baseSnapshotName) throws IOException {
+    final CreateBucketForkRequest.Builder requestBuilder =
+        CreateBucketForkRequest.newBuilder()
+            .setSourceVolumeName(sourceVolumeName)
+            .setSourceBucketName(sourceBucketName)
+            .setTargetVolumeName(targetVolumeName)
+            .setTargetBucketName(targetBucketName);
+    if (!StringUtils.isBlank(baseSnapshotName)) {
+      requestBuilder.setBaseSnapshotName(baseSnapshotName);
+    }
+
+    final OMRequest omRequest = createOMRequest(Type.CreateBucketFork)
+        .setCreateBucketForkRequest(requestBuilder)
+        .build();
+    final OMResponse omResponse = submitRequest(omRequest);
+    handleError(omResponse);
+    return BucketForkInfo.getFromProtobuf(
+        omResponse.getCreateBucketForkResponse().getBucketForkInfo());
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public void deleteBucketFork(String volumeName, String bucketName)
+      throws IOException {
+    final DeleteBucketForkRequest.Builder requestBuilder =
+        DeleteBucketForkRequest.newBuilder()
+            .setVolumeName(volumeName)
+            .setBucketName(bucketName);
+
+    final OMRequest omRequest = createOMRequest(Type.DeleteBucketFork)
+        .setDeleteBucketForkRequest(requestBuilder)
+        .build();
+    final OMResponse omResponse = submitRequest(omRequest);
+    handleError(omResponse);
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public BucketForkInfo getBucketForkInfo(String volumeName, String bucketName)
+      throws IOException {
+    final GetBucketForkInfoRequest.Builder requestBuilder =
+        GetBucketForkInfoRequest.newBuilder()
+            .setVolumeName(volumeName)
+            .setBucketName(bucketName);
+
+    final OMRequest omRequest = createOMRequest(Type.GetBucketForkInfo)
+        .setGetBucketForkInfoRequest(requestBuilder)
+        .build();
+    final OMResponse omResponse = submitRequest(omRequest);
+    handleError(omResponse);
+    return BucketForkInfo.getFromProtobuf(
+        omResponse.getGetBucketForkInfoResponse().getBucketForkInfo());
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public ListBucketForksResponse listBucketForks(String volumeName,
+      String bucketNamePrefix, String prevBucketName, int maxListResult)
+      throws IOException {
+    final ListBucketForksRequest.Builder requestBuilder =
+        ListBucketForksRequest.newBuilder()
+            .setVolumeName(volumeName)
+            .setMaxListResult(maxListResult);
+
+    if (bucketNamePrefix != null) {
+      requestBuilder.setBucketNamePrefix(bucketNamePrefix);
+    }
+    if (prevBucketName != null) {
+      requestBuilder.setPrevBucketName(prevBucketName);
+    }
+
+    final OMRequest omRequest = createOMRequest(Type.ListBucketForks)
+        .setListBucketForksRequest(requestBuilder)
+        .build();
+    final OMResponse omResponse = submitRequest(omRequest);
+    handleError(omResponse);
+    OzoneManagerProtocolProtos.ListBucketForksResponse response =
+        omResponse.getListBucketForksResponse();
+    List<BucketForkInfo> forkInfos = response.getBucketForkInfoList().stream()
+        .map(BucketForkInfo::getFromProtobuf)
+        .collect(Collectors.toList());
+    return new ListBucketForksResponse(forkInfos,
+        response.hasLastBucketName() ? response.getLastBucketName() : null);
   }
 
   /**
