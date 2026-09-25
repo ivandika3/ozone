@@ -30,7 +30,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.FullContainerReportLeaseProto;
 import org.apache.hadoop.hdds.scm.net.HostAndPort;
+import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.protocol.VersionResponse;
 import org.apache.hadoop.ozone.protocolPB.ReconDatanodeProtocolPB;
 import org.apache.hadoop.ozone.protocolPB.StorageContainerDatanodeProtocolClientSideTranslatorPB;
@@ -55,6 +57,7 @@ public class EndpointStateMachine
   private VersionResponse version;
   private ZonedDateTime lastSuccessfulHeartbeat;
   private boolean isPassive;
+  private FullContainerReportLeaseProto fullContainerReportLease;
   private final ExecutorService executorService;
 
   private static final String RECON_TYPE = "Recon";
@@ -111,6 +114,38 @@ public class EndpointStateMachine
    */
   public void setVersion(VersionResponse version) {
     this.version = version;
+  }
+
+  public boolean supportsFullContainerReportLease() {
+    return !isPassive && version != null
+        && Boolean.parseBoolean(version.getValue(
+            OzoneConsts.SCM_FCR_LEASE_SUPPORTED));
+  }
+
+  public boolean hasFullContainerReportLease() {
+    return fullContainerReportLease != null;
+  }
+
+  public void setFullContainerReportLease(
+      FullContainerReportLeaseProto lease) {
+    fullContainerReportLease = lease;
+  }
+
+  public FullContainerReportLeaseProto takeFullContainerReportLease() {
+    FullContainerReportLeaseProto lease = fullContainerReportLease;
+    fullContainerReportLease = null;
+    return lease;
+  }
+
+  public void clearFullContainerReportLease() {
+    fullContainerReportLease = null;
+  }
+
+  public void clearFullContainerReportLeaseIfStale(long term) {
+    if (hasFullContainerReportLease()
+        && term > fullContainerReportLease.getTerm()) {
+      clearFullContainerReportLease();
+    }
   }
 
   /**

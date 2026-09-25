@@ -45,6 +45,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -144,6 +145,7 @@ public class SCMNodeManager implements NodeManager, ContainerReplicaPendingOpsSu
       BiConsumer<DatanodeDetails, SCMCommand<?>>> sendCommandNotifyMap;
   private final NonWritableNodeFilter nonWritableNodeFilter;
   private final int numContainerPerVolume;
+  private Consumer<DatanodeDetails> datanodeRemovedHandler = ignored -> { };
 
   /**
    * Lock used to synchronize some operation in Node manager to ensure a
@@ -387,6 +389,7 @@ public class SCMNodeManager implements NodeManager, ContainerReplicaPendingOpsSu
         .addValue(OzoneConsts.SCM_ID,
             this.scmStorageConfig.getScmId())
         .addValue(OzoneConsts.CLUSTER_ID, this.scmStorageConfig.getClusterID())
+        .addValue(OzoneConsts.SCM_FCR_LEASE_SUPPORTED, Boolean.TRUE.toString())
         .build();
   }
 
@@ -2056,6 +2059,7 @@ public class SCMNodeManager implements NodeManager, ContainerReplicaPendingOpsSu
     try {
       NodeStatus nodeStatus = this.getNodeStatus(datanodeDetails);
       if (datanodeDetails.isDecommissioned() || nodeStatus.isDead()) {
+        datanodeRemovedHandler.accept(datanodeDetails);
         if (clusterMap.contains(datanodeDetails)) {
           clusterMap.remove(datanodeDetails);
         }
@@ -2069,5 +2073,11 @@ public class SCMNodeManager implements NodeManager, ContainerReplicaPendingOpsSu
     } finally {
       writeLock().unlock();
     }
+  }
+
+  @Override
+  public void setDatanodeRemovedHandler(
+      Consumer<DatanodeDetails> handler) {
+    datanodeRemovedHandler = Objects.requireNonNull(handler);
   }
 }

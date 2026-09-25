@@ -139,11 +139,17 @@ message SCMHeartbeatRequestProto {
   optional PipelineReportsProto pipelineReports = 8;
   optional LayoutVersionProto dataNodeLayoutVersion = 9;
   optional CommandQueueReportProto commandQueueReport = 10;
+  optional bool requestFullContainerReportLease = 11 [default = false];
 }
 
 message CommandQueueReportProto {
   repeated SCMCommandProto.Type command = 1;
   repeated uint32 count = 2;
+}
+
+message FullContainerReportLeaseProto {
+  required uint64 id = 1;
+  required int64 term = 2;
 }
 
 /*
@@ -156,6 +162,8 @@ message SCMHeartbeatResponseProto {
 
   // Same as term in SCMCommandProto
   optional int64 term = 3;
+  optional FullContainerReportLeaseProto fullContainerReportLease = 4;
+  optional bool fullContainerReportLeaseRejected = 5 [default = false];
 }
 
 message SCMNodeAddressList {
@@ -203,6 +211,8 @@ message MetadataStorageReportProto {
 
 message ContainerReportsProto {
   repeated ContainerReplicaProto reports = 1;
+  optional FullContainerReportLeaseProto fullContainerReportLease = 2;
+  optional bool fullContainerReportDeferred = 3 [default = false];
 }
 
 message IncrementalContainerReportProto {
