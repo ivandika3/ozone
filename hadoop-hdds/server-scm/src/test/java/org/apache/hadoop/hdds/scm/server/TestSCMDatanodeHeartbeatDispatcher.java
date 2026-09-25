@@ -36,6 +36,8 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.DatanodeID;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.CommandStatusReportsProto;
@@ -191,7 +193,8 @@ public class TestSCMDatanodeHeartbeatDispatcher {
     ContainerReportsProto report = ContainerReportsProto.getDefaultInstance();
     ContainerReportFromDatanode providedReport =
         new ContainerReportFromDatanode(datanode, report, false,
-            processed -> completed.set(!processed));
+            new TestContainerReportProcessingLifecycle(
+                () -> true, processed -> completed.set(!processed)));
     SCMHeartbeatRequestProto heartbeat = SCMHeartbeatRequestProto.newBuilder()
         .setDatanodeDetails(datanode.getProtoBufMessage())
         .setContainerReport(report)
@@ -222,7 +225,8 @@ public class TestSCMDatanodeHeartbeatDispatcher {
     ContainerReportsProto report = ContainerReportsProto.getDefaultInstance();
     ContainerReportFromDatanode providedReport =
         new ContainerReportFromDatanode(datanode, report, false,
-            processed -> completed.set(true));
+            new TestContainerReportProcessingLifecycle(
+                () -> true, processed -> completed.set(true)));
     SCMHeartbeatRequestProto heartbeat = SCMHeartbeatRequestProto.newBuilder()
         .setDatanodeDetails(datanode.getProtoBufMessage())
         .setContainerReport(report)
@@ -237,6 +241,28 @@ public class TestSCMDatanodeHeartbeatDispatcher {
     assertFalse(completed.get());
     providedReport.complete(true);
     assertTrue(completed.get());
+  }
+
+  private static final class TestContainerReportProcessingLifecycle
+      implements ContainerReportProcessingLifecycle {
+    private final BooleanSupplier processingPermit;
+    private final Consumer<Boolean> completion;
+
+    private TestContainerReportProcessingLifecycle(
+        BooleanSupplier processingPermit, Consumer<Boolean> completion) {
+      this.processingPermit = processingPermit;
+      this.completion = completion;
+    }
+
+    @Override
+    public boolean startProcessing() {
+      return processingPermit.getAsBoolean();
+    }
+
+    @Override
+    public void complete(boolean processed) {
+      completion.accept(processed);
+    }
   }
 
   /**
