@@ -80,7 +80,6 @@ import org.apache.hadoop.hdds.scm.events.SCMEvents;
 import org.apache.hadoop.hdds.scm.ha.SCMContext;
 import org.apache.hadoop.hdds.scm.ha.SCMNodeDetails;
 import org.apache.hadoop.hdds.scm.server.SCMDatanodeHeartbeatDispatcher.PipelineReportFromDatanode;
-import org.apache.hadoop.hdds.scm.server.SCMDatanodeHeartbeatDispatcher.ReportFromDatanode;
 import org.apache.hadoop.hdds.server.events.EventPublisher;
 import org.apache.hadoop.hdds.utils.HddsServerUtil;
 import org.apache.hadoop.hdds.utils.ProtocolMessageMetrics;
@@ -266,7 +265,7 @@ public class SCMDatanodeProtocolServer implements
                 datanodeDetails, containerReportsProto, true));
         eventPublisher.fireEvent(SCMEvents.NODE_REGISTRATION_CONT_REPORT,
             new NodeRegistrationContainerReport(datanodeDetails,
-                containerReportsProto));
+                ContainerReportsProto.getDefaultInstance()));
       }
       eventPublisher.fireEvent(PIPELINE_REPORT,
               new PipelineReportFromDatanode(datanodeDetails,
@@ -654,14 +653,28 @@ public class SCMDatanodeProtocolServer implements
   }
 
   /**
-   * Wrapper class for events with the datanode origin.
+   * Datanode details and container IDs for registration events.
    */
-  public static class NodeRegistrationContainerReport extends
-      ReportFromDatanode<ContainerReportsProto> {
+  public static class NodeRegistrationContainerReport {
+    private final DatanodeDetails datanodeDetails;
+    private final long[] containerIDs;
 
     public NodeRegistrationContainerReport(DatanodeDetails datanodeDetails,
         ContainerReportsProto report) {
-      super(datanodeDetails, report);
+      this.datanodeDetails = datanodeDetails;
+      int numContainers = report == null ? 0 : report.getReportsCount();
+      containerIDs = new long[numContainers];
+      for (int i = 0; i < numContainers; i++) {
+        containerIDs[i] = report.getReports(i).getContainerID();
+      }
+    }
+
+    public DatanodeDetails getDatanodeDetails() {
+      return datanodeDetails;
+    }
+
+    public long[] getContainerIDs() {
+      return containerIDs.clone();
     }
   }
 
