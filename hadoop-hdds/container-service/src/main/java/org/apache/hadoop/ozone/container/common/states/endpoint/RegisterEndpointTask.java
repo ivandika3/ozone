@@ -51,6 +51,7 @@ public final class RegisterEndpointTask implements
   private final OzoneContainer datanodeContainerManager;
   private StateContext stateContext;
   private final DatanodeVersionManager versionManager;
+  private final ConfigurationSource conf;
 
   /**
    * Creates a register endpoint task.
@@ -62,12 +63,13 @@ public final class RegisterEndpointTask implements
   @VisibleForTesting
   public RegisterEndpointTask(EndpointStateMachine rpcEndPoint,
       OzoneContainer ozoneContainer,
-      StateContext context) {
+      StateContext context, ConfigurationSource conf) {
     this.rpcEndPoint = rpcEndPoint;
     this.datanodeContainerManager = ozoneContainer;
     this.stateContext = context;
     this.datanodeDetails = context.getParent().getDatanodeDetails();
     this.versionManager = context.getParent().getVersionManager();
+    this.conf = conf;
   }
 
   /**
@@ -151,6 +153,9 @@ public final class RegisterEndpointTask implements
         }
         if (supportsFCRLease) {
           this.stateContext.putBackFullContainerReport(rpcEndPoint.getAddress());
+          HeartbeatEndpointTask heartbeatTask = new HeartbeatEndpointTask(rpcEndPoint, conf, stateContext);
+          rpcEndPoint.startRegistrationReport(heartbeatTask);
+          heartbeatTask.call();
         }
       }
     } catch (IOException ex) {
@@ -250,7 +255,7 @@ public final class RegisterEndpointTask implements
       }
 
       return new RegisterEndpointTask(this.endPointStateMachine,
-          this.container, this.context);
+          this.container, this.context, this.conf);
     }
   }
 }

@@ -18,11 +18,14 @@
 package org.apache.hadoop.ozone.container.common.states.datanode;
 
 import static org.apache.hadoop.hdds.HddsConfigKeys.HDDS_HEARTBEAT_INTERVAL;
+import static org.apache.hadoop.hdds.HddsConfigKeys.HDDS_INITIAL_HEARTBEAT_INTERVAL;
 import static org.apache.hadoop.ozone.container.common.statemachine.EndpointStateMachine.EndPointStates.SHUTDOWN;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -34,20 +37,26 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Delayed;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.hadoop.hdds.HDDSVersion;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.MockDatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.ContainerReportsProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.FullContainerReportLeaseProto;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.NodeReportProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.PipelineReportsProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.SCMCommandProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.SCMHeartbeatRequestProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.SCMHeartbeatResponseProto;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.SCMRegisteredResponseProto;
 import org.apache.hadoop.hdds.scm.net.HostAndPort;
 import org.apache.hadoop.hdfs.util.EnumCounters;
 import org.apache.hadoop.ozone.OzoneConsts;
@@ -59,11 +68,13 @@ import org.apache.hadoop.ozone.container.common.statemachine.EndpointStateMachin
 import org.apache.hadoop.ozone.container.common.statemachine.SCMConnectionManager;
 import org.apache.hadoop.ozone.container.common.statemachine.StateContext;
 import org.apache.hadoop.ozone.container.common.states.endpoint.VersionEndpointTask;
+import org.apache.hadoop.ozone.container.ozoneimpl.ContainerController;
 import org.apache.hadoop.ozone.container.ozoneimpl.OzoneContainer;
 import org.apache.hadoop.ozone.container.upgrade.DatanodeVersionManager;
 import org.apache.hadoop.ozone.protocol.VersionResponse;
 import org.apache.hadoop.ozone.protocolPB.StorageContainerDatanodeProtocolClientSideTranslatorPB;
 import org.apache.hadoop.util.Time;
+import org.apache.ozone.test.GenericTestUtils;
 import org.apache.ozone.test.GenericTestUtils.LogCapturer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -120,10 +131,348 @@ public class TestRunningDatanodeState {
     executorService.shutdown();
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void testRegistrationFcrRetriesUntilAccepted(boolean rejectFirstReport) throws Exception {
+    OzoneConfiguration conf = new OzoneConfiguration();
+    conf.setTimeDuration(HDDS_INITIAL_HEARTBEAT_INTERVAL, 50, TimeUnit.MILLISECONDS);
+    DatanodeStateMachine datanode = mock(DatanodeStateMachine.class);
+    StateContext context = registrationContext(conf, datanode);
+    SCMConnectionManager connections = mock(SCMConnectionManager.class);
+    StorageContainerDatanodeProtocolClientSideTranslatorPB scm =
+        mock(StorageContainerDatanodeProtocolClientSideTranslatorPB.class);
+    when(scm.register(any(), any(), any(), any(), any())).thenAnswer(invocation ->
+        SCMRegisteredResponseProto.newBuilder().setClusterID("cluster")
+            .setDatanodeUUID(datanode.getDatanodeDetails().getUuidString())
+            .setErrorCode(SCMRegisteredResponseProto.ErrorCode.success).build());
+    AtomicInteger requests = new AtomicInteger();
+    AtomicInteger reports = new AtomicInteger();
+    AtomicBoolean periodicReport = new AtomicBoolean();
+    CountDownLatch accepted = new CountDownLatch(1);
+    when(scm.sendHeartbeat(any())).thenAnswer(invocation -> {
+      SCMHeartbeatRequestProto request = invocation.getArgument(0);
+      SCMHeartbeatResponseProto.Builder response =
+          SCMHeartbeatResponseProto.newBuilder().setDatanodeUUID(request.getDatanodeDetails().getUuid()).setTerm(7);
+      if (request.getRequestFullContainerReportLease()) {
+        if (requests.incrementAndGet() > 1 && !periodicReport.get()) {
+          response.setFullContainerReportLease(FullContainerReportLeaseProto.newBuilder().setId(99).setTerm(7));
+        }
+      } else if (request.hasContainerReport()) {
+        if (reports.incrementAndGet() == 1 && rejectFirstReport) {
+          response.setFullContainerReportLeaseRejected(true);
+        } else {
+          accepted.countDown();
+        }
+      }
+      return response.build();
+    });
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try (EndpointStateMachine endpoint = new EndpointStateMachine(new HostAndPort("scm", 9861), scm, conf, "")) {
+      endpoint.setState(EndPointStates.REGISTER);
+      endpoint.setVersion(VersionResponse.newBuilder().setVersion(1)
+          .addValue(OzoneConsts.SCM_FCR_LEASE_SUPPORTED, Boolean.TRUE.toString()).build());
+      context.addEndpoint(endpoint.getAddress());
+      when(connections.getValues()).thenReturn(Collections.singletonList(endpoint));
+      RunningDatanodeState running = new RunningDatanodeState(conf, connections, context);
+
+      running.execute(executor);
+
+      assertThat(accepted.await(5, TimeUnit.SECONDS)).as("FCR accepted without another global cycle").isTrue();
+      endpoint.getExecutorService().submit(() -> { }).get(5, TimeUnit.SECONDS);
+      assertThat(requests.get()).isEqualTo(rejectFirstReport ? 3 : 2);
+      assertThat(reports.get()).isEqualTo(rejectFirstReport ? 2 : 1);
+      assertThat(context.isFullContainerReportReady(endpoint.getAddress())).isFalse();
+      assertThat(((ScheduledThreadPoolExecutor) endpoint.getExecutorService()).getQueue()).isEmpty();
+      verify(datanode, never()).triggerHeartbeat();
+      verify(datanode, never()).setNextHB(anyLong());
+
+      periodicReport.set(true);
+      context.putBackFullContainerReport(endpoint.getAddress());
+      running.execute(executor);
+      running.await(5, TimeUnit.SECONDS);
+      endpoint.getExecutorService().submit(() -> { }).get(5, TimeUnit.SECONDS);
+      assertThat(context.isFullContainerReportReady(endpoint.getAddress())).isTrue();
+      assertThat(((ScheduledThreadPoolExecutor) endpoint.getExecutorService()).getQueue()).isEmpty();
+    } finally {
+      executor.shutdownNow();
+    }
+  }
+
+  @Test
+  void testRegistrationFcrRetryUsesInitialHeartbeatIntervalAndStopsOnClose() throws Exception {
+    OzoneConfiguration conf = new OzoneConfiguration();
+    DatanodeStateMachine datanode = mock(DatanodeStateMachine.class);
+    StateContext context = registrationContext(conf, datanode);
+    SCMConnectionManager connections = mock(SCMConnectionManager.class);
+    StorageContainerDatanodeProtocolClientSideTranslatorPB scm =
+        mock(StorageContainerDatanodeProtocolClientSideTranslatorPB.class);
+    when(scm.register(any(), any(), any(), any(), any())).thenAnswer(invocation ->
+        SCMRegisteredResponseProto.newBuilder().setClusterID("cluster")
+            .setDatanodeUUID(datanode.getDatanodeDetails().getUuidString())
+            .setErrorCode(SCMRegisteredResponseProto.ErrorCode.success).build());
+    when(scm.sendHeartbeat(any())).thenAnswer(invocation ->
+        SCMHeartbeatResponseProto.newBuilder()
+            .setDatanodeUUID(datanode.getDatanodeDetails().getUuidString()).build());
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try (EndpointStateMachine endpoint = new EndpointStateMachine(new HostAndPort("scm", 9861), scm, conf, "")) {
+      endpoint.setState(EndPointStates.REGISTER);
+      endpoint.setVersion(VersionResponse.newBuilder().setVersion(1)
+          .addValue(OzoneConsts.SCM_FCR_LEASE_SUPPORTED, Boolean.TRUE.toString()).build());
+      context.addEndpoint(endpoint.getAddress());
+      when(connections.getValues()).thenReturn(Collections.singletonList(endpoint));
+      RunningDatanodeState running = new RunningDatanodeState(conf, connections, context);
+      long before = Time.monotonicNow();
+
+      running.execute(executor);
+      running.await(5, TimeUnit.SECONDS);
+      endpoint.getExecutorService().submit(() -> { }).get(5, TimeUnit.SECONDS);
+
+      verify(scm, times(1)).sendHeartbeat(any());
+      ScheduledThreadPoolExecutor endpointExecutor = (ScheduledThreadPoolExecutor) endpoint.getExecutorService();
+      assertThat(endpointExecutor.getQueue()).hasSize(1);
+      long after = Time.monotonicNow();
+      long delay = ((Delayed) endpointExecutor.getQueue().element()).getDelay(TimeUnit.MILLISECONDS);
+      assertThat(after + delay).isBetween(before + 1_990, after + 3_000);
+
+      endpoint.close();
+      assertThat(endpointExecutor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(endpointExecutor.getQueue()).isEmpty();
+      verify(scm, times(1)).sendHeartbeat(any());
+    } finally {
+      executor.shutdownNow();
+    }
+  }
+
+  @Test
+  void testRegistrationFcrCommunicationFailureRetainsNormalHeartbeatCadence() throws Exception {
+    OzoneConfiguration conf = new OzoneConfiguration();
+    conf.setTimeDuration(HDDS_INITIAL_HEARTBEAT_INTERVAL, 50, TimeUnit.MILLISECONDS);
+    DatanodeStateMachine datanode = mock(DatanodeStateMachine.class);
+    StateContext context = registrationContext(conf, datanode);
+    SCMConnectionManager connections = mock(SCMConnectionManager.class);
+    StorageContainerDatanodeProtocolClientSideTranslatorPB scm =
+        mock(StorageContainerDatanodeProtocolClientSideTranslatorPB.class);
+    when(scm.register(any(), any(), any(), any(), any())).thenAnswer(invocation ->
+        SCMRegisteredResponseProto.newBuilder().setClusterID("cluster")
+            .setDatanodeUUID(datanode.getDatanodeDetails().getUuidString())
+            .setErrorCode(SCMRegisteredResponseProto.ErrorCode.success).build());
+    when(scm.sendHeartbeat(any())).thenThrow(new IOException("SCM unavailable"));
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try (EndpointStateMachine endpoint = new EndpointStateMachine(new HostAndPort("scm", 9861), scm, conf, "")) {
+      endpoint.setState(EndPointStates.REGISTER);
+      endpoint.setVersion(VersionResponse.newBuilder().setVersion(1)
+          .addValue(OzoneConsts.SCM_FCR_LEASE_SUPPORTED, Boolean.TRUE.toString()).build());
+      context.addEndpoint(endpoint.getAddress());
+      when(connections.getValues()).thenReturn(Collections.singletonList(endpoint));
+      RunningDatanodeState running = new RunningDatanodeState(conf, connections, context);
+
+      running.execute(executor);
+      running.await(5, TimeUnit.SECONDS);
+      endpoint.getExecutorService().submit(() -> { }).get(5, TimeUnit.SECONDS);
+
+      verify(scm, times(1)).sendHeartbeat(any());
+      assertThat(endpoint.getMissedCount()).isEqualTo(1);
+      assertThat(context.isFullContainerReportReady(endpoint.getAddress())).isTrue();
+      assertThat(((ScheduledThreadPoolExecutor) endpoint.getExecutorService()).getQueue()).isEmpty();
+    } finally {
+      executor.shutdownNow();
+    }
+  }
+
+  @Test
+  void testRegistrationFcrRetryStopsWhenEndpointReregisters() throws Exception {
+    OzoneConfiguration conf = new OzoneConfiguration();
+    conf.setTimeDuration(HDDS_INITIAL_HEARTBEAT_INTERVAL, 1, TimeUnit.MINUTES);
+    DatanodeStateMachine datanode = mock(DatanodeStateMachine.class);
+    StateContext context = registrationContext(conf, datanode);
+    SCMConnectionManager connections = mock(SCMConnectionManager.class);
+    StorageContainerDatanodeProtocolClientSideTranslatorPB scm =
+        mock(StorageContainerDatanodeProtocolClientSideTranslatorPB.class);
+    when(scm.register(any(), any(), any(), any(), any())).thenAnswer(invocation ->
+        SCMRegisteredResponseProto.newBuilder().setClusterID("cluster")
+            .setDatanodeUUID(datanode.getDatanodeDetails().getUuidString())
+            .setErrorCode(SCMRegisteredResponseProto.ErrorCode.success).build());
+    when(scm.sendHeartbeat(any())).thenAnswer(invocation ->
+        SCMHeartbeatResponseProto.newBuilder()
+            .setDatanodeUUID(datanode.getDatanodeDetails().getUuidString()).build());
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try (EndpointStateMachine endpoint = new EndpointStateMachine(new HostAndPort("scm", 9861), scm, conf, "")) {
+      endpoint.setState(EndPointStates.REGISTER);
+      endpoint.setVersion(VersionResponse.newBuilder().setVersion(1)
+          .addValue(OzoneConsts.SCM_FCR_LEASE_SUPPORTED, Boolean.TRUE.toString()).build());
+      context.addEndpoint(endpoint.getAddress());
+      when(connections.getValues()).thenReturn(Collections.singletonList(endpoint));
+      RunningDatanodeState running = new RunningDatanodeState(conf, connections, context);
+      running.execute(executor);
+      running.await(5, TimeUnit.SECONDS);
+      endpoint.getExecutorService().submit(() -> { }).get(5, TimeUnit.SECONDS);
+      ScheduledThreadPoolExecutor endpointExecutor = (ScheduledThreadPoolExecutor) endpoint.getExecutorService();
+      assertThat(endpointExecutor.getQueue()).hasSize(1);
+
+      endpoint.setState(EndPointStates.GETVERSION);
+
+      assertThat(endpointExecutor.getQueue()).isEmpty();
+      verify(scm, times(1)).sendHeartbeat(any());
+    } finally {
+      executor.shutdownNow();
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void testQueuedRegistrationRetryIsCancelledOnEndpointChange(boolean close) throws Exception {
+    OzoneConfiguration conf = new OzoneConfiguration();
+    conf.setTimeDuration(HDDS_INITIAL_HEARTBEAT_INTERVAL, 500, TimeUnit.MILLISECONDS);
+    DatanodeStateMachine datanode = mock(DatanodeStateMachine.class);
+    StateContext context = registrationContext(conf, datanode);
+    SCMConnectionManager connections = mock(SCMConnectionManager.class);
+    StorageContainerDatanodeProtocolClientSideTranslatorPB scm =
+        mock(StorageContainerDatanodeProtocolClientSideTranslatorPB.class);
+    when(scm.register(any(), any(), any(), any(), any())).thenAnswer(invocation ->
+        SCMRegisteredResponseProto.newBuilder().setClusterID("cluster")
+            .setDatanodeUUID(datanode.getDatanodeDetails().getUuidString())
+            .setErrorCode(SCMRegisteredResponseProto.ErrorCode.success).build());
+    when(scm.sendHeartbeat(any())).thenAnswer(invocation ->
+        SCMHeartbeatResponseProto.newBuilder()
+            .setDatanodeUUID(datanode.getDatanodeDetails().getUuidString()).build());
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    CountDownLatch queued = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    try (EndpointStateMachine endpoint = new EndpointStateMachine(new HostAndPort("scm", 9861), scm, conf, "")) {
+      endpoint.setState(EndPointStates.REGISTER);
+      endpoint.setVersion(VersionResponse.newBuilder().setVersion(1)
+          .addValue(OzoneConsts.SCM_FCR_LEASE_SUPPORTED, Boolean.TRUE.toString()).build());
+      context.addEndpoint(endpoint.getAddress());
+      when(connections.getValues()).thenReturn(Collections.singletonList(endpoint));
+      RunningDatanodeState running = new RunningDatanodeState(conf, connections, context);
+      running.execute(executor);
+      running.await(5, TimeUnit.SECONDS);
+      endpoint.getExecutorService().submit(() -> { }).get(5, TimeUnit.SECONDS);
+      ScheduledThreadPoolExecutor endpointExecutor = (ScheduledThreadPoolExecutor) endpoint.getExecutorService();
+      synchronized (endpoint) {
+        // Hold the timer at submission, then place a blocker ahead of the RPC it will enqueue.
+        GenericTestUtils.waitFor(() -> endpointExecutor.getActiveCount() == 1, 10, 5_000);
+        endpointExecutor.submit(() -> {
+          queued.countDown();
+          assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+          return null;
+        });
+      }
+      assertThat(queued.await(5, TimeUnit.SECONDS)).isTrue();
+
+      if (close) {
+        endpoint.close();
+      } else {
+        endpoint.setState(EndPointStates.GETVERSION);
+      }
+      release.countDown();
+
+      if (close) {
+        assertThat(endpointExecutor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+      } else {
+        endpointExecutor.submit(() -> { }).get(5, TimeUnit.SECONDS);
+      }
+      verify(scm, times(1)).sendHeartbeat(any());
+    } finally {
+      release.countDown();
+      executor.shutdownNow();
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void testLegacyAndReconRegistrationDoNotAccelerateHeartbeats(boolean recon) throws Exception {
+    OzoneConfiguration conf = new OzoneConfiguration();
+    DatanodeStateMachine datanode = mock(DatanodeStateMachine.class);
+    StateContext context = registrationContext(conf, datanode);
+    SCMConnectionManager connections = mock(SCMConnectionManager.class);
+    StorageContainerDatanodeProtocolClientSideTranslatorPB scm =
+        mock(StorageContainerDatanodeProtocolClientSideTranslatorPB.class);
+    AtomicReference<ContainerReportsProto> report = new AtomicReference<>();
+    when(scm.register(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+      report.set(invocation.getArgument(2));
+      return SCMRegisteredResponseProto.newBuilder().setClusterID("cluster")
+          .setDatanodeUUID(datanode.getDatanodeDetails().getUuidString())
+          .setErrorCode(SCMRegisteredResponseProto.ErrorCode.success).build();
+    });
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try (EndpointStateMachine endpoint = new EndpointStateMachine(new HostAndPort("scm", 9861), scm, conf, "")) {
+      endpoint.setState(EndPointStates.REGISTER);
+      endpoint.setPassive(recon);
+      endpoint.setVersion(VersionResponse.newBuilder().setVersion(1)
+          .addValue(OzoneConsts.SCM_FCR_LEASE_SUPPORTED, Boolean.toString(recon)).build());
+      context.addEndpoint(endpoint.getAddress());
+      when(connections.getValues()).thenReturn(Collections.singletonList(endpoint));
+      RunningDatanodeState running = new RunningDatanodeState(conf, connections, context);
+
+      running.execute(executor);
+      running.await(5, TimeUnit.SECONDS);
+      endpoint.getExecutorService().submit(() -> { }).get(5, TimeUnit.SECONDS);
+
+      assertThat(report.get()).isNotNull();
+      assertThat(report.get().getFullContainerReportDeferred()).isFalse();
+      assertThat(((ScheduledThreadPoolExecutor) endpoint.getExecutorService()).getQueue()).isEmpty();
+      verify(scm, never()).sendHeartbeat(any());
+    } finally {
+      executor.shutdownNow();
+    }
+  }
+
+  @Test
+  void testTimedOutEndpointTaskIsNotResubmittedWhileRpcStillRuns() throws Exception {
+    OzoneConfiguration conf = new OzoneConfiguration();
+    conf.setTimeDuration(HDDS_HEARTBEAT_INTERVAL, 25, TimeUnit.MILLISECONDS);
+    DatanodeStateMachine datanode = mock(DatanodeStateMachine.class);
+    StateContext context = registrationContext(conf, datanode);
+    context.configureHeartbeatFrequency();
+    SCMConnectionManager connections = mock(SCMConnectionManager.class);
+    StorageContainerDatanodeProtocolClientSideTranslatorPB blocked =
+        mock(StorageContainerDatanodeProtocolClientSideTranslatorPB.class);
+    StorageContainerDatanodeProtocolClientSideTranslatorPB healthy =
+        mock(StorageContainerDatanodeProtocolClientSideTranslatorPB.class);
+    CountDownLatch entered = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    when(blocked.sendHeartbeat(any())).thenAnswer(invocation -> {
+      entered.countDown();
+      assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+      return SCMHeartbeatResponseProto.newBuilder()
+          .setDatanodeUUID(datanode.getDatanodeDetails().getUuidString()).build();
+    });
+    when(healthy.sendHeartbeat(any())).thenAnswer(invocation ->
+        SCMHeartbeatResponseProto.newBuilder()
+            .setDatanodeUUID(datanode.getDatanodeDetails().getUuidString()).build());
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try (EndpointStateMachine first = new EndpointStateMachine(new HostAndPort("scm1", 9861), blocked, conf, "");
+         EndpointStateMachine second = new EndpointStateMachine(new HostAndPort("scm2", 9861), healthy, conf, "")) {
+      first.setState(EndPointStates.HEARTBEAT);
+      second.setState(EndPointStates.HEARTBEAT);
+      when(connections.getValues()).thenReturn(Arrays.asList(first, second));
+      RunningDatanodeState running = new RunningDatanodeState(conf, connections, context);
+      running.execute(executor);
+      assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+      running.await(1, TimeUnit.SECONDS);
+
+      for (int i = 0; i < 3; i++) {
+        running.execute(executor);
+        running.await(1, TimeUnit.SECONDS);
+      }
+
+      verify(blocked, times(1)).sendHeartbeat(any());
+      verify(healthy, times(4)).sendHeartbeat(any());
+      release.countDown();
+      first.getExecutorService().submit(() -> { }).get(5, TimeUnit.SECONDS);
+      verify(blocked, times(1)).sendHeartbeat(any());
+    } finally {
+      release.countDown();
+      executor.shutdownNow();
+    }
+  }
+
   @Test
   void testLeasedFcrSentWhileOtherScmsAreBlocked() throws Exception {
     OzoneConfiguration conf = new OzoneConfiguration();
     conf.setTimeDuration(HDDS_HEARTBEAT_INTERVAL, 30, TimeUnit.SECONDS);
+    conf.setTimeDuration(HDDS_INITIAL_HEARTBEAT_INTERVAL, 50, TimeUnit.MILLISECONDS);
     DatanodeStateMachine datanode = mock(DatanodeStateMachine.class);
     SCMConnectionManager connections = mock(SCMConnectionManager.class);
     OzoneContainer container = mock(OzoneContainer.class);
@@ -157,6 +506,11 @@ public class TestRunningDatanodeState {
     });
     StorageContainerDatanodeProtocolClientSideTranslatorPB healthyScm =
         mock(StorageContainerDatanodeProtocolClientSideTranslatorPB.class);
+    when(healthyScm.register(any(), any(), any(), any(), any())).thenAnswer(invocation ->
+        SCMRegisteredResponseProto.newBuilder().setClusterID("cluster")
+            .setDatanodeUUID(datanode.getDatanodeDetails().getUuidString())
+            .setErrorCode(SCMRegisteredResponseProto.ErrorCode.success).build());
+    AtomicInteger leaseRequests = new AtomicInteger();
     when(healthyScm.sendHeartbeat(any())).thenAnswer(invocation -> {
       SCMHeartbeatRequestProto request = invocation.getArgument(0);
       SCMHeartbeatResponseProto.Builder response =
@@ -164,7 +518,9 @@ public class TestRunningDatanodeState {
       if (request.getRequestFullContainerReportLease()) {
         leaseRequested.countDown();
         assertThat(releaseLease.await(30, TimeUnit.SECONDS)).isTrue();
-        response.setFullContainerReportLease(FullContainerReportLeaseProto.newBuilder().setId(99).setTerm(7));
+        if (leaseRequests.incrementAndGet() > 1) {
+          response.setFullContainerReportLease(FullContainerReportLeaseProto.newBuilder().setId(99).setTerm(7));
+        }
       } else if (request.hasContainerReport()) {
         report.set(request);
         reportSent.countDown();
@@ -178,7 +534,7 @@ public class TestRunningDatanodeState {
         EndpointStateMachine endpoint =
             new EndpointStateMachine(new HostAndPort("scm" + i, 9861), i < 2 ? blockedScm : healthyScm, conf, "");
         endpoints.add(endpoint);
-        endpoint.setState(EndPointStates.HEARTBEAT);
+        endpoint.setState(i < 2 ? EndPointStates.HEARTBEAT : EndPointStates.REGISTER);
         endpoint.setVersion(VersionResponse.newBuilder().setVersion(1)
             .addValue(OzoneConsts.SCM_FCR_LEASE_SUPPORTED, Boolean.TRUE.toString()).build());
         context.addEndpoint(endpoint.getAddress());
@@ -188,7 +544,7 @@ public class TestRunningDatanodeState {
       running.execute(executor);
       assertThat(peersBlocked.await(5, TimeUnit.SECONDS)).isTrue();
       assertThat(leaseRequested.await(5, TimeUnit.SECONDS)).isTrue();
-      // Queue duplicate peer waits while the healthy endpoint's lease request is still in flight.
+      // Repeated cycles must not queue duplicate RPCs while endpoint tasks are still in flight.
       running.execute(executor);
       releaseLease.countDown();
 
@@ -201,7 +557,12 @@ public class TestRunningDatanodeState {
       assertThat(report.get().getContainerReport().getFullContainerReportLease().getTerm()).isEqualTo(7);
       assertThat(context.isFullContainerReportReady(healthy.getAddress())).isFalse();
       assertThat(healthy.hasFullContainerReportLease()).isFalse();
-      verify(healthyScm, times(2)).sendHeartbeat(any());
+      verify(healthyScm, times(3)).sendHeartbeat(any());
+
+      releasePeers.countDown();
+      assertThat(running.await(5, TimeUnit.SECONDS)).isEqualTo(DatanodeStates.RUNNING);
+      verify(blockedScm, times(2)).sendHeartbeat(any());
+      verify(healthyScm, times(3)).sendHeartbeat(any());
     } finally {
       releaseLease.countDown();
       releasePeers.countDown();
@@ -308,5 +669,27 @@ public class TestRunningDatanodeState {
         .addValue(OzoneConsts.SCM_ID, "scm")
         .addValue(OzoneConsts.CLUSTER_ID, "cluster")
         .build();
+  }
+
+  private static StateContext registrationContext(OzoneConfiguration conf, DatanodeStateMachine datanode)
+      throws IOException {
+    when(datanode.getDatanodeDetails()).thenReturn(MockDatanodeDetails.randomDatanodeDetails());
+    DatanodeVersionManager versions = mock(DatanodeVersionManager.class);
+    when(versions.getApparentVersion()).thenReturn(HDDSVersion.SOFTWARE_VERSION);
+    when(versions.getSoftwareVersion()).thenReturn(HDDSVersion.SOFTWARE_VERSION);
+    when(versions.getVersionForClient()).thenReturn(HDDSVersion.SOFTWARE_VERSION);
+    when(datanode.getVersionManager()).thenReturn(versions);
+    when(datanode.getQueuedCommandCount()).thenReturn(new EnumCounters<>(SCMCommandProto.Type.class));
+    OzoneContainer container = mock(OzoneContainer.class);
+    ContainerSet containers = mock(ContainerSet.class);
+    when(containers.getContainerReport()).thenReturn(ContainerReportsProto.getDefaultInstance());
+    when(container.getContainerSet()).thenReturn(containers);
+    when(container.getNodeReport()).thenReturn(NodeReportProto.getDefaultInstance());
+    when(container.getPipelineReport()).thenReturn(PipelineReportsProto.getDefaultInstance());
+    ContainerController controller = mock(ContainerController.class);
+    when(controller.getContainerReport()).thenReturn(ContainerReportsProto.getDefaultInstance());
+    when(container.getController()).thenReturn(controller);
+    when(datanode.getContainer()).thenReturn(container);
+    return new StateContext(conf, DatanodeStates.RUNNING, datanode, "");
   }
 }

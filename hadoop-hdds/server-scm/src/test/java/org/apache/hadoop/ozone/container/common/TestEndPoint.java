@@ -456,7 +456,7 @@ public class TestEndPoint {
     }
     StateContext context = mock(StateContext.class);
     when(context.getParent()).thenReturn(dn);
-    return new RegisterEndpointTask(rpcEndPoint, ozoneContainer, context);
+    return new RegisterEndpointTask(rpcEndPoint, ozoneContainer, context, conf);
   }
 
   private EndpointStateMachine registerTaskHelper(InetSocketAddress scmAddress,
@@ -516,6 +516,10 @@ public class TestEndPoint {
       DatanodeStateMachine datanode = mock(DatanodeStateMachine.class);
       when(datanode.getDatanodeDetails()).thenReturn(datanodeDetails);
       when(datanode.getVersionManager()).thenReturn(versionManager);
+      when(datanode.getQueuedCommandCount()).thenReturn(
+          new org.apache.hadoop.hdfs.util.EnumCounters<>(SCMCommandProto.Type.class));
+      when(scm.sendHeartbeat(any())).thenAnswer(invocation ->
+          SCMHeartbeatResponseProto.newBuilder().setDatanodeUUID(datanodeDetails.getUuidString()).build());
       StateContext context = new StateContext(conf, DatanodeStates.RUNNING, datanode, "");
       HostAndPort otherScm = new HostAndPort("other-scm", 9861);
       context.addEndpoint(rpcEndpoint.getAddress());
@@ -532,13 +536,14 @@ public class TestEndPoint {
               Boolean.TRUE.toString())
           .build());
       RegisterEndpointTask endpointTask = new RegisterEndpointTask(
-          rpcEndpoint, ozoneContainer, context);
+          rpcEndpoint, ozoneContainer, context, conf);
 
       endpointTask.call();
       assertEquals(EndpointStateMachine.EndPointStates.HEARTBEAT, rpcEndpoint.getState());
       assertTrue(context.isFullContainerReportReady(rpcEndpoint.getAddress()));
       assertFalse(context.isFullContainerReportReady(otherScm));
       verify(controller, never()).getContainerReport();
+      verify(scm).sendHeartbeat(any());
     }
 
     assertTrue(containerReport.getValue().getFullContainerReportDeferred());

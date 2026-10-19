@@ -173,6 +173,10 @@ public class HeartbeatEndpointTask
         context.putBackFullContainerReport(rpcEndpoint.getAddress());
       }
       processResponse(response, datanodeDetailsProto);
+      if (request.hasContainerReport() && request.getContainerReport().hasFullContainerReportLease()
+          && !response.getFullContainerReportLeaseRejected() && rpcEndpoint.getState() == EndPointStates.HEARTBEAT) {
+        rpcEndpoint.completeRegistrationReport();
+      }
       rpcEndpoint.setLastSuccessfulHeartbeat(ZonedDateTime.now());
       rpcEndpoint.zeroMissedCount();
       return request.getRequestFullContainerReportLease() && rpcEndpoint.hasFullContainerReportLease()
