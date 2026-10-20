@@ -59,6 +59,7 @@ import java.util.OptionalLong;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
+import org.apache.hadoop.hdds.HDDSVersion;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
@@ -249,6 +250,11 @@ public class SCMDatanodeProtocolServer implements
     boolean auditSuccess = true;
     Map<String, String> auditMap = Maps.newHashMap();
     auditMap.put("datanodeDetails", datanodeDetails.toString());
+
+    if (containerReportsProto.getFullContainerReportDeferred()
+        && !scm.getVersionManager().isAllowed(HDDSVersion.FULL_CONTAINER_REPORT_LEASE)) {
+      throw new IOException("Full container report leases must be finalized before deferring registration reports.");
+    }
 
     // TODO : Return the list of Nodes that forms the SCM HA.
     RegisteredCommand registeredCommand = scm.getScmNodeManager()
@@ -441,7 +447,7 @@ public class SCMDatanodeProtocolServer implements
   }
 
   private OptionalLong getFCRLeaseTerm() {
-    if (scmContext == null) {
+    if (scmContext == null || !scm.getVersionManager().isAllowed(HDDSVersion.FULL_CONTAINER_REPORT_LEASE)) {
       return OptionalLong.empty();
     }
 
