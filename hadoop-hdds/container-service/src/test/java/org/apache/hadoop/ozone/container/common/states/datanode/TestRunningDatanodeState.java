@@ -134,6 +134,7 @@ public class TestRunningDatanodeState {
     when(versionManager.getApparentVersion()).thenReturn(HDDSVersion.SOFTWARE_VERSION);
     when(versionManager.getSoftwareVersion()).thenReturn(HDDSVersion.SOFTWARE_VERSION);
     when(versionManager.getVersionForClient()).thenReturn(HDDSVersion.SOFTWARE_VERSION);
+    when(versionManager.isAllowed(HDDSVersion.FULL_CONTAINER_REPORT_LEASE)).thenReturn(true);
     when(datanode.getVersionManager()).thenReturn(versionManager);
     when(datanode.getQueuedCommandCount()).thenReturn(new EnumCounters<>(SCMCommandProto.Type.class));
     when(container.getContainerSet()).thenReturn(containers);
