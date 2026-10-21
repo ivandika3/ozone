@@ -19,7 +19,6 @@ package org.apache.hadoop.ozone.container.common.statemachine;
 
 import static org.apache.hadoop.hdds.utils.HddsServerUtil.getLogWarnInterval;
 import static org.apache.hadoop.hdds.utils.HddsServerUtil.getScmHeartbeatInterval;
-import static org.apache.hadoop.hdds.utils.HddsServerUtil.getScmInitialHeartbeatInterval;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import java.io.Closeable;
@@ -27,10 +26,8 @@ import java.time.ZonedDateTime;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
@@ -65,11 +62,9 @@ public class EndpointStateMachine
   private ZonedDateTime lastSuccessfulHeartbeat;
   private boolean isPassive;
   private FullContainerReportLeaseProto fullContainerReportLease;
-  private final ScheduledThreadPoolExecutor executorService;
-  // Scheduling uses this monitor so a blocked RPC cannot block task coalescing or shutdown.
+  private final ExecutorService executorService;
+  // Task submission uses this monitor independently of the lock held during RPC calls.
   private Future<EndPointStates> currentTask;
-  private Callable<EndPointStates> registrationReportTask;
-  private ScheduledFuture<?> registrationReportRetry;
   private boolean closed;
 
   private static final String RECON_TYPE = "Recon";
@@ -89,12 +84,10 @@ public class EndpointStateMachine
     this.hostAndPort = hostAndPort;
     lock = new ReentrantLock();
     this.conf = conf;
-    executorService = new ScheduledThreadPoolExecutor(1,
+    executorService = Executors.newSingleThreadExecutor(
         new ThreadFactoryBuilder()
             .setNameFormat(threadNamePrefix + "EndpointStateMachineTaskThread-" + hostAndPort + "-%d ")
             .build());
-    executorService.setRemoveOnCancelPolicy(true);
-    executorService.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
   }
 
   /**
@@ -187,16 +180,13 @@ public class EndpointStateMachine
    *
    * @param epState - end point state.
    */
-  public synchronized EndPointStates setState(EndPointStates epState) {
+  public EndPointStates setState(EndPointStates epState) {
     this.state = epState;
-    if (epState != EndPointStates.HEARTBEAT) {
-      completeRegistrationReport();
-    }
     return this.state;
   }
 
   /**
-   * Coalesces normal heartbeat cycles and registration report retries while an endpoint task is queued or running.
+   * Skips duplicate submissions while an endpoint task is queued or running.
    */
   public synchronized Future<EndPointStates> submitTask(Supplier<Callable<EndPointStates>> taskFactory) {
     if (closed || executorService.isShutdown() || currentTask != null && !currentTask.isDone()) {
@@ -206,67 +196,8 @@ public class EndpointStateMachine
     if (task == null) {
       return CompletableFuture.completedFuture(state);
     }
-    cancelRegistrationReportRetry();
-    currentTask = executorService.submit(() -> {
-      boolean completed = false;
-      try {
-        EndPointStates result = task.call();
-        completed = true;
-        return result;
-      } finally {
-        if (completed) {
-          scheduleRegistrationReportRetry();
-        }
-      }
-    });
+    currentTask = executorService.submit(task);
     return currentTask;
-  }
-
-  public synchronized void startRegistrationReport(Callable<EndPointStates> heartbeatTask) {
-    if (!closed) {
-      registrationReportTask = heartbeatTask;
-    }
-  }
-
-  public synchronized void completeRegistrationReport() {
-    registrationReportTask = null;
-    cancelRegistrationReportRetry();
-  }
-
-  private synchronized void scheduleRegistrationReportRetry() {
-    if (closed || registrationReportTask == null || state != EndPointStates.HEARTBEAT || missedCount.get() != 0) {
-      return;
-    }
-    long interval = Math.max(1, getScmInitialHeartbeatInterval(conf));
-    long jitter = ThreadLocalRandom.current().nextLong(interval / 2 + 1);
-    long delay = interval > Long.MAX_VALUE - jitter ? Long.MAX_VALUE : interval + jitter;
-    Callable<EndPointStates> retryTask = registrationReportTask;
-    registrationReportRetry = executorService.schedule(() -> {
-      synchronized (this) {
-        if (registrationReportTask == retryTask && state == EndPointStates.HEARTBEAT) {
-          submitTask(() -> () -> {
-            synchronized (this) {
-              if (closed || registrationReportTask != retryTask || state != EndPointStates.HEARTBEAT) {
-                return state;
-              }
-            }
-            try {
-              return retryTask.call();
-            } catch (Exception ex) {
-              LOG.warn("Failed to retry registration container report for {}", hostAndPort, ex);
-              throw ex;
-            }
-          });
-        }
-      }
-    }, delay, TimeUnit.MILLISECONDS);
-  }
-
-  private void cancelRegistrationReportRetry() {
-    if (registrationReportRetry != null) {
-      registrationReportRetry.cancel(false);
-      registrationReportRetry = null;
-    }
   }
 
   /**
@@ -286,7 +217,6 @@ public class EndpointStateMachine
         return;
       }
       closed = true;
-      completeRegistrationReport();
       executorService.shutdown();
     }
     if (endPoint != null) {

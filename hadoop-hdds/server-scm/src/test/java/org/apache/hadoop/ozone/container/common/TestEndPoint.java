@@ -459,7 +459,7 @@ public class TestEndPoint {
     }
     StateContext context = mock(StateContext.class);
     when(context.getParent()).thenReturn(dn);
-    return new RegisterEndpointTask(rpcEndPoint, ozoneContainer, context, conf);
+    return new RegisterEndpointTask(rpcEndPoint, ozoneContainer, context);
   }
 
   private EndpointStateMachine registerTaskHelper(InetSocketAddress scmAddress,
@@ -525,8 +525,6 @@ public class TestEndPoint {
       DatanodeStateMachine datanode = mock(DatanodeStateMachine.class, RETURNS_MOCKS);
       when(datanode.getDatanodeDetails()).thenReturn(datanodeDetails);
       when(datanode.getVersionManager()).thenReturn(versionManager);
-      when(scm.sendHeartbeat(any())).thenAnswer(invocation ->
-          SCMHeartbeatResponseProto.newBuilder().setDatanodeUUID(datanodeDetails.getUuidString()).build());
       StateContext context = new StateContext(conf, DatanodeStates.RUNNING, datanode, "");
       HostAndPort otherScm = new HostAndPort("other-scm", 9861);
       context.addEndpoint(rpcEndpoint.getAddress());
@@ -543,7 +541,7 @@ public class TestEndPoint {
               Boolean.TRUE.toString())
           .build());
       RegisterEndpointTask endpointTask = new RegisterEndpointTask(
-          rpcEndpoint, ozoneContainer, context, conf);
+          rpcEndpoint, ozoneContainer, context);
 
       endpointTask.call();
       assertEquals(EndpointStateMachine.EndPointStates.HEARTBEAT, rpcEndpoint.getState());
@@ -551,11 +549,10 @@ public class TestEndPoint {
       assertFalse(context.isFullContainerReportReady(otherScm));
       if (finalized) {
         verify(controller, never()).getContainerReport();
-        verify(scm).sendHeartbeat(any());
       } else {
         verify(controller).getContainerReport();
-        verify(scm, never()).sendHeartbeat(any());
       }
+      verify(scm, never()).sendHeartbeat(any());
     }
 
     assertEquals(finalized, containerReport.getValue().getFullContainerReportDeferred());
