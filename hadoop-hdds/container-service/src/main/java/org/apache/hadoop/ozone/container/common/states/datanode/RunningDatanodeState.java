@@ -100,9 +100,15 @@ public class RunningDatanodeState implements DatanodeState {
         // the thread in executor from DatanodeStateMachine for a long time,
         // so that it won't affect the communication between datanode and
         // other EndpointStateMachine.
+        long heartbeatFrequency;
+        if (endpoint.isPassive()) {
+          heartbeatFrequency = context.getReconHeartbeatFrequency();
+        } else {
+          heartbeatFrequency = context.getHeartbeatFrequency();
+        }
         ecs.submit(() -> {
           try {
-            return endpointTask.get(context.getHeartbeatFrequency(), TimeUnit.MILLISECONDS);
+            return endpointTask.get(heartbeatFrequency, TimeUnit.MILLISECONDS);
           } catch (TimeoutException e) {
             TimeoutException timeoutEx = new TimeoutException("Timeout occurred on endpoint: " + endpoint.getAddress());
             timeoutEx.initCause(e);

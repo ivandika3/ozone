@@ -26,6 +26,7 @@ import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -129,6 +130,32 @@ public class TestRunningDatanodeState {
     assertThat(endTime - startTime).isLessThan(500);
 
     executorService.shutdown();
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void testEndpointWaitUsesHeartbeatFrequency(boolean recon) throws Exception {
+    StateContext context = mock(StateContext.class);
+    when(context.getHeartbeatFrequency()).thenReturn(30_000L);
+    when(context.getReconHeartbeatFrequency()).thenReturn(60_000L);
+    EndpointStateMachine endpoint = mock(EndpointStateMachine.class);
+    when(endpoint.getState()).thenReturn(EndPointStates.HEARTBEAT);
+    when(endpoint.isPassive()).thenReturn(recon);
+    CompletableFuture<EndPointStates> endpointTask = spy(CompletableFuture.completedFuture(EndPointStates.HEARTBEAT));
+    when(endpoint.submitTask(any())).thenReturn(endpointTask);
+    SCMConnectionManager connections = mock(SCMConnectionManager.class);
+    when(connections.getValues()).thenReturn(Collections.singletonList(endpoint));
+    RunningDatanodeState running = new RunningDatanodeState(null, connections, context);
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try {
+      running.execute(executor);
+
+      assertThat(running.await(5, TimeUnit.SECONDS)).isEqualTo(DatanodeStates.RUNNING);
+      verify(endpointTask).get(recon ? 60_000L : 30_000L, TimeUnit.MILLISECONDS);
+    } finally {
+      executor.shutdownNow();
+      assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+    }
   }
 
   @ParameterizedTest
