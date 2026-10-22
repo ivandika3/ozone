@@ -457,8 +457,7 @@ public class StateContext {
    */
   public ContainerReportsProto getFullContainerReportDiscardPendingICR(
       HostAndPort endpoint) throws IOException {
-    Map<String, AtomicBoolean> reports =
-        isFullReportReadyToBeSent.get(endpoint);
+    Map<String, AtomicBoolean> reports = isFullReportReadyToBeSent.get(endpoint);
     if (reports == null) {
       return null;
     }

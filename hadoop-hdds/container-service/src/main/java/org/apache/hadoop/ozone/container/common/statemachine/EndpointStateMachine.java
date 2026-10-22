@@ -47,7 +47,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Holds the RPC connection and state for a single SCM or Recon endpoint.
  *
- * <p>The datanode state-machine thread submits version, registration and heartbeat tasks to a single-thread executor.
+ * <p>Datanode submits version, registration and heartbeat tasks to a single-thread executor.
  * Each endpoint owns an executor so blocked RPCs to one SCM do not prevent communication with other endpoints.
  * Closing the endpoint shuts down its executor and RPC client; an in-flight task may still finish.
  *
@@ -77,9 +77,6 @@ public class EndpointStateMachine
   // RunningDatanodeState reads this without the endpoint lock and must see late SHUTDOWN transitions,
   // even after its wait for the endpoint task has timed out.
   private volatile EndPointStates state = EndPointStates.FIRST;
-  /**
-   * Publishes version responses to report publishers and JMX readers without requiring the endpoint lock.
-   */
   private volatile VersionResponse version;
   private ZonedDateTime lastSuccessfulHeartbeat;
   private boolean isPassive;
@@ -325,7 +322,7 @@ public class EndpointStateMachine
   }
 
   /**
-   * Returns the InetAddress of the endPoint.
+   * Returns the InetAddress of the endpoint.
    *
    * @return - EndPoint.
    */
@@ -334,7 +331,7 @@ public class EndpointStateMachine
   }
 
   /**
-   * Returns real RPC endPoint.
+   * Returns real RPC endpoint.
    *
    * @return rpc client.
    */
@@ -397,9 +394,9 @@ public class EndpointStateMachine
   }
 
   /**
-   * States that an Endpoint can be in.
+   * States that an endpoint can be in.
    * <p>
-   * This is a sorted list of states that EndPoint will traverse.
+   * This is a sorted list of states that endpoint will traverse.
    * <p>
    * {@link #getNextState()} will move from {@link #FIRST} to {@link #LAST}.
    */
@@ -413,7 +410,7 @@ public class EndpointStateMachine
     private static final EndPointStates LAST = values()[values().length - 1];
 
     /**
-     * Returns the next logical state that endPoint should move to.
+     * Returns the next logical state that endpoint should move to.
      * The next state is computed by adding 1 to the current state.
      *
      * @return next state.
