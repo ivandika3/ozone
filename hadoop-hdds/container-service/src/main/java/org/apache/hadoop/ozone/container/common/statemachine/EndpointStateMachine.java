@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
+import net.jcip.annotations.GuardedBy;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.FullContainerReportLeaseProto;
 import org.apache.hadoop.hdds.scm.net.HostAndPort;
@@ -44,7 +45,21 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Endpoint is used as holder class that keeps state around the RPC endpoint.
+ * Holds the RPC connection and state for one SCM or Recon endpoint.
+ *
+ * <p>The datanode state-machine thread submits version, registration and heartbeat tasks to a single-thread executor.
+ * Each endpoint owns an executor so blocked RPCs to one SCM do not prevent communication with other endpoints.
+ * Closing the endpoint shuts down its executor and RPC client; an in-flight task may still finish.
+ *
+ * <p>Synchronization is method-specific:
+ * <ul>
+ * <li>Endpoint tasks hold {@link #lock()} across RPCs and FCR lease operations. Lease accessors require callers to hold
+ * this lock, including across check-and-consume sequences.</li>
+ * <li>{@link #submitTask(Supplier)} and {@link #close()} protect submission bookkeeping with this object's monitor.
+ * They do not acquire the endpoint lock, so a blocked RPC does not prevent submission checks or executor shutdown.</li>
+ * <li>State and version are volatile for readers outside the endpoint lock. The missed-heartbeat count is atomic for
+ * monitoring reads without the endpoint lock.</li>
+ * </ul>
  */
 public class EndpointStateMachine
     implements Closeable, EndpointStateMachineMBean {
@@ -53,18 +68,28 @@ public class EndpointStateMachine
   private final StorageContainerDatanodeProtocolClientSideTranslatorPB endPoint;
   private final AtomicLong missedCount;
   private final HostAndPort hostAndPort;
+  /**
+   * Serializes endpoint RPCs and protects the cached FCR lease. If both this lock and this object's monitor are needed,
+   * acquire this lock first; never acquire it while holding the monitor.
+   */
   private final Lock lock;
   private final ConfigurationSource conf;
   // RunningDatanodeState reads this without the endpoint lock and must see late SHUTDOWN transitions,
   // even after its wait for the endpoint task has timed out.
   private volatile EndPointStates state = EndPointStates.FIRST;
+  /**
+   * Publishes version responses to report publishers and JMX readers without requiring the endpoint lock.
+   */
   private volatile VersionResponse version;
   private ZonedDateTime lastSuccessfulHeartbeat;
   private boolean isPassive;
+  @GuardedBy("lock")
   private FullContainerReportLeaseProto fullContainerReportLease;
+
   private final ExecutorService executorService;
-  // Task submission uses this monitor independently of the lock held during RPC calls.
+  @GuardedBy("this")
   private Future<EndPointStates> currentTask;
+  @GuardedBy("this")
   private boolean closed;
 
   private static final String RECON_TYPE = "Recon";
@@ -72,9 +97,9 @@ public class EndpointStateMachine
   private static final String SCM_TYPE = "SCM";
 
   /**
-   * Constructs RPC Endpoints.
+   * Constructs the RPC endpoint.
    *
-   * @param endPoint - RPC endPoint.
+   * @param endPoint - RPC endpoint.
    */
   public EndpointStateMachine(HostAndPort hostAndPort,
       StorageContainerDatanodeProtocolClientSideTranslatorPB endPoint,
@@ -123,35 +148,76 @@ public class EndpointStateMachine
     this.version = version;
   }
 
+  /**
+   * Checks whether this SCM endpoint advertises full container report (FCR) lease support.
+   *
+   * <p>Returns false before the version response is available and for passive endpoints such as Recon. This capability
+   * check does not indicate whether the feature is enabled by upgrade finalization or whether a lease is available.
+   *
+   * @return true if this non-passive endpoint advertises FCR lease support
+   */
   public boolean supportsFullContainerReportLease() {
     VersionResponse currentVersion = version;
     return !isPassive && currentVersion != null
-        && Boolean.parseBoolean(currentVersion.getValue(
-            OzoneConsts.SCM_FCR_LEASE_SUPPORTED));
+        && Boolean.parseBoolean(currentVersion.getValue(OzoneConsts.SCM_FCR_LEASE_SUPPORTED));
   }
 
+  /**
+   * Checks whether a lease granted by this SCM is cached locally. Presence does not guarantee that the lease is still
+   * valid; SCM validates its ID, term and expiry when receiving the FCR.
+   *
+   * <p>Callers must hold the endpoint lock acquired by {@link #lock()}.
+   *
+   * @return true if an FCR lease is cached for this endpoint
+   */
   public boolean hasFullContainerReportLease() {
     return fullContainerReportLease != null;
   }
 
-  public void setFullContainerReportLease(
-      FullContainerReportLeaseProto lease) {
+  /**
+   * Stores an FCR lease granted by this SCM, replacing any cached lease. This method does not validate the grant.
+   *
+   * <p>Callers must hold the endpoint lock acquired by {@link #lock()}.
+   *
+   * @param lease the granted FCR lease, or null to clear the cached lease
+   */
+  public void setFullContainerReportLease(FullContainerReportLeaseProto lease) {
     fullContainerReportLease = lease;
   }
 
+  /**
+   * Returns and clears the cached FCR lease so it can be attached to one report. Consuming the local copy does not
+   * release the outstanding lease on SCM.
+   *
+   * <p>Callers must hold the endpoint lock acquired by {@link #lock()}.
+   *
+   * @return the cached FCR lease, or null if none is cached
+   */
   public FullContainerReportLeaseProto takeFullContainerReportLease() {
     FullContainerReportLeaseProto lease = fullContainerReportLease;
     fullContainerReportLease = null;
     return lease;
   }
 
+  /**
+   * Clears the cached FCR lease, for example before re-registration. This does not notify SCM or release its lease.
+   *
+   * <p>Callers must hold the endpoint lock acquired by {@link #lock()}.
+   */
   public void clearFullContainerReportLease() {
     fullContainerReportLease = null;
   }
 
+  /**
+   * Clears the cached FCR lease if its term is lower than the supplied term. Equal or older terms leave it unchanged;
+   * this check does not validate lease expiry.
+   *
+   * <p>Callers must hold the endpoint lock acquired by {@link #lock()}.
+   *
+   * @param term the leader term reported by this endpoint
+   */
   public void clearFullContainerReportLeaseIfStale(long term) {
-    if (hasFullContainerReportLease()
-        && term > fullContainerReportLease.getTerm()) {
+    if (hasFullContainerReportLease() && term > fullContainerReportLease.getTerm()) {
       clearFullContainerReportLease();
     }
   }
@@ -187,6 +253,9 @@ public class EndpointStateMachine
 
   /**
    * Skips duplicate submissions while an endpoint task is queued or running.
+   *
+   * <p>The factory runs while holding this object's monitor and must not acquire the endpoint lock or perform RPCs.
+   * The returned task runs on the endpoint executor without holding the monitor.
    */
   public synchronized Future<EndPointStates> submitTask(Supplier<Callable<EndPointStates>> taskFactory) {
     if (closed || executorService.isShutdown() || currentTask != null && !currentTask.isDone()) {
@@ -225,9 +294,8 @@ public class EndpointStateMachine
   }
 
   /**
-   * We maintain a count of how many times we missed communicating with a
-   * specific SCM. This is not made atomic since the access to this is always
-   * guarded by the read or write lock. That is, it is serialized.
+   * Increments the count of consecutive communication failures. Atomic updates allow monitoring reads without requiring
+   * the endpoint lock.
    */
   public void incMissed() {
     this.missedCount.incrementAndGet();

@@ -354,10 +354,8 @@ public class HeartbeatEndpointTask
       rpcEndpoint.clearFullContainerReportLeaseIfStale(response.getTerm());
       context.updateTermOfLeaderSCM(response.getTerm());
     }
-    if (response.hasFullContainerReportLease()
-        && response.getFullContainerReportLease().getId() != 0) {
-      rpcEndpoint.setFullContainerReportLease(
-          response.getFullContainerReportLease());
+    if (response.hasFullContainerReportLease() && response.getFullContainerReportLease().getId() != 0) {
+      rpcEndpoint.setFullContainerReportLease(response.getFullContainerReportLease());
     }
     // Verify the response is indeed for this datanode.
     for (SCMCommandProto commandResponseProto : response.getCommandsList()) {
