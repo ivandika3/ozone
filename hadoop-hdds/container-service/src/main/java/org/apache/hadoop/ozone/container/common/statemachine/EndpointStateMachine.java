@@ -45,7 +45,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Holds the RPC connection and state for one SCM or Recon endpoint.
+ * Holds the RPC connection and state for a single SCM or Recon endpoint.
  *
  * <p>The datanode state-machine thread submits version, registration and heartbeat tasks to a single-thread executor.
  * Each endpoint owns an executor so blocked RPCs to one SCM do not prevent communication with other endpoints.
@@ -93,7 +93,6 @@ public class EndpointStateMachine
   private boolean closed;
 
   private static final String RECON_TYPE = "Recon";
-
   private static final String SCM_TYPE = "SCM";
 
   /**
@@ -116,7 +115,7 @@ public class EndpointStateMachine
   }
 
   /**
-   * Takes a lock on this EndPoint so that other threads don't use this while we
+   * Takes a lock on this endpoint so that other threads don't use this while we
    * are trying to communicate via this endpoint.
    */
   public void lock() {
@@ -223,7 +222,7 @@ public class EndpointStateMachine
   }
 
   /**
-   * Returns the current State this end point is in.
+   * Returns the current {@link EndPointStates} this endpoint is in.
    *
    * @return - getState.
    */
@@ -244,7 +243,7 @@ public class EndpointStateMachine
   /**
    * Sets the endpoint state.
    *
-   * @param epState - end point state.
+   * @param epState - endpoint state.
    */
   public EndPointStates setState(EndPointStates epState) {
     this.state = epState;
@@ -252,10 +251,15 @@ public class EndpointStateMachine
   }
 
   /**
-   * Skips duplicate submissions while an endpoint task is queued or running.
+   * Submit an endpoint task.
    *
-   * <p>The factory runs while holding this object's monitor and must not acquire the endpoint lock or perform RPCs.
-   * The returned task runs on the endpoint executor without holding the monitor.
+   * <p>The task factory and submission is invoked while holding this object's monitor. Therefore,
+   *    the task factory and the task implementation must not acquire the endpoint lock or perform RPCs.
+   * <p>Only one endpoint task can be run or queued at one point of time. If this method is called
+   *    when there is a running or queued task or when this state machine has been shutdown, it gets ignored.
+   *
+   * @param taskFactory Task factory.
+   * @return null if there is a running or pending task, return the newly submitted task otherwise.
    */
   public synchronized Future<EndPointStates> submitTask(Supplier<Callable<EndPointStates>> taskFactory) {
     if (closed || executorService.isShutdown() || currentTask != null && !currentTask.isDone()) {
@@ -380,9 +384,9 @@ public class EndpointStateMachine
   }
 
   /**
-   * Returns true if the end point is not an SCM. A passive endpoint can be a
+   * Returns true if the endpoint is not an SCM. A passive endpoint can be a
    * Server that only reads information from Datanode, like Recon.
-   * @return true/false.
+   * @return true if the endpoint is a passive endpoint.
    */
   public boolean isPassive() {
     return isPassive;
@@ -412,7 +416,7 @@ public class EndpointStateMachine
      * Returns the next logical state that endPoint should move to.
      * The next state is computed by adding 1 to the current state.
      *
-     * @return NextState.
+     * @return next state.
      */
     public EndPointStates getNextState() {
       final int n = this.ordinal();
