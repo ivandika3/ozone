@@ -51,35 +51,44 @@ import org.slf4j.LoggerFactory;
  * Each endpoint owns an executor so blocked RPCs to one SCM do not prevent communication with other endpoints.
  * Closing the endpoint shuts down its executor and RPC client; an in-flight task may still finish.
  *
- * <p>Synchronization is method-specific:
+ * <p>Locks:
  * <ul>
- * <li>Endpoint tasks hold {@link #lock()} across RPCs and FCR lease operations. Lease accessors require callers to hold
- * this lock, including across check-and-consume sequences.</li>
- * <li>{@link #submitTask(Supplier)} and {@link #close()} protect submission bookkeeping with this object's monitor.
- * They do not acquire the endpoint lock, so a blocked RPC does not prevent submission checks or executor shutdown.</li>
- * <li>State and version are volatile for readers outside the endpoint lock. The missed-heartbeat count is atomic for
- * monitoring reads without the endpoint lock.</li>
+ * <li>{@link #lock}: serializes endpoint RPCs and protects the cached FCR lease. Hold it across lease checks and
+ * updates, including check-and-consume sequences.</li>
+ * <li>This object's monitor ({@code this}): protects {@link #currentTask} and {@link #closed} during task submission
+ * and shutdown. Do not acquire {@link #lock} or perform RPCs while holding this monitor.</li>
  * </ul>
+ *
+ * <p>When both locks are needed, acquire {@link #lock} first. Separate locks allow submission checks and executor
+ * shutdown to proceed while an RPC is blocked.
+ *
+ * <p>{@link #state} and {@link #version} are volatile for readers outside the endpoint lock. The missed-heartbeat count
+ * is atomic for monitoring reads without the endpoint lock.
  */
 public class EndpointStateMachine
     implements Closeable, EndpointStateMachineMBean {
+  private static final String SCM_TYPE = "SCM";
+  private static final String RECON_TYPE = "Recon";
   static final Logger
       LOG = LoggerFactory.getLogger(EndpointStateMachine.class);
-  private final StorageContainerDatanodeProtocolClientSideTranslatorPB endPoint;
-  private final AtomicLong missedCount;
+
   private final HostAndPort hostAndPort;
+  private final StorageContainerDatanodeProtocolClientSideTranslatorPB endPoint;
+  private final ConfigurationSource conf;
+  private boolean isPassive;
+
+  // RunningDatanodeState reads this without the endpoint lock and must see late SHUTDOWN transitions,
+  // even after its wait for the endpoint task has timed out.
+  private volatile EndPointStates state = EndPointStates.FIRST;
+  private volatile VersionResponse version;
+  private final AtomicLong missedCount;
+  private ZonedDateTime lastSuccessfulHeartbeat;
+
   /**
    * Serializes endpoint RPCs and protects the cached FCR lease. If both this lock and this object's monitor are needed,
    * acquire this lock first; never acquire it while holding the monitor.
    */
   private final Lock lock;
-  private final ConfigurationSource conf;
-  // RunningDatanodeState reads this without the endpoint lock and must see late SHUTDOWN transitions,
-  // even after its wait for the endpoint task has timed out.
-  private volatile EndPointStates state = EndPointStates.FIRST;
-  private volatile VersionResponse version;
-  private ZonedDateTime lastSuccessfulHeartbeat;
-  private boolean isPassive;
   @GuardedBy("lock")
   private FullContainerReportLeaseProto fullContainerReportLease;
 
@@ -88,9 +97,6 @@ public class EndpointStateMachine
   private Future<EndPointStates> currentTask;
   @GuardedBy("this")
   private boolean closed;
-
-  private static final String RECON_TYPE = "Recon";
-  private static final String SCM_TYPE = "SCM";
 
   /**
    * Constructs the RPC endpoint.
@@ -250,8 +256,9 @@ public class EndpointStateMachine
   /**
    * Submit an endpoint task.
    *
-   * <p>The task factory and submission is invoked while holding this object's monitor. Therefore,
-   *    the task factory and the task implementation must not acquire the endpoint lock or perform RPCs.
+   * <p>The task factory is invoked and its result submitted while holding this object's monitor, after checking that
+   * the previous task has completed. The factory must not acquire the endpoint lock or perform RPCs. The submitted
+   * task runs asynchronously without holding this monitor and may acquire the endpoint lock and perform RPCs.
    * <p>Only one endpoint task can be run or queued at one point of time. If this method is called
    *    when there is a running or queued task or when this state machine has been shutdown, it gets ignored.
    *
@@ -268,13 +275,6 @@ public class EndpointStateMachine
     }
     currentTask = executorService.submit(task);
     return currentTask;
-  }
-
-  /**
-   * Returns the endpoint specific ExecutorService.
-   */
-  public ExecutorService getExecutorService() {
-    return executorService;
   }
 
   /**

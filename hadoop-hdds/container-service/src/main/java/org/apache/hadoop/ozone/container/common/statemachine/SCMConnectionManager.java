@@ -62,6 +62,11 @@ public class SCMConnectionManager
   private static final Logger LOG =
       LoggerFactory.getLogger(SCMConnectionManager.class);
 
+  /**
+   * Protects endpoint membership, not the state of individual endpoints. Endpoint tasks and command-queue processing
+   * may acquire this lock while holding their own locks. While holding this lock, do not acquire endpoint RPC locks
+   * or the StateContext command-queue lock, or wait for endpoint tasks to finish.
+   */
   private final ReadWriteLock mapLock;
   private final Map<HostAndPort, EndpointStateMachine> scmMachines;
 
@@ -81,15 +86,6 @@ public class SCMConnectionManager
   }
 
   /**
-   * Returns Config.
-   *
-   * @return ozoneConfig.
-   */
-  public ConfigurationSource getConf() {
-    return conf;
-  }
-
-  /**
    * Get RpcTimeout.
    *
    * @return - Return RPC timeout.
@@ -101,28 +97,28 @@ public class SCMConnectionManager
   /**
    * Takes a read lock.
    */
-  public void readLock() {
+  private void readLock() {
     this.mapLock.readLock().lock();
   }
 
   /**
    * Releases the read lock.
    */
-  public void readUnlock() {
+  private void readUnlock() {
     this.mapLock.readLock().unlock();
   }
 
   /**
    * Takes the write lock.
    */
-  public void writeLock() {
+  private void writeLock() {
     this.mapLock.writeLock().lock();
   }
 
   /**
    * Releases the write lock.
    */
-  public void writeUnlock() {
+  private void writeUnlock() {
     this.mapLock.writeLock().unlock();
   }
 

@@ -20,6 +20,7 @@ package org.apache.hadoop.ozone.container.common.states.datanode;
 import static org.apache.hadoop.hdds.HddsConfigKeys.HDDS_HEARTBEAT_INTERVAL;
 import static org.apache.hadoop.hdds.HddsConfigKeys.HDDS_INITIAL_HEARTBEAT_INTERVAL;
 import static org.apache.hadoop.ozone.container.common.statemachine.EndpointStateMachine.EndPointStates.SHUTDOWN;
+import static org.apache.ozone.test.GenericTestUtils.waitFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyLong;
@@ -41,6 +42,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -301,7 +303,7 @@ public class TestRunningDatanodeState {
 
       running.execute(executor);
       running.await(5, TimeUnit.SECONDS);
-      endpoint.getExecutorService().submit(() -> { }).get(5, TimeUnit.SECONDS);
+      waitForEndpointTask(endpoint);
 
       assertThat(report.get()).isNotNull();
       assertThat(report.get().getFullContainerReportDeferred()).isFalse();
@@ -353,7 +355,7 @@ public class TestRunningDatanodeState {
       verify(blocked, times(1)).sendHeartbeat(any());
       verify(healthy, times(4)).sendHeartbeat(any());
       release.countDown();
-      first.getExecutorService().submit(() -> { }).get(5, TimeUnit.SECONDS);
+      waitForEndpointTask(first);
       verify(blocked, times(1)).sendHeartbeat(any());
     } finally {
       release.countDown();
@@ -438,7 +440,7 @@ public class TestRunningDatanodeState {
       running.execute(executor);
       assertThat(peersBlocked.await(5, TimeUnit.SECONDS)).isTrue();
       EndpointStateMachine healthy = endpoints.get(2);
-      healthy.getExecutorService().submit(() -> { }).get(5, TimeUnit.SECONDS);
+      waitForEndpointTask(healthy);
       verify(healthyScm, never()).sendHeartbeat(any());
 
       running.execute(executor);
@@ -446,14 +448,14 @@ public class TestRunningDatanodeState {
       // Repeated cycles must not queue duplicate RPCs while endpoint tasks are still in flight.
       running.execute(executor);
       releaseLease.countDown();
-      healthy.getExecutorService().submit(() -> { }).get(5, TimeUnit.SECONDS);
+      waitForEndpointTask(healthy);
       assertThat(context.isFullContainerReportReady(healthy.getAddress())).isTrue();
 
       running.execute(executor);
 
       assertThat(reportSent.await(5, TimeUnit.SECONDS)).as("FCR sent before releasing blocked SCM peers").isTrue();
       assertThat(releasePeers.getCount()).isEqualTo(1);
-      healthy.getExecutorService().submit(() -> { }).get(5, TimeUnit.SECONDS);
+      waitForEndpointTask(healthy);
       assertThat(report.get().getRequestFullContainerReportLease()).isFalse();
       assertThat(report.get().getContainerReport().getFullContainerReportLease().getId()).isEqualTo(99);
       assertThat(report.get().getContainerReport().getFullContainerReportLease().getTerm()).isEqualTo(7);
@@ -469,14 +471,16 @@ public class TestRunningDatanodeState {
       releaseLease.countDown();
       releasePeers.countDown();
       executor.shutdownNow();
-      for (EndpointStateMachine endpoint : endpoints) {
-        endpoint.getExecutorService().shutdownNow();
-        endpoint.close();
+      try {
+        for (EndpointStateMachine endpoint : endpoints) {
+          waitForEndpointTask(endpoint);
+        }
+      } finally {
+        for (EndpointStateMachine endpoint : endpoints) {
+          endpoint.close();
+        }
       }
       assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
-      for (EndpointStateMachine endpoint : endpoints) {
-        assertThat(endpoint.getExecutorService().awaitTermination(5, TimeUnit.SECONDS)).isTrue();
-      }
     }
   }
 
@@ -516,8 +520,7 @@ public class TestRunningDatanodeState {
       assertThat(context.getState()).isEqualTo(DatanodeStates.RUNNING);
       assertThat(endpoint.getState()).isEqualTo(EndPointStates.GETVERSION);
       release.countDown();
-      // The endpoint executor is serial; this barrier waits for the startup task to finish.
-      endpoint.getExecutorService().submit(() -> { }).get(5, TimeUnit.SECONDS);
+      waitForEndpointTask(endpoint);
       if (failureType == 0) {
         assertThat(endpoint.getState()).isEqualTo(EndPointStates.REGISTER);
         assertThat(context.getShutdownOnError()).isFalse();
@@ -564,6 +567,16 @@ public class TestRunningDatanodeState {
     } finally {
       executor.shutdownNow();
     }
+  }
+
+  private static void waitForEndpointTask(EndpointStateMachine endpoint) throws Exception {
+    AtomicReference<Future<EndPointStates>> task = new AtomicReference<>();
+    // Busy endpoints reject submissions, so wait until a barrier task is accepted.
+    waitFor(() -> {
+      task.set(endpoint.submitTask(() -> endpoint::getState));
+      return task.get() != null;
+    }, 10, 5000);
+    task.get().get(5, TimeUnit.SECONDS);
   }
 
   private static VersionResponse versionResponse() {

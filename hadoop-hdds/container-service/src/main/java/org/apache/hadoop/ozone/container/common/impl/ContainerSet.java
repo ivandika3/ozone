@@ -616,7 +616,8 @@ public class ContainerSet implements Iterable<Container<?>> {
   /**
    * Get container report.
    *
-   * <p>Callers should hold this object's monitor while capturing replica reports to serialize with ICR generation and enqueueing.
+   * <p>Callers should hold this object's monitor while capturing replica reports to serialize with ICR generation and
+   * enqueueing.
    * Callers that also discard pending ICRs must hold the same monitor across both operations.
    *
    * @return The container report.

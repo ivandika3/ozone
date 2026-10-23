@@ -109,8 +109,14 @@ public class StateContext {
 
   static final Logger LOG =
       LoggerFactory.getLogger(StateContext.class);
+  /** Commands awaiting dispatch, guarded by {@link #lock}. */
   private final Queue<SCMCommand<?>> commandQueue;
   private final Map<Long, CommandStatus> cmdStatusMap;
+  /**
+   * Protects the command queue. When combined with endpoint RPC or SCM connection-manager membership locks, acquire
+   * the endpoint RPC lock first, then this lock, then the membership lock. Leader-term initialization reads endpoint
+   * membership while holding this lock; commands are dispatched after releasing it.
+   */
   private final Lock lock;
   private final DatanodeStateMachine parentDatanodeStateMachine;
   private final AtomicLong stateExecutionCount;
@@ -120,7 +126,12 @@ public class StateContext {
   private final AtomicReference<Message> containerReports;
   private final AtomicReference<Message> nodeReport;
   private final AtomicReference<Message> pipelineReports;
-  // Incremental reports are queued in the map below
+  /**
+   * Per-endpoint incremental reports. Report production, collection and FCR cleanup synchronize on this map.
+   * Acquire the {@link ContainerSet} monitor before this monitor whenever both are needed. Endpoint tasks may also
+   * hold their RPC lock before acquiring this monitor; do not acquire the ContainerSet monitor or an endpoint RPC
+   * lock while holding this monitor.
+   */
   private final Map<HostAndPort, List<Message>> incrementalReportsQueue;
   private final Map<HostAndPort, Queue<ContainerAction>> containerActions;
   private final Map<HostAndPort, PipelineActionMap> pipelineActions;
