@@ -241,6 +241,7 @@ public class HeartbeatEndpointTask
     if (supportsFCRLease && fcrReady) {
       if (!useFCRLease || hasFCRLease) {
         try {
+          // We allow ICR to be discarded since FCR lease has been granted by the endpoint to this datanode
           ContainerReportsProto report = context.getFullContainerReportDiscardPendingICR(rpcEndpoint.getAddress());
           if (report != null) {
             if (useFCRLease) {
