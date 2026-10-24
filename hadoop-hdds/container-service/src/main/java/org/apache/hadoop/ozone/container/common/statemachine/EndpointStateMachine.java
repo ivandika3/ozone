@@ -23,14 +23,21 @@ import static org.apache.hadoop.hdds.utils.HddsServerUtil.getScmHeartbeatInterva
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import java.io.Closeable;
 import java.time.ZonedDateTime;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
+import net.jcip.annotations.GuardedBy;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.FullContainerReportLeaseProto;
 import org.apache.hadoop.hdds.scm.net.HostAndPort;
+import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.protocol.VersionResponse;
 import org.apache.hadoop.ozone.protocolPB.ReconDatanodeProtocolPB;
 import org.apache.hadoop.ozone.protocolPB.StorageContainerDatanodeProtocolClientSideTranslatorPB;
@@ -38,33 +45,63 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Endpoint is used as holder class that keeps state around the RPC endpoint.
+ * Holds the RPC connection and state for a single SCM or Recon endpoint.
+ *
+ * <p>Datanode submits version, registration and heartbeat tasks to a single-thread executor.
+ * Each endpoint owns an executor so blocked RPCs to one SCM do not prevent communication with other endpoints.
+ * Closing the endpoint shuts down its executor and RPC client; an in-flight task may still finish.
+ *
+ * <p>Locks:
+ * <ul>
+ * <li>{@link #lock}: serializes endpoint RPCs and protects the cached FCR lease. Hold it across lease checks and
+ * updates, including check-and-consume sequences.</li>
+ * <li>This object's monitor ({@code this}): protects {@link #currentTask} and {@link #closed} during task submission
+ * and shutdown. Do not acquire {@link #lock} or perform RPCs while holding this monitor.</li>
+ * </ul>
+ *
+ * <p>When both locks are needed, acquire {@link #lock} first. Separate locks allow submission checks and executor
+ * shutdown to proceed while an RPC is blocked.
+ *
+ * <p>{@link #state} and {@link #version} are volatile for readers outside the endpoint lock. The missed-heartbeat count
+ * is atomic for monitoring reads without the endpoint lock.
  */
 public class EndpointStateMachine
     implements Closeable, EndpointStateMachineMBean {
+  private static final String SCM_TYPE = "SCM";
+  private static final String RECON_TYPE = "Recon";
   static final Logger
       LOG = LoggerFactory.getLogger(EndpointStateMachine.class);
-  private final StorageContainerDatanodeProtocolClientSideTranslatorPB endPoint;
-  private final AtomicLong missedCount;
+
   private final HostAndPort hostAndPort;
-  private final Lock lock;
+  private final StorageContainerDatanodeProtocolClientSideTranslatorPB endPoint;
   private final ConfigurationSource conf;
+  private boolean isPassive;
+
   // RunningDatanodeState reads this without the endpoint lock and must see late SHUTDOWN transitions,
   // even after its wait for the endpoint task has timed out.
   private volatile EndPointStates state = EndPointStates.FIRST;
-  private VersionResponse version;
+  private volatile VersionResponse version;
+  private final AtomicLong missedCount;
   private ZonedDateTime lastSuccessfulHeartbeat;
-  private boolean isPassive;
-  private final ExecutorService executorService;
-
-  private static final String RECON_TYPE = "Recon";
-
-  private static final String SCM_TYPE = "SCM";
 
   /**
-   * Constructs RPC Endpoints.
+   * Serializes endpoint RPCs and protects the cached FCR lease. If both this lock and this object's monitor are needed,
+   * acquire this lock first; never acquire it while holding the monitor.
+   */
+  private final Lock lock;
+  @GuardedBy("lock")
+  private FullContainerReportLeaseProto fullContainerReportLease;
+
+  private final ExecutorService executorService;
+  @GuardedBy("this")
+  private Future<EndPointStates> currentTask;
+  @GuardedBy("this")
+  private boolean closed;
+
+  /**
+   * Constructs the RPC endpoint.
    *
-   * @param endPoint - RPC endPoint.
+   * @param endPoint - RPC endpoint.
    */
   public EndpointStateMachine(HostAndPort hostAndPort,
       StorageContainerDatanodeProtocolClientSideTranslatorPB endPoint,
@@ -81,7 +118,7 @@ public class EndpointStateMachine
   }
 
   /**
-   * Takes a lock on this EndPoint so that other threads don't use this while we
+   * Takes a lock on this endpoint so that other threads don't use this while we
    * are trying to communicate via this endpoint.
    */
   public void lock() {
@@ -114,7 +151,81 @@ public class EndpointStateMachine
   }
 
   /**
-   * Returns the current State this end point is in.
+   * Checks whether this SCM endpoint advertises full container report (FCR) lease support.
+   *
+   * <p>Returns false before the version response is available and for passive endpoints such as Recon. This capability
+   * check does not indicate whether the feature is enabled by upgrade finalization or whether a lease is available.
+   *
+   * @return true if this non-passive endpoint advertises FCR lease support
+   */
+  public boolean supportsFullContainerReportLease() {
+    VersionResponse currentVersion = version;
+    return !isPassive && currentVersion != null
+        && Boolean.parseBoolean(currentVersion.getValue(OzoneConsts.SCM_FCR_LEASE_SUPPORTED));
+  }
+
+  /**
+   * Checks whether a lease granted by this SCM is cached locally. Presence does not guarantee that the lease is still
+   * valid; SCM validates its ID, term and expiry when receiving the FCR.
+   *
+   * <p>Callers must hold the endpoint lock acquired by {@link #lock()}.
+   *
+   * @return true if an FCR lease is cached for this endpoint
+   */
+  public boolean hasFullContainerReportLease() {
+    return fullContainerReportLease != null;
+  }
+
+  /**
+   * Stores an FCR lease granted by this SCM, replacing any cached lease. This method does not validate the grant.
+   *
+   * <p>Callers must hold the endpoint lock acquired by {@link #lock()}.
+   *
+   * @param lease the granted FCR lease, or null to clear the cached lease
+   */
+  public void setFullContainerReportLease(FullContainerReportLeaseProto lease) {
+    fullContainerReportLease = lease;
+  }
+
+  /**
+   * Returns and clears the cached FCR lease so it can be attached to one report. Consuming the local copy does not
+   * release the outstanding lease on SCM.
+   *
+   * <p>Callers must hold the endpoint lock acquired by {@link #lock()}.
+   *
+   * @return the cached FCR lease, or null if none is cached
+   */
+  public FullContainerReportLeaseProto takeFullContainerReportLease() {
+    FullContainerReportLeaseProto lease = fullContainerReportLease;
+    fullContainerReportLease = null;
+    return lease;
+  }
+
+  /**
+   * Clears the cached FCR lease, for example before re-registration. This does not notify SCM or release its lease.
+   *
+   * <p>Callers must hold the endpoint lock acquired by {@link #lock()}.
+   */
+  public void clearFullContainerReportLease() {
+    fullContainerReportLease = null;
+  }
+
+  /**
+   * Clears the cached FCR lease if its term is lower than the supplied term. Equal or older terms leave it unchanged;
+   * this check does not validate lease expiry.
+   *
+   * <p>Callers must hold the endpoint lock acquired by {@link #lock()}.
+   *
+   * @param term the leader term reported by this endpoint
+   */
+  public void clearFullContainerReportLeaseIfStale(long term) {
+    if (hasFullContainerReportLease() && term > fullContainerReportLease.getTerm()) {
+      clearFullContainerReportLease();
+    }
+  }
+
+  /**
+   * Returns the current {@link EndPointStates} this endpoint is in.
    *
    * @return - getState.
    */
@@ -135,7 +246,7 @@ public class EndpointStateMachine
   /**
    * Sets the endpoint state.
    *
-   * @param epState - end point state.
+   * @param epState - endpoint state.
    */
   public EndPointStates setState(EndPointStates epState) {
     this.state = epState;
@@ -143,10 +254,27 @@ public class EndpointStateMachine
   }
 
   /**
-   * Returns the endpoint specific ExecutorService.
+   * Submit an endpoint task.
+   *
+   * <p>The task factory is invoked and its result submitted while holding this object's monitor, after checking that
+   * the previous task has completed. The factory must not acquire the endpoint lock or perform RPCs. The submitted
+   * task runs asynchronously without holding this monitor and may acquire the endpoint lock and perform RPCs.
+   * <p>Only one endpoint task can be run or queued at one point of time. If this method is called
+   *    when there is a running or queued task or when this state machine has been shutdown, it gets ignored.
+   *
+   * @param taskFactory Task factory.
+   * @return null if there is a running or pending task, return the newly submitted task otherwise.
    */
-  public ExecutorService getExecutorService() {
-    return executorService;
+  public synchronized Future<EndPointStates> submitTask(Supplier<Callable<EndPointStates>> taskFactory) {
+    if (closed || executorService.isShutdown() || currentTask != null && !currentTask.isDone()) {
+      return null;
+    }
+    Callable<EndPointStates> task = taskFactory.get();
+    if (task == null) {
+      return CompletableFuture.completedFuture(state);
+    }
+    currentTask = executorService.submit(task);
+    return currentTask;
   }
 
   /**
@@ -154,20 +282,21 @@ public class EndpointStateMachine
    */
   @Override
   public void close() {
-    try {
-      if (endPoint != null) {
-        endPoint.close();
+    synchronized (this) {
+      if (closed) {
+        return;
       }
-    } finally {
-      // Always release the executor thread, even if closing the RPC proxy throws.
+      closed = true;
       executorService.shutdown();
+    }
+    if (endPoint != null) {
+      endPoint.close();
     }
   }
 
   /**
-   * We maintain a count of how many times we missed communicating with a
-   * specific SCM. This is not made atomic since the access to this is always
-   * guarded by the read or write lock. That is, it is serialized.
+   * Increments the count of consecutive communication failures. Atomic updates allow monitoring reads without requiring
+   * the endpoint lock.
    */
   public void incMissed() {
     this.missedCount.incrementAndGet();
@@ -193,7 +322,7 @@ public class EndpointStateMachine
   }
 
   /**
-   * Returns the InetAddress of the endPoint.
+   * Returns the InetAddress of the endpoint.
    *
    * @return - EndPoint.
    */
@@ -202,7 +331,7 @@ public class EndpointStateMachine
   }
 
   /**
-   * Returns real RPC endPoint.
+   * Returns real RPC endpoint.
    *
    * @return rpc client.
    */
@@ -252,9 +381,9 @@ public class EndpointStateMachine
   }
 
   /**
-   * Returns true if the end point is not an SCM. A passive endpoint can be a
+   * Returns true if the endpoint is not an SCM. A passive endpoint can be a
    * Server that only reads information from Datanode, like Recon.
-   * @return true/false.
+   * @return true if the endpoint is a passive endpoint.
    */
   public boolean isPassive() {
     return isPassive;
@@ -265,9 +394,9 @@ public class EndpointStateMachine
   }
 
   /**
-   * States that an Endpoint can be in.
+   * States that an endpoint can be in.
    * <p>
-   * This is a sorted list of states that EndPoint will traverse.
+   * This is a sorted list of states that endpoint will traverse.
    * <p>
    * {@link #getNextState()} will move from {@link #FIRST} to {@link #LAST}.
    */
@@ -281,10 +410,10 @@ public class EndpointStateMachine
     private static final EndPointStates LAST = values()[values().length - 1];
 
     /**
-     * Returns the next logical state that endPoint should move to.
+     * Returns the next logical state that endpoint should move to.
      * The next state is computed by adding 1 to the current state.
      *
-     * @return NextState.
+     * @return next state.
      */
     public EndPointStates getNextState() {
       final int n = this.ordinal();

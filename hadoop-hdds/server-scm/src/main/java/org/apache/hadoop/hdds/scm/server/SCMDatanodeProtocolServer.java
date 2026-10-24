@@ -32,8 +32,14 @@ import static org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProt
 import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_DATANODE_HANDLER_COUNT_KEY;
 import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_DATANODE_READ_THREADPOOL_DEFAULT;
 import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_DATANODE_READ_THREADPOOL_KEY;
+import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_FULL_CONTAINER_REPORT_LEASE_DURATION;
+import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_FULL_CONTAINER_REPORT_LEASE_DURATION_DEFAULT;
+import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_FULL_CONTAINER_REPORT_RATE_LIMIT_ENABLED;
+import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_FULL_CONTAINER_REPORT_RATE_LIMIT_ENABLED_DEFAULT;
 import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_HANDLER_COUNT_DEFAULT;
 import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_HANDLER_COUNT_KEY;
+import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_MAX_FULL_CONTAINER_REPORT_LEASES;
+import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_MAX_FULL_CONTAINER_REPORT_LEASES_DEFAULT;
 import static org.apache.hadoop.hdds.scm.events.SCMEvents.CONTAINER_REPORT;
 import static org.apache.hadoop.hdds.scm.events.SCMEvents.PIPELINE_REPORT;
 import static org.apache.hadoop.hdds.scm.server.StorageContainerManager.startRpcServer;
@@ -50,15 +56,19 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
+import org.apache.hadoop.hdds.HDDSVersion;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.ContainerReportsProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.DatanodeVersionProto;
+import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.FullContainerReportLeaseProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.NodeReportProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.PipelineReportsProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.ReconstructECContainersCommandProto;
@@ -73,7 +83,6 @@ import org.apache.hadoop.hdds.scm.events.SCMEvents;
 import org.apache.hadoop.hdds.scm.ha.SCMContext;
 import org.apache.hadoop.hdds.scm.ha.SCMNodeDetails;
 import org.apache.hadoop.hdds.scm.server.SCMDatanodeHeartbeatDispatcher.PipelineReportFromDatanode;
-import org.apache.hadoop.hdds.scm.server.SCMDatanodeHeartbeatDispatcher.ReportFromDatanode;
 import org.apache.hadoop.hdds.server.events.EventPublisher;
 import org.apache.hadoop.hdds.utils.HddsServerUtil;
 import org.apache.hadoop.hdds.utils.ProtocolMessageMetrics;
@@ -104,6 +113,7 @@ import org.apache.hadoop.ozone.protocol.commands.SetNodeOperationalStateCommand;
 import org.apache.hadoop.ozone.protocolPB.StorageContainerDatanodeProtocolPB;
 import org.apache.hadoop.ozone.protocolPB.StorageContainerDatanodeProtocolServerSideTranslatorPB;
 import org.apache.hadoop.security.authorize.PolicyProvider;
+import org.apache.hadoop.util.Time;
 import org.apache.ratis.protocol.exceptions.NotLeaderException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -129,6 +139,8 @@ public class SCMDatanodeProtocolServer implements
   private final InetSocketAddress datanodeRpcAddress;
   private final SCMDatanodeHeartbeatDispatcher heartbeatDispatcher;
   private final EventPublisher eventPublisher;
+  private final SCMFullContainerReportLeaseMetrics fcrLeaseMetrics;
+  private final SCMFullContainerReportLeaseManager fcrLeaseManager;
   private ProtocolMessageMetrics<StorageContainerDatanodeProtocolProtos.Type> protocolMessageMetrics;
 
   private final SCMContext scmContext;
@@ -147,6 +159,11 @@ public class SCMDatanodeProtocolServer implements
     this.scm = scm;
     this.eventPublisher = eventPublisher;
     this.scmContext = scmContext;
+    boolean rateLimitEnabled = parseFCRRateLimitEnabled(conf.get(OZONE_SCM_FULL_CONTAINER_REPORT_RATE_LIMIT_ENABLED));
+    this.fcrLeaseMetrics = scmContext == null
+        ? null : SCMFullContainerReportLeaseMetrics.create();
+    this.fcrLeaseManager = createFCRLeaseManager(conf);
+    this.fcrLeaseManager.setRateLimitEnabled(rateLimitEnabled);
 
     heartbeatDispatcher = new SCMDatanodeHeartbeatDispatcher(
         scm.getScmNodeManager(), eventPublisher);
@@ -239,17 +256,30 @@ public class SCMDatanodeProtocolServer implements
     auditMap.put("datanodeDetails", datanodeDetails.toString());
 
     // TODO : Return the list of Nodes that forms the SCM HA.
-    RegisteredCommand registeredCommand = scm.getScmNodeManager()
-        .register(datanodeDetails, nodeReport, pipelineReportsProto,
-            versionInfo);
+    RegisteredCommand registeredCommand;
+    if (containerReportsProto.getFullContainerReportDeferred()
+        && !scm.getVersionManager().isAllowed(HDDSVersion.FULL_CONTAINER_REPORT_LEASE)) {
+      // Preserve the rejection if finalization advances before the response is sent.
+      registeredCommand = scm.getScmNodeManager().getRegistrationError(datanodeDetails, versionInfo)
+          .orElseThrow(() -> new IOException(
+              "Full container report leases must be finalized before deferring registration reports."));
+    } else {
+      registeredCommand = scm.getScmNodeManager()
+          .register(datanodeDetails, nodeReport, pipelineReportsProto, versionInfo);
+    }
     if (registeredCommand.getError()
         == SCMRegisteredResponseProto.ErrorCode.success) {
-      eventPublisher.fireEvent(CONTAINER_REPORT,
-          new SCMDatanodeHeartbeatDispatcher.ContainerReportFromDatanode(
-              datanodeDetails, containerReportsProto, true));
-      eventPublisher.fireEvent(SCMEvents.NODE_REGISTRATION_CONT_REPORT,
-          new NodeRegistrationContainerReport(datanodeDetails,
-              containerReportsProto));
+      if (containerReportsProto.getFullContainerReportDeferred()) {
+        fcrLeaseManager.markFullContainerReportDeferred(datanodeDetails);
+      } else {
+        fcrLeaseManager.clearFullContainerReportDeferred(datanodeDetails);
+        eventPublisher.fireEvent(CONTAINER_REPORT,
+            new SCMDatanodeHeartbeatDispatcher.ContainerReportFromDatanode(
+                datanodeDetails, containerReportsProto, true));
+        eventPublisher.fireEvent(SCMEvents.NODE_REGISTRATION_CONT_REPORT,
+            new NodeRegistrationContainerReport(datanodeDetails,
+                ContainerReportsProto.getDefaultInstance()));
+      }
       eventPublisher.fireEvent(PIPELINE_REPORT,
               new PipelineReportFromDatanode(datanodeDetails,
                       pipelineReportsProto));
@@ -302,9 +332,29 @@ public class SCMDatanodeProtocolServer implements
   @Override
   public SCMHeartbeatResponseProto sendHeartbeat(
       SCMHeartbeatRequestProto heartbeat) throws IOException, TimeoutException {
+    SCMHeartbeatRequestProto heartbeatToDispatch = heartbeat;
+    SCMDatanodeHeartbeatDispatcher.ContainerReportFromDatanode leasedReport =
+        null;
+    boolean leasedReportRejected = false;
+    if (heartbeat.hasContainerReport()
+        && hasFullContainerReportLease(heartbeat.getContainerReport())) {
+      leasedReport = claimLeasedFCR(heartbeat);
+      if (leasedReport == null) {
+        leasedReportRejected = true;
+        heartbeatToDispatch = heartbeat.toBuilder().clearContainerReport().build();
+      }
+    }
     List<SCMCommandProto> cmdResponses = new ArrayList<>();
-    for (SCMCommand<?> cmd : heartbeatDispatcher.dispatch(heartbeat)) {
-      cmdResponses.add(getCommandResponse(cmd, scm));
+    try {
+      for (SCMCommand<?> cmd :
+          heartbeatDispatcher.dispatch(heartbeatToDispatch, leasedReport)) {
+        cmdResponses.add(getCommandResponse(cmd, scm));
+      }
+    } catch (RuntimeException | Error ex) {
+      if (leasedReport != null) {
+        leasedReport.completeIfNotDispatched();
+      }
+      throw ex;
     }
     final OptionalLong term = getTermIfLeader();
     boolean auditSuccess = true;
@@ -318,6 +368,8 @@ public class SCMDatanodeProtocolServer implements
               .setDatanodeUUID(heartbeat.getDatanodeDetails().getUuid())
               .addAllCommands(cmdResponses);
       term.ifPresent(builder::setTerm);
+      builder.setFullContainerReportLeaseRejected(leasedReportRejected);
+      addFCRLeaseIfRequested(heartbeat, builder);
       return builder.build();
     } catch (Exception ex) {
       auditSuccess = false;
@@ -332,6 +384,103 @@ public class SCMDatanodeProtocolServer implements
         );
       }
     }
+  }
+
+  private SCMFullContainerReportLeaseManager createFCRLeaseManager(
+      OzoneConfiguration conf) {
+    int maxLeases = conf.getInt(OZONE_SCM_MAX_FULL_CONTAINER_REPORT_LEASES,
+        OZONE_SCM_MAX_FULL_CONTAINER_REPORT_LEASES_DEFAULT);
+    long leaseDurationMs = conf.getTimeDuration(
+        OZONE_SCM_FULL_CONTAINER_REPORT_LEASE_DURATION,
+        OZONE_SCM_FULL_CONTAINER_REPORT_LEASE_DURATION_DEFAULT
+            .toLong(TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS);
+    return new SCMFullContainerReportLeaseManager(maxLeases, leaseDurationMs,
+        Time::monotonicNow, fcrLeaseMetrics);
+  }
+
+  String reconfigureFCRRateLimit(String newValue) {
+    boolean enabled = parseFCRRateLimitEnabled(newValue);
+    fcrLeaseManager.setRateLimitEnabled(enabled);
+    return Boolean.toString(enabled);
+  }
+
+  private static boolean parseFCRRateLimitEnabled(String value) {
+    if (value == null) {
+      return OZONE_SCM_FULL_CONTAINER_REPORT_RATE_LIMIT_ENABLED_DEFAULT;
+    }
+    String trimmed = value.trim();
+    if (!"true".equalsIgnoreCase(trimmed) && !"false".equalsIgnoreCase(trimmed)) {
+      throw new IllegalArgumentException(OZONE_SCM_FULL_CONTAINER_REPORT_RATE_LIMIT_ENABLED + " must be true or false");
+    }
+    return Boolean.parseBoolean(trimmed);
+  }
+
+  void removeDatanode(DatanodeDetails datanode) {
+    fcrLeaseManager.removeDatanode(datanode);
+  }
+
+  private SCMDatanodeHeartbeatDispatcher.ContainerReportFromDatanode claimLeasedFCR(
+      SCMHeartbeatRequestProto heartbeat) {
+    DatanodeDetails datanodeDetails = DatanodeDetails.getFromProtoBuf(
+        heartbeat.getDatanodeDetails());
+    ContainerReportsProto containerReport = heartbeat.getContainerReport();
+    FullContainerReportLeaseProto lease =
+        containerReport.getFullContainerReportLease();
+    OptionalLong currentTerm = getFCRLeaseTerm();
+    Optional<SCMFullContainerReportLeaseManager.LeaseClaim> claim =
+        fcrLeaseManager.claimLease(datanodeDetails, currentTerm,
+            lease.getTerm(), lease.getId());
+    if (claim.isPresent()) {
+      SCMFullContainerReportLeaseManager.LeaseClaim leaseClaim = claim.get();
+      return new SCMDatanodeHeartbeatDispatcher.ContainerReportFromDatanode(
+          datanodeDetails, containerReport, leaseClaim.isRegistrationReport(),
+          leaseClaim);
+    }
+
+    LOG.warn("Ignoring full container report from datanode {} with invalid "
+            + "lease id {} and term {}.", datanodeDetails.getUuidString(),
+        lease.getId(), lease.getTerm());
+    return null;
+  }
+
+  private boolean hasFullContainerReportLease(ContainerReportsProto report) {
+    return report.hasFullContainerReportLease();
+  }
+
+  private void addFCRLeaseIfRequested(SCMHeartbeatRequestProto heartbeat,
+      SCMHeartbeatResponseProto.Builder builder) {
+    if (!heartbeat.getRequestFullContainerReportLease() || scmContext == null) {
+      return;
+    }
+
+    OptionalLong term = getFCRLeaseTerm();
+    if (!term.isPresent()) {
+      return;
+    }
+
+    DatanodeDetails datanodeDetails = DatanodeDetails.getFromProtoBuf(
+        heartbeat.getDatanodeDetails());
+    OptionalLong leaseId = fcrLeaseManager.requestLease(datanodeDetails,
+        term.getAsLong());
+    if (leaseId.isPresent()) {
+      builder.setFullContainerReportLease(
+          FullContainerReportLeaseProto.newBuilder()
+              .setId(leaseId.getAsLong())
+              .setTerm(term.getAsLong()));
+    }
+  }
+
+  private OptionalLong getFCRLeaseTerm() {
+    if (scmContext == null || !scm.getVersionManager().isAllowed(HDDSVersion.FULL_CONTAINER_REPORT_LEASE)) {
+      return OptionalLong.empty();
+    }
+
+    OptionalLong leaderTerm = scmContext.getTermOfLeaderIfReady();
+    if (leaderTerm.isPresent()) {
+      return leaderTerm;
+    }
+    return scmContext.isLeader()
+        ? OptionalLong.empty() : OptionalLong.of(SCMContext.INVALID_TERM);
   }
 
   private OptionalLong getTermIfLeader() {
@@ -457,6 +606,9 @@ public class SCMDatanodeProtocolServer implements
     }
     IOUtils.cleanupWithLogger(LOG, scm.getScmNodeManager());
     protocolMessageMetrics.unregister();
+    if (fcrLeaseMetrics != null) {
+      fcrLeaseMetrics.unregister();
+    }
   }
 
   @Override
@@ -531,14 +683,28 @@ public class SCMDatanodeProtocolServer implements
   }
 
   /**
-   * Wrapper class for events with the datanode origin.
+   * Datanode details and container IDs for registration events.
    */
-  public static class NodeRegistrationContainerReport extends
-      ReportFromDatanode<ContainerReportsProto> {
+  public static class NodeRegistrationContainerReport {
+    private final DatanodeDetails datanodeDetails;
+    private final long[] containerIDs;
 
     public NodeRegistrationContainerReport(DatanodeDetails datanodeDetails,
         ContainerReportsProto report) {
-      super(datanodeDetails, report);
+      this.datanodeDetails = datanodeDetails;
+      int numContainers = report == null ? 0 : report.getReportsCount();
+      containerIDs = new long[numContainers];
+      for (int i = 0; i < numContainers; i++) {
+        containerIDs[i] = report.getReports(i).getContainerID();
+      }
+    }
+
+    public DatanodeDetails getDatanodeDetails() {
+      return datanodeDetails;
+    }
+
+    public long[] getContainerIDs() {
+      return containerIDs.clone();
     }
   }
 

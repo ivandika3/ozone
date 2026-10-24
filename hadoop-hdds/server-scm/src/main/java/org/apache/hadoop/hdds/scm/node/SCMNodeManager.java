@@ -38,12 +38,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -144,6 +146,7 @@ public class SCMNodeManager implements NodeManager, ContainerReplicaPendingOpsSu
       BiConsumer<DatanodeDetails, SCMCommand<?>>> sendCommandNotifyMap;
   private final NonWritableNodeFilter nonWritableNodeFilter;
   private final int numContainerPerVolume;
+  private Consumer<DatanodeDetails> datanodeRemovedHandler = ignored -> { };
 
   /**
    * Lock used to synchronize some operation in Node manager to ensure a
@@ -382,11 +385,13 @@ public class SCMNodeManager implements NodeManager, ContainerReplicaPendingOpsSu
    */
   @Override
   public VersionResponse getVersion(SCMVersionRequestProto versionRequest) {
+    // Advertise binary support independently of finalization; apparent version gates lease use.
     return VersionResponse.newBuilder()
         .setVersion(this.version.getVersion())
         .addValue(OzoneConsts.SCM_ID,
             this.scmStorageConfig.getScmId())
         .addValue(OzoneConsts.CLUSTER_ID, this.scmStorageConfig.getClusterID())
+        .addValue(OzoneConsts.SCM_FCR_LEASE_SUPPORTED, Boolean.TRUE.toString())
         .build();
   }
 
@@ -399,6 +404,19 @@ public class SCMNodeManager implements NodeManager, ContainerReplicaPendingOpsSu
             .setApparentVersion(versionManager.getApparentVersion().serialize())
             .setSoftwareVersion(versionManager.getSoftwareVersion().serialize())
             .build());
+  }
+
+  @Override
+  public Optional<RegisteredCommand> getRegistrationError(DatanodeDetails datanodeDetails,
+      DatanodeVersionProto versionReport) {
+    if (!shouldFenceDatanode(datanodeDetails, versionReport)) {
+      return Optional.empty();
+    }
+    return Optional.of(RegisteredCommand.newBuilder()
+        .setErrorCode(ErrorCode.errorNodeNotPermitted)
+        .setDatanode(datanodeDetails)
+        .setClusterID(this.scmStorageConfig.getClusterID())
+        .build());
   }
 
   /**
@@ -418,12 +436,9 @@ public class SCMNodeManager implements NodeManager, ContainerReplicaPendingOpsSu
       DatanodeDetails datanodeDetails, NodeReportProto nodeReport,
       PipelineReportsProto pipelineReportsProto,
       DatanodeVersionProto dnVersionInfo) {
-    if (shouldFenceDatanode(datanodeDetails, dnVersionInfo)) {
-      return RegisteredCommand.newBuilder()
-          .setErrorCode(ErrorCode.errorNodeNotPermitted)
-          .setDatanode(datanodeDetails)
-          .setClusterID(this.scmStorageConfig.getClusterID())
-          .build();
+    Optional<RegisteredCommand> error = getRegistrationError(datanodeDetails, dnVersionInfo);
+    if (error.isPresent()) {
+      return error.get();
     }
 
     InetAddress dnAddress = Server.getRemoteIp();
@@ -2097,6 +2112,7 @@ public class SCMNodeManager implements NodeManager, ContainerReplicaPendingOpsSu
     try {
       NodeStatus nodeStatus = this.getNodeStatus(datanodeDetails);
       if (datanodeDetails.isDecommissioned() || nodeStatus.isDead()) {
+        datanodeRemovedHandler.accept(datanodeDetails);
         if (clusterMap.contains(datanodeDetails)) {
           clusterMap.remove(datanodeDetails);
         }
@@ -2110,6 +2126,12 @@ public class SCMNodeManager implements NodeManager, ContainerReplicaPendingOpsSu
     } finally {
       writeLock().unlock();
     }
+  }
+
+  @Override
+  public void setDatanodeRemovedHandler(
+      Consumer<DatanodeDetails> handler) {
+    datanodeRemovedHandler = Objects.requireNonNull(handler);
   }
 
   protected boolean shouldFenceDatanode(DatanodeDetails dnDetails, DatanodeVersionProto versionReport) {

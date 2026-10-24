@@ -19,6 +19,7 @@ package org.apache.hadoop.hdds.scm.server;
 
 import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_EVENT_REPORT_EXEC_WAIT_THRESHOLD_DEFAULT;
 import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_EVENT_REPORT_QUEUE_WAIT_THRESHOLD_DEFAULT;
+import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_FULL_CONTAINER_REPORT_RATE_LIMIT_ENABLED;
 import static org.apache.hadoop.hdds.scm.ScmUtils.checkIfCertSignRequestAllowed;
 import static org.apache.hadoop.hdds.scm.security.SecretKeyManagerService.isSecretKeyEnable;
 import static org.apache.hadoop.hdds.utils.HddsServerUtil.getRemoteUser;
@@ -462,6 +463,10 @@ public final class StorageContainerManager extends ServiceRuntimeInfoImpl
 
     datanodeProtocolServer = new SCMDatanodeProtocolServer(conf, this,
         eventQueue, scmContext);
+    reconfigurationHandler.register(OZONE_SCM_FULL_CONTAINER_REPORT_RATE_LIMIT_ENABLED,
+        datanodeProtocolServer::reconfigureFCRRateLimit);
+    scmNodeManager.setDatanodeRemovedHandler(
+        datanodeProtocolServer::removeDatanode);
     blockProtocolServer = new SCMBlockProtocolServer(conf, this);
     clientProtocolServer = new SCMClientProtocolServer(conf, this,
         reconfigurationHandler);
@@ -2129,6 +2134,7 @@ public final class StorageContainerManager extends ServiceRuntimeInfoImpl
    * @return The {@link ScmVersionManager} which can be used to check this SCM's local apparent and software versions.
    *  To finalize all SCM's via Ratis, use {@link FinalizationManager} instead.
    */
+  @Override
   public ScmVersionManager getVersionManager() {
     return versionManager;
   }
