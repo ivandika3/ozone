@@ -57,6 +57,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import net.jcip.annotations.GuardedBy;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.hadoop.hdds.HDDSVersion;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
@@ -121,19 +122,30 @@ public class StateContext {
   private final DatanodeStateMachine parentDatanodeStateMachine;
   private final AtomicLong stateExecutionCount;
   private final ConfigurationSource conf;
+  /**
+   * Protects the endpoint set, per-endpoint report and action queues, and the report-readiness map. Do not generate
+   * container reports, acquire endpoint RPC locks or wait for endpoint tasks while holding this lock. Acquire the
+   * ContainerSet monitor first when both are needed.
+   */
+  private final Object endpointLock = new Object();
+  @GuardedBy("endpointLock")
   private final Set<HostAndPort> endpoints;
   // Only the latest full report of each type is kept
   private final AtomicReference<Message> containerReports;
   private final AtomicReference<Message> nodeReport;
   private final AtomicReference<Message> pipelineReports;
   /**
-   * Per-endpoint incremental reports. Report production, collection and FCR cleanup synchronize on this map.
-   * Acquire the {@link ContainerSet} monitor before this monitor whenever both are needed. Endpoint tasks may also
-   * hold their RPC lock before acquiring this monitor; do not acquire the ContainerSet monitor or an endpoint RPC
-   * lock while holding this monitor.
+   * Per-endpoint incremental reports. Queue operations, FCR cleanup and endpoint changes use {@link #endpointLock}.
    */
+  @GuardedBy("endpointLock")
   private final Map<HostAndPort, List<Message>> incrementalReportsQueue;
+  /**
+   * Per-endpoint pending container actions. Producers, heartbeat collection and endpoint changes use
+   * {@link #endpointLock}, including duplicate checks when adding actions.
+   */
+  @GuardedBy("endpointLock")
   private final Map<HostAndPort, Queue<ContainerAction>> containerActions;
+  @GuardedBy("endpointLock")
   private final Map<HostAndPort, PipelineActionMap> pipelineActions;
   private DatanodeStateMachine.DatanodeStates state;
   private boolean shutdownOnError = false;
@@ -142,6 +154,7 @@ public class StateContext {
   private final AtomicLong lastHeartbeatSent;
   // Endpoint -> ReportType -> Boolean of whether the full report should be
   //  queued in getFullReports call.
+  @GuardedBy("endpointLock")
   private final Map<HostAndPort,
       Map<String, AtomicBoolean>> isFullReportReadyToBeSent;
   // List of supported full report types.
@@ -322,7 +335,7 @@ public class StateContext {
     // in some case, we want to add a fullReportType message
     // as an incremental message.
     // see XceiverServerRatis#sendPipelineReport
-    synchronized (incrementalReportsQueue) {
+    synchronized (endpointLock) {
       for (HostAndPort endpoint : endpoints) {
         incrementalReportsQueue.get(endpoint).add(report);
       }
@@ -347,7 +360,7 @@ public class StateContext {
           "not full report message type: " + reportType);
     }
     type2Reports.get(reportType).set(report);
-    if (isFullReportReadyToBeSent != null) {
+    synchronized (endpointLock) {
       for (Map<String, AtomicBoolean> mp : isFullReportReadyToBeSent.values()) {
         mp.get(reportType).set(true);
       }
@@ -374,7 +387,7 @@ public class StateContext {
       final String reportType = descriptor.getFullName();
       Objects.requireNonNull(reportType, "reportType == null");
     }
-    synchronized (incrementalReportsQueue) {
+    synchronized (endpointLock) {
       if (incrementalReportsQueue.containsKey(endpoint)) {
         incrementalReportsQueue.get(endpoint).addAll(0, reportsToPutBack);
       }
@@ -406,15 +419,19 @@ public class StateContext {
   }
 
   public boolean isFullContainerReportReady(HostAndPort endpoint) {
-    Map<String, AtomicBoolean> mp = isFullReportReadyToBeSent.get(endpoint);
-    return mp != null && mp.containsKey(CONTAINER_REPORTS_PROTO_NAME)
-        && mp.get(CONTAINER_REPORTS_PROTO_NAME).get();
+    synchronized (endpointLock) {
+      Map<String, AtomicBoolean> mp = isFullReportReadyToBeSent.get(endpoint);
+      return mp != null && mp.containsKey(CONTAINER_REPORTS_PROTO_NAME)
+          && mp.get(CONTAINER_REPORTS_PROTO_NAME).get();
+    }
   }
 
   public void putBackFullContainerReport(HostAndPort endpoint) {
-    Map<String, AtomicBoolean> reports = isFullReportReadyToBeSent.get(endpoint);
-    if (reports != null) {
-      reports.get(CONTAINER_REPORTS_PROTO_NAME).set(true);
+    synchronized (endpointLock) {
+      Map<String, AtomicBoolean> reports = isFullReportReadyToBeSent.get(endpoint);
+      if (reports != null) {
+        reports.get(CONTAINER_REPORTS_PROTO_NAME).set(true);
+      }
     }
   }
 
@@ -450,13 +467,16 @@ public class StateContext {
    */
   public ContainerReportsProto getFullContainerReportDiscardPendingICR(
       HostAndPort endpoint) throws IOException {
-    Map<String, AtomicBoolean> reports = isFullReportReadyToBeSent.get(endpoint);
-    if (reports == null) {
-      return null;
-    }
-    AtomicBoolean ready = reports.get(CONTAINER_REPORTS_PROTO_NAME);
-    if (ready == null || !ready.compareAndSet(true, false)) {
-      return null;
+    final AtomicBoolean ready;
+    synchronized (endpointLock) {
+      Map<String, AtomicBoolean> reports = isFullReportReadyToBeSent.get(endpoint);
+      if (reports == null) {
+        return null;
+      }
+      ready = reports.get(CONTAINER_REPORTS_PROTO_NAME);
+      if (ready == null || !ready.compareAndSet(true, false)) {
+        return null;
+      }
     }
 
     try {
@@ -473,7 +493,7 @@ public class StateContext {
     // Block ICRs from being generated
     synchronized (containerSet) {
       ContainerReportsProto report = containerSet.getContainerReport();
-      synchronized (incrementalReportsQueue) {
+      synchronized (endpointLock) {
         for (Map.Entry<HostAndPort, List<Message>>
             entry : incrementalReportsQueue.entrySet()) {
           if (entry.getValue() != null && discardPendingICR.test(entry.getKey())) {
@@ -504,7 +524,7 @@ public class StateContext {
   List<Message> getIncrementalReports(
       HostAndPort endpoint, int maxLimit) {
     List<Message> reportsToReturn = new LinkedList<>();
-    synchronized (incrementalReportsQueue) {
+    synchronized (endpointLock) {
       List<Message> reportsForEndpoint =
           incrementalReportsQueue.get(endpoint);
       if (reportsForEndpoint != null) {
@@ -520,30 +540,32 @@ public class StateContext {
   List<Message> getFullReports(
       HostAndPort endpoint, int maxLimit, String excludedFullReportType) {
     int count = 0;
-    Map<String, AtomicBoolean> mp = isFullReportReadyToBeSent.get(endpoint);
     List<Message> fullReports = new LinkedList<>();
-    if (null != mp) {
-      for (Map.Entry<String, AtomicBoolean> kv : mp.entrySet()) {
-        if (count == maxLimit) {
-          break;
-        }
-        if (kv.getValue().get()) {
-          String reportType = kv.getKey();
-          if (reportType.equals(excludedFullReportType)) {
-            continue;
+    synchronized (endpointLock) {
+      Map<String, AtomicBoolean> mp = isFullReportReadyToBeSent.get(endpoint);
+      if (null != mp) {
+        for (Map.Entry<String, AtomicBoolean> kv : mp.entrySet()) {
+          if (count == maxLimit) {
+            break;
           }
-          final AtomicReference<Message> ref =
-              type2Reports.get(reportType);
-          if (ref == null) {
-            throw new RuntimeException(reportType + " is not a valid full "
-                + "report type!");
-          }
-          final Message msg = ref.get();
-          if (msg != null) {
-            fullReports.add(msg);
-            // Mark the report as not ready to be sent, until another refresh.
-            mp.get(reportType).set(false);
-            count++;
+          if (kv.getValue().get()) {
+            String reportType = kv.getKey();
+            if (reportType.equals(excludedFullReportType)) {
+              continue;
+            }
+            final AtomicReference<Message> ref =
+                type2Reports.get(reportType);
+            if (ref == null) {
+              throw new RuntimeException(reportType + " is not a valid full "
+                  + "report type!");
+            }
+            final Message msg = ref.get();
+            if (msg != null) {
+              fullReports.add(msg);
+              // Mark the report as not ready to be sent, until another refresh.
+              mp.get(reportType).set(false);
+              count++;
+            }
           }
         }
       }
@@ -557,7 +579,7 @@ public class StateContext {
    * @param containerAction ContainerAction to be added
    */
   public void addContainerAction(ContainerAction containerAction) {
-    synchronized (containerActions) {
+    synchronized (endpointLock) {
       for (HostAndPort endpoint : endpoints) {
         containerActions.get(endpoint).add(containerAction);
       }
@@ -570,7 +592,7 @@ public class StateContext {
    * @param containerAction ContainerAction to be added
    */
   public void addContainerActionIfAbsent(ContainerAction containerAction) {
-    synchronized (containerActions) {
+    synchronized (endpointLock) {
       for (HostAndPort endpoint : endpoints) {
         if (!containerActions.get(endpoint).contains(containerAction)) {
           containerActions.get(endpoint).add(containerAction);
@@ -589,7 +611,7 @@ public class StateContext {
       HostAndPort endpoint,
       int maxLimit) {
     List<ContainerAction> containerActionList = new ArrayList<>();
-    synchronized (containerActions) {
+    synchronized (endpointLock) {
       if (!containerActions.isEmpty() &&
           CollectionUtils.isNotEmpty(containerActions.get(endpoint))) {
         Queue<ContainerAction> actions = containerActions.get(endpoint);
@@ -614,8 +636,10 @@ public class StateContext {
     // Put only if the pipeline id with the same action is absent.
     final PipelineKey key = new PipelineKey(pipelineAction);
     boolean added = false;
-    for (HostAndPort endpoint : endpoints) {
-      added = pipelineActions.get(endpoint).putIfAbsent(key, pipelineAction) || added;
+    synchronized (endpointLock) {
+      for (HostAndPort endpoint : endpoints) {
+        added = pipelineActions.get(endpoint).putIfAbsent(key, pipelineAction) || added;
+      }
     }
     return added;
   }
@@ -629,7 +653,10 @@ public class StateContext {
   public List<PipelineAction> getPendingPipelineAction(
       HostAndPort endpoint,
       int maxLimit) {
-    final PipelineActionMap map = pipelineActions.get(endpoint);
+    final PipelineActionMap map;
+    synchronized (endpointLock) {
+      map = pipelineActions.get(endpoint);
+    }
     if (map == null) {
       return Collections.emptyList();
     }
@@ -971,30 +998,34 @@ public class StateContext {
   }
 
   public void addEndpoint(HostAndPort endpoint) {
-    if (!endpoints.contains(endpoint)) {
-      this.endpoints.add(endpoint);
-      this.containerActions.put(endpoint, new LinkedList<>());
-      this.pipelineActions.put(endpoint, new PipelineActionMap());
-      this.incrementalReportsQueue.put(endpoint, new LinkedList<>());
-      Map<String, AtomicBoolean> mp = new HashMap<>();
-      fullReportTypeList.forEach(e -> {
-        mp.putIfAbsent(e, new AtomicBoolean(true));
-      });
-      this.isFullReportReadyToBeSent.putIfAbsent(endpoint, mp);
-      if (getQueueMetrics() != null) {
-        getQueueMetrics().addEndpoint(endpoint);
+    synchronized (endpointLock) {
+      if (!endpoints.contains(endpoint)) {
+        this.endpoints.add(endpoint);
+        this.containerActions.put(endpoint, new LinkedList<>());
+        this.pipelineActions.put(endpoint, new PipelineActionMap());
+        this.incrementalReportsQueue.put(endpoint, new LinkedList<>());
+        Map<String, AtomicBoolean> mp = new HashMap<>();
+        fullReportTypeList.forEach(e -> {
+          mp.putIfAbsent(e, new AtomicBoolean(true));
+        });
+        this.isFullReportReadyToBeSent.putIfAbsent(endpoint, mp);
+        if (getQueueMetrics() != null) {
+          getQueueMetrics().addEndpoint(endpoint);
+        }
       }
     }
   }
 
   public void removeEndpoint(HostAndPort endpoint) {
-    this.endpoints.remove(endpoint);
-    this.containerActions.remove(endpoint);
-    this.pipelineActions.remove(endpoint);
-    this.incrementalReportsQueue.remove(endpoint);
-    this.isFullReportReadyToBeSent.remove(endpoint);
-    if (getQueueMetrics() != null) {
-      getQueueMetrics().removeEndpoint(endpoint);
+    synchronized (endpointLock) {
+      this.endpoints.remove(endpoint);
+      this.containerActions.remove(endpoint);
+      this.pipelineActions.remove(endpoint);
+      this.incrementalReportsQueue.remove(endpoint);
+      this.isFullReportReadyToBeSent.remove(endpoint);
+      if (getQueueMetrics() != null) {
+        getQueueMetrics().removeEndpoint(endpoint);
+      }
     }
   }
 
@@ -1025,18 +1056,24 @@ public class StateContext {
   }
 
   public Map<HostAndPort, Integer> getPipelineActionQueueSize() {
-    return pipelineActions.entrySet().stream()
-        .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().size()));
+    synchronized (endpointLock) {
+      return pipelineActions.entrySet().stream()
+          .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().size()));
+    }
   }
 
   public Map<HostAndPort, Integer> getContainerActionQueueSize() {
-    return containerActions.entrySet().stream()
-        .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().size()));
+    synchronized (endpointLock) {
+      return containerActions.entrySet().stream()
+          .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().size()));
+    }
   }
 
   public Map<HostAndPort, Integer> getIncrementalReportQueueSize() {
-    return incrementalReportsQueue.entrySet().stream()
-        .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().size()));
+    synchronized (endpointLock) {
+      return incrementalReportsQueue.entrySet().stream()
+          .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().size()));
+    }
   }
 
   public DatanodeQueueMetrics getQueueMetrics() {

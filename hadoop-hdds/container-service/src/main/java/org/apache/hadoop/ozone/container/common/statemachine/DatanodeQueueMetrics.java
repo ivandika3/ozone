@@ -23,6 +23,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.CaseFormat;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.commons.text.WordUtils;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.SCMCommandProto;
 import org.apache.hadoop.hdds.scm.net.HostAndPort;
@@ -107,9 +108,9 @@ public final class DatanodeQueueMetrics implements MetricsSource {
 
     // Initialize queue for StateContext.incrementalReportQueue,
     // containerActionQueue, pipelineActionQueue
-    incrementalReportsQueueMap = new HashMap<>();
-    containerActionQueueMap = new HashMap<>();
-    pipelineActionQueueMap = new HashMap<>();
+    incrementalReportsQueueMap = new ConcurrentHashMap<>();
+    containerActionQueueMap = new ConcurrentHashMap<>();
+    pipelineActionQueueMap = new ConcurrentHashMap<>();
   }
 
   @Override

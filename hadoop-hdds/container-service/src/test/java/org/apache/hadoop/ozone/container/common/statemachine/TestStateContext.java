@@ -27,16 +27,22 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Message;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
@@ -51,6 +57,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.MockDatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
@@ -67,11 +74,15 @@ import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolPro
 import org.apache.hadoop.hdds.scm.net.HostAndPort;
 import org.apache.hadoop.hdds.scm.pipeline.PipelineID;
 import org.apache.hadoop.hdfs.util.EnumCounters;
+import org.apache.hadoop.metrics2.MetricsCollector;
+import org.apache.hadoop.metrics2.MetricsInfo;
+import org.apache.hadoop.metrics2.MetricsRecordBuilder;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.container.common.ContainerTestUtils;
 import org.apache.hadoop.ozone.container.common.impl.ContainerSet;
 import org.apache.hadoop.ozone.container.common.report.ContainerReportPublisher;
 import org.apache.hadoop.ozone.container.common.statemachine.DatanodeStateMachine.DatanodeStates;
+import org.apache.hadoop.ozone.container.common.statemachine.commandhandler.CommandDispatcher;
 import org.apache.hadoop.ozone.container.common.states.DatanodeState;
 import org.apache.hadoop.ozone.container.ozoneimpl.OzoneContainer;
 import org.apache.hadoop.ozone.protocol.VersionResponse;
@@ -84,11 +95,180 @@ import org.apache.ozone.test.LambdaTestUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Test class for Datanode StateContext.
  */
 public class TestStateContext {
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void testEndpointChangesWaitForReportEnqueue(boolean add) throws Exception {
+    StateContext context = createSubject();
+    HostAndPort stable = new HostAndPort("scm1", 9001);
+    HostAndPort changing = new HostAndPort("scm2", 9001);
+    context.addEndpoint(stable);
+    if (!add) {
+      context.addEndpoint(changing);
+    }
+    IncrementalContainerReportProto report = IncrementalContainerReportProto.getDefaultInstance();
+    CountDownLatch enqueueStarted = new CountDownLatch(1);
+    CountDownLatch releaseEnqueue = new CountDownLatch(1);
+    List<Message> queue = spy(new LinkedList<>());
+    doAnswer(invocation -> {
+      enqueueStarted.countDown();
+      assertTrue(releaseEnqueue.await(5, TimeUnit.SECONDS));
+      return invocation.callRealMethod();
+    }).when(queue).add(report);
+    Field field = StateContext.class.getDeclaredField("incrementalReportsQueue");
+    field.setAccessible(true);
+    @SuppressWarnings("unchecked")
+    Map<HostAndPort, List<Message>> queues = (Map<HostAndPort, List<Message>>) field.get(context);
+    queues.put(stable, queue);
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    AtomicReference<Thread> changingThread = new AtomicReference<>();
+    CountDownLatch changeStarted = new CountDownLatch(1);
+    try {
+      Future<?> enqueue = executor.submit(() -> context.addIncrementalReport(report));
+      assertTrue(enqueueStarted.await(5, TimeUnit.SECONDS));
+      Future<?> change = executor.submit(() -> {
+        changingThread.set(Thread.currentThread());
+        changeStarted.countDown();
+        if (add) {
+          context.addEndpoint(changing);
+        } else {
+          context.removeEndpoint(changing);
+        }
+      });
+      assertTrue(changeStarted.await(5, TimeUnit.SECONDS));
+      waitFor(() -> change.isDone() || changingThread.get().getState() == Thread.State.BLOCKED, 10, 5000);
+      assertFalse(change.isDone(), "Endpoint updates must wait for report enqueueing to finish");
+      releaseEnqueue.countDown();
+      enqueue.get(5, TimeUnit.SECONDS);
+      change.get(5, TimeUnit.SECONDS);
+
+      assertEquals(Collections.singletonList(report), context.getAllAvailableReports(stable));
+      assertEquals(add, context.getIncrementalReportQueueSize().containsKey(changing));
+      assertEquals(add, context.getContainerActionQueueSize().containsKey(changing));
+      assertEquals(add, context.getPipelineActionQueueSize().containsKey(changing));
+      assertEquals(add, context.isFullContainerReportReady(changing));
+    } finally {
+      releaseEnqueue.countDown();
+      executor.shutdownNow();
+      assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+    }
+  }
+
+  @Test
+  void testEndpointChangesDuringMetricsCollection() throws Exception {
+    StateContext context = createSubject();
+    DatanodeStateMachine datanode = context.getParent();
+    DatanodeQueueMetrics metrics = new DatanodeQueueMetrics(datanode);
+    when(datanode.getContext()).thenReturn(context);
+    when(datanode.getQueueMetrics()).thenReturn(metrics);
+    CommandDispatcher dispatcher = mock(CommandDispatcher.class);
+    when(datanode.getCommandDispatcher()).thenReturn(dispatcher);
+    when(dispatcher.getQueuedCommandCount()).thenReturn(new EnumCounters<>(SCMCommandProto.Type.class));
+    context.addEndpoint(new HostAndPort("scm1", 9001));
+    HostAndPort changing = new HostAndPort("scm2", 9001);
+    context.addEndpoint(changing);
+    MetricsCollector collector = mock(MetricsCollector.class);
+    MetricsRecordBuilder builder = mock(MetricsRecordBuilder.class);
+    when(collector.addRecord(DatanodeQueueMetrics.METRICS_SOURCE_NAME)).thenReturn(builder);
+    CountDownLatch collecting = new CountDownLatch(1);
+    CountDownLatch releaseCollection = new CountDownLatch(1);
+    AtomicBoolean firstGauge = new AtomicBoolean(true);
+    doAnswer(invocation -> {
+      if (firstGauge.compareAndSet(true, false)) {
+        collecting.countDown();
+        assertTrue(releaseCollection.await(5, TimeUnit.SECONDS));
+      }
+      return builder;
+    }).when(builder).addGauge(any(MetricsInfo.class), anyInt());
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try {
+      Future<?> collection = executor.submit(() -> metrics.getMetrics(collector, true));
+      assertTrue(collecting.await(5, TimeUnit.SECONDS));
+      context.removeEndpoint(changing);
+      releaseCollection.countDown();
+      collection.get(5, TimeUnit.SECONDS);
+
+      assertEquals(1, metrics.getIncrementalReportsQueueMapSize());
+      assertEquals(1, metrics.getContainerActionQueueMapSize());
+      assertEquals(1, metrics.getPipelineActionQueueMapSize());
+    } finally {
+      releaseCollection.countDown();
+      executor.shutdownNow();
+      assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+    }
+  }
+
+  @Test
+  void testConcurrentEndpointChangesAndReportAccess() throws Exception {
+    StateContext context = createSubject();
+    HostAndPort stable = new HostAndPort("scm1", 9001);
+    HostAndPort changing = new HostAndPort("scm2", 9001);
+    context.addEndpoint(stable);
+    ContainerAction action = ContainerAction.newBuilder().setAction(CLOSE).setContainerID(1).build();
+    PipelineAction pipelineAction = PipelineAction.newBuilder().setAction(PipelineAction.Action.CLOSE)
+        .setClosePipeline(ClosePipelineInfo.newBuilder().setPipelineID(PipelineID.randomId().getProtobuf())
+            .setReason(ClosePipelineInfo.Reason.PIPELINE_FAILED)).build();
+    CountDownLatch start = new CountDownLatch(1);
+    ExecutorService executor = Executors.newFixedThreadPool(3);
+    try {
+      Future<?> changes = executor.submit(() -> {
+        assertTrue(start.await(5, TimeUnit.SECONDS));
+        for (int i = 0; i < 500; i++) {
+          context.addEndpoint(changing);
+          context.removeEndpoint(changing);
+        }
+        return null;
+      });
+      Future<?> publish = executor.submit(() -> {
+        assertTrue(start.await(5, TimeUnit.SECONDS));
+        for (int i = 0; i < 500; i++) {
+          context.addIncrementalReport(IncrementalContainerReportProto.getDefaultInstance());
+          context.addContainerAction(action);
+          context.addContainerActionIfAbsent(action);
+          context.addPipelineActionIfAbsent(pipelineAction);
+          context.refreshFullReport(ContainerReportsProto.getDefaultInstance());
+        }
+        return null;
+      });
+      Future<?> collect = executor.submit(() -> {
+        assertTrue(start.await(5, TimeUnit.SECONDS));
+        for (int i = 0; i < 500; i++) {
+          context.getAllAvailableReports(changing);
+          context.getPendingContainerAction(changing, 10);
+          context.putBackReports(Collections.singletonList(IncrementalContainerReportProto.getDefaultInstance()),
+              changing);
+          context.putBackFullContainerReport(changing);
+          context.isFullContainerReportReady(changing);
+          context.getIncrementalReportQueueSize();
+          context.getContainerActionQueueSize();
+          context.getPipelineActionQueueSize();
+        }
+        return null;
+      });
+      start.countDown();
+      changes.get(10, TimeUnit.SECONDS);
+      publish.get(10, TimeUnit.SECONDS);
+      collect.get(10, TimeUnit.SECONDS);
+
+      assertEquals(500, context.getIncrementalReportQueueSize().get(stable));
+      assertEquals(500, context.getContainerActionQueueSize().get(stable));
+      assertEquals(1, context.getPipelineActionQueueSize().get(stable));
+      assertTrue(context.isFullContainerReportReady(stable));
+      assertFalse(context.getIncrementalReportQueueSize().containsKey(changing));
+      assertFalse(context.getContainerActionQueueSize().containsKey(changing));
+      assertFalse(context.getPipelineActionQueueSize().containsKey(changing));
+    } finally {
+      start.countDown();
+      executor.shutdownNow();
+      assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+    }
+  }
 
   /**
    * Only accepted types of reports can be put back to the report queue.
@@ -386,6 +566,13 @@ public class TestStateContext {
       Future<ContainerReportsProto> fullReport = executor.submit(
           () -> context.getFullContainerReportDiscardPendingICR(scm));
       assertTrue(reportStarted.await(5, TimeUnit.SECONDS));
+      // Endpoint updates must not wait for container report generation under the ContainerSet monitor.
+      executor.submit(() -> {
+        HostAndPort other = new HostAndPort("other", 9001);
+        context.addEndpoint(other);
+        context.removeEndpoint(other);
+        context.getIncrementalReportQueueSize();
+      }).get(5, TimeUnit.SECONDS);
       Future<?> incrementalReport = executor.submit(() -> {
         synchronized (containerSet) {
           context.addIncrementalReport(

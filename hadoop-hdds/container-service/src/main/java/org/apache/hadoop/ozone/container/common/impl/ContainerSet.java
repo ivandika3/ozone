@@ -63,7 +63,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>This object's monitor serializes full container report (FCR) generation with incremental container report (ICR)
  * generation and enqueueing. When an FCR supersedes pending ICRs, callers must hold this monitor across both
- * {@link #getContainerReport()} and discarding the covered ICRs. If the incremental report queue monitor in
+ * {@link #getContainerReport()} and discarding the covered ICRs. If the endpoint lock in
  * {@link StateContext} is also needed, acquire this monitor first.
  *
  * <p>The monitor protects report ordering, not access to the concurrent container maps or individual container fields.
