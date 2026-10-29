@@ -88,7 +88,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Current Context of State Machine.
+ * This class holds the current datanode state, heartbeat timing, pending reports and actions, and queued
+ * SCM commands. It selects and executes the implementation for the current datanode state.
  */
 public class StateContext {
 
@@ -113,6 +114,7 @@ public class StateContext {
   /**
    * Protects the command queue. Acquire after the endpoint RPC lock and before {@code SCMConnectionManager.mapLock}.
    * Dispatch commands after releasing this lock.
+   * See <a href="package-summary.html#lock-ordering">lock ordering</a>.
    */
   private final Lock commandQueueLock;
   @GuardedBy("commandQueueLock")
@@ -124,7 +126,7 @@ public class StateContext {
   /**
    * Protects the endpoint set, per-endpoint report and action queues, and the report-readiness map. Do not generate
    * container reports, acquire endpoint RPC locks or wait for endpoint tasks while holding this lock. Acquire the
-   * ContainerSet monitor first when both are needed.
+   * ContainerSet monitor first when both are needed; see <a href="package-summary.html#lock-ordering">lock ordering</a>.
    */
   private final Object endpointLock = new Object();
   @GuardedBy("endpointLock")

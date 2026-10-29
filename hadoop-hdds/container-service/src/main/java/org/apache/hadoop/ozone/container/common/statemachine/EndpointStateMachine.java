@@ -59,8 +59,8 @@ import org.slf4j.LoggerFactory;
  * and shutdown. Do not acquire {@link #lock} or perform RPCs while holding this monitor.</li>
  * </ul>
  *
- * <p>When both locks are needed, acquire {@link #lock} first. Separate locks allow submission checks and executor
- * shutdown to proceed while an RPC is blocked.
+ * <p>Separate locks allow submission checks and executor shutdown to proceed while an RPC is blocked.
+ * See the package's <a href="package-summary.html#lock-ordering">lock ordering</a> for cross-class constraints.
  *
  * <p>{@link #state} and {@link #version} are volatile for readers outside the endpoint lock. The missed-heartbeat count
  * is atomic for monitoring reads without the endpoint lock.

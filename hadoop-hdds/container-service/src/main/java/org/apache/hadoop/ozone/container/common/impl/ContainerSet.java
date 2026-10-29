@@ -62,9 +62,10 @@ import org.slf4j.LoggerFactory;
  * Class that manages Containers created on the datanode.
  *
  * <p>This object's monitor serializes full container report (FCR) generation with incremental container report (ICR)
- * generation and enqueueing. When an FCR supersedes pending ICRs, callers must hold this monitor across both
- * {@link #getContainerReport()} and discarding the covered ICRs. If the endpoint lock in
- * {@link StateContext} is also needed, acquire this monitor first.
+ * generation and enqueueing.When an FCR supersedes pending ICRs, callers must hold this monitor across both
+ * {@link #getContainerReport()} and discarding the covered ICRs. This would prevent discarding new ICRs that are
+ * not covered by the FCR. Acquire this monitor before the endpoint lock in {@link StateContext};
+ * see <a href="../statemachine/package-summary.html#lock-ordering">lock ordering</a>.
  *
  * <p>The monitor protects report ordering, not access to the concurrent container maps or individual container fields.
  * It does not prevent container changes or provide an atomic snapshot of all container state.

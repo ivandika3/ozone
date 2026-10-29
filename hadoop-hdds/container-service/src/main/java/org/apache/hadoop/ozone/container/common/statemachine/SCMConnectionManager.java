@@ -35,6 +35,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import javax.management.ObjectName;
+import net.jcip.annotations.GuardedBy;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.scm.net.HostAndPort;
@@ -54,8 +55,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * SCMConnectionManager - Acts as a class that manages the membership
- * information of the SCMs that we are working with.
+ * Manages the SCM and Recon endpoints that the datanode communicates with.
  */
 public class SCMConnectionManager
     implements Closeable, SCMConnectionManagerMXBean {
@@ -63,11 +63,11 @@ public class SCMConnectionManager
       LoggerFactory.getLogger(SCMConnectionManager.class);
 
   /**
-   * Protects endpoint membership, not the state of individual endpoints. Endpoint tasks and command-queue processing
-   * may acquire this lock while holding their own locks. While holding this lock, do not acquire endpoint RPC locks
-   * or the StateContext command-queue lock, or wait for endpoint tasks to finish.
+   * Protects the {@link #scmMachines} endpoint map, not individual endpoint states.
+   * See <a href="package-summary.html#lock-ordering">lock ordering</a>.
    */
   private final ReadWriteLock mapLock;
+  @GuardedBy("mapLock")
   private final Map<HostAndPort, EndpointStateMachine> scmMachines;
 
   private final int rpcTimeout;

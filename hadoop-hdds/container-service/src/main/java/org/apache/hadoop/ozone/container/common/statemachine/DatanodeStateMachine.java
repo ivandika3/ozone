@@ -86,7 +86,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * State Machine Class.
+ * This class owns the datanode lifecycle and coordinates state execution, reporting and command
+ * processing. It starts and stops the associated services, threads and executors
  */
 public class DatanodeStateMachine implements Closeable {
   private static final Logger LOG =
