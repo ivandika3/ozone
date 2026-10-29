@@ -149,7 +149,7 @@ public final class RegisterEndpointTask implements
           this.stateContext.configureHeartbeatFrequency();
         }
         if (supportsFCRLease) {
-          this.stateContext.putBackFullContainerReport(rpcEndPoint.getAddress());
+          this.stateContext.markFullContainerReportPending(rpcEndPoint.getAddress());
         }
       }
     } catch (IOException ex) {

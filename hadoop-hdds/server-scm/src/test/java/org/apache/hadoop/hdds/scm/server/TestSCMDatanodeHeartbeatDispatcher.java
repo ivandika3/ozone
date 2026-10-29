@@ -95,7 +95,7 @@ public class TestSCMDatanodeHeartbeatDispatcher {
         .setDatanodeDetails(datanodeDetails.getProtoBufMessage())
         .setNodeReport(nodeReport)
         .build();
-    dispatcher.dispatch(heartbeat);
+    dispatcher.dispatch(heartbeat, null);
     assertEquals(1, eventReceived.get());
 
 
@@ -147,36 +147,10 @@ public class TestSCMDatanodeHeartbeatDispatcher {
             .setContainerReport(containerReport)
             .addCommandStatusReports(commandStatusReport)
             .build();
-    dispatcher.dispatch(heartbeat);
+    dispatcher.dispatch(heartbeat, null);
     assertEquals(2, eventReceived.get());
 
 
-  }
-
-  @Test
-  public void testVersionReportProcessedOnlyWhenPresent() throws IOException {
-    NodeManager mockNodeManager = mock(NodeManager.class);
-    when(mockNodeManager.isNodeRegistered(any())).thenReturn(true);
-
-    SCMDatanodeHeartbeatDispatcher dispatcher =
-        new SCMDatanodeHeartbeatDispatcher(mockNodeManager, mock(EventPublisher.class));
-
-    DatanodeDetails datanodeDetails = randomDatanodeDetails();
-
-    // Heartbeat without a version report: SCM should not process a version.
-    dispatcher.dispatch(SCMHeartbeatRequestProto.newBuilder()
-        .setDatanodeDetails(datanodeDetails.getProtoBufMessage())
-        .build());
-    verify(mockNodeManager, times(0)).processVersionReport(any(), any());
-
-    // Heartbeat with a version report: SCM should process it.
-    DatanodeVersionProto version = DatanodeVersionProto.newBuilder()
-        .setApparentVersion(1).setSoftwareVersion(1).build();
-    dispatcher.dispatch(SCMHeartbeatRequestProto.newBuilder()
-        .setDatanodeDetails(datanodeDetails.getProtoBufMessage())
-        .setDatanodeVersion(version)
-        .build());
-    verify(mockNodeManager, times(1)).processVersionReport(any(), any());
   }
 
   @Test
@@ -244,7 +218,7 @@ public class TestSCMDatanodeHeartbeatDispatcher {
     dispatcher.dispatch(heartbeat, providedReport);
 
     assertTrue(providedReportDispatched.get());
-    assertTrue(registrationReportDispatched.get());
+    assertFalse(registrationReportDispatched.get());
   }
 
   @Test
@@ -331,6 +305,32 @@ public class TestSCMDatanodeHeartbeatDispatcher {
     }
   }
 
+  @Test
+  public void testVersionReportProcessedOnlyWhenPresent() throws IOException {
+    NodeManager mockNodeManager = mock(NodeManager.class);
+    when(mockNodeManager.isNodeRegistered(any())).thenReturn(true);
+
+    SCMDatanodeHeartbeatDispatcher dispatcher =
+        new SCMDatanodeHeartbeatDispatcher(mockNodeManager, mock(EventPublisher.class));
+
+    DatanodeDetails datanodeDetails = randomDatanodeDetails();
+
+    // Heartbeat without a version report: SCM should not process a version.
+    dispatcher.dispatch(SCMHeartbeatRequestProto.newBuilder()
+        .setDatanodeDetails(datanodeDetails.getProtoBufMessage())
+        .build(), null);
+    verify(mockNodeManager, times(0)).processVersionReport(any(), any());
+
+    // Heartbeat with a version report: SCM should process it.
+    DatanodeVersionProto version = DatanodeVersionProto.newBuilder()
+        .setApparentVersion(1).setSoftwareVersion(1).build();
+    dispatcher.dispatch(SCMHeartbeatRequestProto.newBuilder()
+        .setDatanodeDetails(datanodeDetails.getProtoBufMessage())
+        .setDatanodeVersion(version)
+        .build(), null);
+    verify(mockNodeManager, times(1)).processVersionReport(any(), any());
+  }
+
   /**
    * Asserts scm informs datanodes to re-register on a restart.
    *
@@ -351,7 +351,7 @@ public class TestSCMDatanodeHeartbeatDispatcher {
             .setDatanodeDetails(datanodeDetails.getProtoBufMessage())
             .build();
 
-    dispatcher.dispatch(heartbeat);
+    dispatcher.dispatch(heartbeat, null);
     // If SCM receives heartbeat from a node after it restarts and the node
     // is not registered, it should send a Re-Register command back to the node.
     verify(mockNodeManager, times(1)).addDatanodeCommand(
