@@ -82,9 +82,9 @@ public class HeartbeatEndpointTask
   private static final Logger LOG = LoggerFactory.getLogger(HeartbeatEndpointTask.class);
   private final EndpointStateMachine rpcEndpoint;
   private final DatanodeDetails datanodeDetails;
-  private StateContext context;
-  private int maxContainerActionsPerHB;
-  private int maxPipelineActionsPerHB;
+  private final StateContext context;
+  private final int maxContainerActionsPerHB;
+  private final int maxPipelineActionsPerHB;
   private final DatanodeVersionManager versionManager;
   // Test-only override for the version this datanode advertises to clients; null in production.
   private final HDDSVersion testCurrentVersion;
@@ -92,7 +92,7 @@ public class HeartbeatEndpointTask
   private final int refreshThreshold;
 
   /**
-   * Constructs a SCM heart beat.
+   * Constructs an SCM heartbeat.
    *
    * @param rpcEndpoint rpc Endpoint
    * @param conf Config.
@@ -133,10 +133,10 @@ public class HeartbeatEndpointTask
   public EndpointStateMachine.EndPointStates call() throws Exception {
     rpcEndpoint.lock();
     try {
-      boolean fcrReadyAfterLeaseGrant = sendHeartbeat();
+      boolean fcrReadyAfterLeaseGrant = sendHeartbeatAndProcessResponse();
       if (fcrReadyAfterLeaseGrant) {
         // Send one follow-up; further work waits for the next scheduled heartbeat.
-        sendHeartbeat();
+        sendHeartbeatAndProcessResponse();
       }
     } finally {
       rpcEndpoint.unlock();
@@ -150,7 +150,7 @@ public class HeartbeatEndpointTask
    * @return true if this heartbeat requested a lease, a lease is now cached and an FCR is pending, allowing an
    *     immediate follow-up heartbeat; false otherwise, including on communication failure
    */
-  private boolean sendHeartbeat() {
+  private boolean sendHeartbeatAndProcessResponse() {
     SCMHeartbeatRequestProto.Builder requestBuilder = null;
     try {
       DatanodeVersionProto versionInfo = toVersionProto(
@@ -371,12 +371,13 @@ public class HeartbeatEndpointTask
   }
 
   /**
-   * Add this command to command processing Queue.
+   * Process the SCM heartbeat response.
    *
    * @param response - SCMHeartbeat response.
    */
   private void processResponse(SCMHeartbeatResponseProto response,
       final DatanodeDetailsProto datanodeDetailsProto) {
+    // Verify the response is indeed for this datanode.
     Preconditions.checkState(response.getDatanodeUUID()
             .equalsIgnoreCase(datanodeDetailsProto.getUuid()),
         "Unexpected datanode ID in the response.");
@@ -387,7 +388,6 @@ public class HeartbeatEndpointTask
     if (response.hasFullContainerReportLease() && response.getFullContainerReportLease().getId() != 0) {
       rpcEndpoint.setFullContainerReportLease(response.getFullContainerReportLease());
     }
-    // Verify the response is indeed for this datanode.
     for (SCMCommandProto commandResponseProto : response.getCommandsList()) {
       switch (commandResponseProto.getCommandType()) {
       case reregisterCommand:

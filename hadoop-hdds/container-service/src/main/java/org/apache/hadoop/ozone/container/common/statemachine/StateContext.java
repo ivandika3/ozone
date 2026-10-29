@@ -110,15 +110,14 @@ public class StateContext {
 
   static final Logger LOG =
       LoggerFactory.getLogger(StateContext.class);
-  /** Commands awaiting dispatch, guarded by {@link #lock}. */
+  /**
+   * Protects the command queue. Acquire after the endpoint RPC lock and before {@code SCMConnectionManager.mapLock}.
+   * Dispatch commands after releasing this lock.
+   */
+  private final Lock commandQueueLock;
+  @GuardedBy("commandQueueLock")
   private final Queue<SCMCommand<?>> commandQueue;
   private final Map<Long, CommandStatus> cmdStatusMap;
-  /**
-   * Protects the command queue. When combined with endpoint RPC or SCM connection-manager membership locks, acquire
-   * the endpoint RPC lock first, then this lock, then the membership lock. Leader-term initialization reads endpoint
-   * membership while holding this lock; commands are dispatched after releasing it.
-   */
-  private final Lock lock;
   private final DatanodeStateMachine parentDatanodeStateMachine;
   private final AtomicLong stateExecutionCount;
   private final ConfigurationSource conf;
@@ -214,7 +213,7 @@ public class StateContext {
     endpoints = new HashSet<>();
     containerActions = new HashMap<>();
     pipelineActions = new ConcurrentHashMap<>();
-    lock = new ReentrantLock();
+    commandQueueLock = new ReentrantLock();
     stateExecutionCount = new AtomicLong(0);
     threadPoolNotAvailableCount = new AtomicLong(0);
     lastHeartbeatSent = new AtomicLong(0);
@@ -825,7 +824,7 @@ public class StateContext {
   }
 
   public void updateTermOfLeaderSCM(final long newTerm) {
-    if (!termOfLeaderSCM.isPresent()) {
+    if (termOfLeaderSCM.isEmpty()) {
       return;
     }
 
@@ -845,15 +844,16 @@ public class StateContext {
   }
 
   /**
-   * Returns the next command or null if it is empty.
+   * Returns the next command or null if the command queue is empty or
+   * datanode cannot initialize the leader SCM term.
    *
    * @return SCMCommand or Null.
    */
   public SCMCommand<?> getNextCommand() {
-    lock.lock();
+    commandQueueLock.lock();
     try {
       initTermOfLeaderSCM();
-      if (!termOfLeaderSCM.isPresent()) {
+      if (termOfLeaderSCM.isEmpty()) {
         return null;      // not ready yet
       }
 
@@ -874,7 +874,7 @@ public class StateContext {
             command, command.getTerm(), currentTerm);
       }
     } finally {
-      lock.unlock();
+      commandQueueLock.unlock();
     }
   }
 
@@ -884,7 +884,7 @@ public class StateContext {
    * @param command - SCMCommand.
    */
   public void addCommand(SCMCommand<?> command) {
-    lock.lock();
+    commandQueueLock.lock();
     try {
       if (commandQueue.size() >= maxCommandQueueLimit) {
         LOG.warn("Ignore command as command queue crosses max limit {}.",
@@ -894,20 +894,20 @@ public class StateContext {
       updateTermOfLeaderSCM(command);
       commandQueue.add(command);
     } finally {
-      lock.unlock();
+      commandQueueLock.unlock();
     }
     this.addCmdStatus(command);
   }
 
   public EnumCounters<SCMCommandProto.Type> getCommandQueueSummary() {
     EnumCounters<SCMCommandProto.Type> summary = new EnumCounters<>(SCMCommandProto.Type.class);
-    lock.lock();
+    commandQueueLock.lock();
     try {
       for (SCMCommand<?> cmd : commandQueue) {
         summary.add(cmd.getType(), 1);
       }
     } finally {
-      lock.unlock();
+      commandQueueLock.unlock();
     }
     return summary;
   }
