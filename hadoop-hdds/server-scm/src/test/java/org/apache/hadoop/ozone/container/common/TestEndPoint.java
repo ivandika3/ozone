@@ -148,7 +148,7 @@ public class TestEndPoint {
     try (EndpointStateMachine rpcEndPoint =
         createEndpoint(SCMTestUtils.getConf(tempDir),
             serverAddress, 1000)) {
-      SCMVersionResponseProto responseProto = rpcEndPoint.getEndPoint()
+      SCMVersionResponseProto responseProto = rpcEndPoint.getEndpoint()
           .getVersion(null);
       assertNotNull(responseProto);
       assertEquals(VersionInfo.DESCRIPTION_KEY, responseProto.getKeys(0).getKey());
@@ -401,7 +401,7 @@ public class TestEndPoint {
     DatanodeDetails nodeToRegister = randomDatanodeDetails();
     try (EndpointStateMachine rpcEndPoint = createEndpoint(
         SCMTestUtils.getConf(tempDir), serverAddress, 1000)) {
-      SCMRegisteredResponseProto responseProto = rpcEndPoint.getEndPoint()
+      SCMRegisteredResponseProto responseProto = rpcEndPoint.getEndpoint()
           .register(nodeToRegister.getExtendedProtoBufMessage(), HddsTestUtils
                   .createNodeReport(
                       Arrays.asList(getStorageReports(
@@ -633,7 +633,7 @@ public class TestEndPoint {
               Arrays.asList(getMetadataStorageReports(dataNode.getID()))))
           .build();
 
-      SCMHeartbeatResponseProto responseProto = rpcEndPoint.getEndPoint()
+      SCMHeartbeatResponseProto responseProto = rpcEndPoint.getEndpoint()
           .sendHeartbeat(request);
       assertNotNull(responseProto);
       assertEquals(0, responseProto.getCommandsCount());
@@ -656,7 +656,7 @@ public class TestEndPoint {
               Arrays.asList(getMetadataStorageReports(dataNode.getID()))))
           .build();
 
-      SCMHeartbeatResponseProto responseProto = rpcEndPoint.getEndPoint()
+      SCMHeartbeatResponseProto responseProto = rpcEndPoint.getEndpoint()
           .sendHeartbeat(request);
       assertNotNull(responseProto);
       assertEquals(3, responseProto.getCommandsCount());

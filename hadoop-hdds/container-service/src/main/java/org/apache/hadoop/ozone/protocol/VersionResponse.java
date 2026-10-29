@@ -106,6 +106,17 @@ public class VersionResponse {
   }
 
   /**
+   * Returns whether the metadata value is {@code "true"}, ignoring case.
+   * Missing or unrecognized values return false.
+   *
+   * @param key metadata key
+   * @return the parsed boolean value
+   */
+  public boolean getBooleanValue(String key) {
+    return Boolean.parseBoolean(getValue(key));
+  }
+
+  /**
    * Builder class.
    */
   public static class Builder {

@@ -116,7 +116,7 @@ public final class RegisterEndpointTask implements
             datanodeContainerManager.getPipelineReport();
         datanodeDetails.setCurrentVersion(versionManager.getVersionForClient());
         // TODO : Add responses to the command Queue.
-        SCMRegisteredResponseProto response = rpcEndPoint.getEndPoint()
+        SCMRegisteredResponseProto response = rpcEndPoint.getEndpoint()
             .register(datanodeDetails.getExtendedProtoBufMessage(),
             nodeReport, containerReport, pipelineReportsProto, versionInfo);
         Preconditions.assertEquals(datanodeDetails.getUuidString(), response.getDatanodeUUID(), "datanodeID");

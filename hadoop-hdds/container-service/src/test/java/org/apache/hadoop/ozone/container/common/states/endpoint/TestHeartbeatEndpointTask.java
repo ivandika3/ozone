@@ -1206,7 +1206,7 @@ public class TestHeartbeatEndpointTask {
       StateContext context,
       StorageContainerDatanodeProtocolClientSideTranslatorPB proxy) {
     EndpointStateMachine endpointStateMachine = mock(EndpointStateMachine.class);
-    when(endpointStateMachine.getEndPoint()).thenReturn(proxy);
+    when(endpointStateMachine.getEndpoint()).thenReturn(proxy);
     when(endpointStateMachine.getAddress())
         .thenReturn(TEST_SCM_ENDPOINT);
     return HeartbeatEndpointTask.newBuilder()

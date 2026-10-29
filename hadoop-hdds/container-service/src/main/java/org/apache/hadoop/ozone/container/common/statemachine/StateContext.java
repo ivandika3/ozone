@@ -109,8 +109,14 @@ public class StateContext {
 
   static final Logger LOG =
       LoggerFactory.getLogger(StateContext.class);
+  /** Commands awaiting dispatch, guarded by {@link #lock}. */
   private final Queue<SCMCommand<?>> commandQueue;
   private final Map<Long, CommandStatus> cmdStatusMap;
+  /**
+   * Protects the command queue. When combined with endpoint RPC or SCM connection-manager membership locks, acquire
+   * the endpoint RPC lock first, then this lock, then the membership lock. Leader-term initialization reads endpoint
+   * membership while holding this lock; commands are dispatched after releasing it.
+   */
   private final Lock lock;
   private final DatanodeStateMachine parentDatanodeStateMachine;
   private final AtomicLong stateExecutionCount;
@@ -120,7 +126,12 @@ public class StateContext {
   private final AtomicReference<Message> containerReports;
   private final AtomicReference<Message> nodeReport;
   private final AtomicReference<Message> pipelineReports;
-  // Incremental reports are queued in the map below
+  /**
+   * Per-endpoint incremental reports. Report production, collection and FCR cleanup synchronize on this map.
+   * Acquire the {@link ContainerSet} monitor before this monitor whenever both are needed. Endpoint tasks may also
+   * hold their RPC lock before acquiring this monitor; do not acquire the ContainerSet monitor or an endpoint RPC
+   * lock while holding this monitor.
+   */
   private final Map<HostAndPort, List<Message>> incrementalReportsQueue;
   private final Map<HostAndPort, Queue<ContainerAction>> containerActions;
   private final Map<HostAndPort, PipelineActionMap> pipelineActions;
@@ -416,7 +427,12 @@ public class StateContext {
   }
 
   /**
-   * Gets a periodic snapshot, preserving ICRs for endpoints that generate their FCR when sending.
+   * Get the full container report (FCR) of the datanode.
+   *
+   * <p>The pending ICR of each SCM / Recon endpoints are going to be dropped only if the SCM / Recon
+   * endpoints do not support the FCR lease since the FCR will always be accepted by the endpoint.
+   * <p>For the endpoint that supports FCR lease, we should not drop ICR until the SCM grants the FCR lease
+   * to the datanode. Otherwise, the ICRs might be lost even when the datanode has not been granted an FCR lease.
    */
   public ContainerReportsProto getFullContainerReport() throws IOException {
     Set<HostAndPort> leasedEndpoints = parentDatanodeStateMachine.getConnectionManager().getValues().stream()
@@ -426,10 +442,34 @@ public class StateContext {
     return getFullContainerReportDiscardPendingICR(endpoint -> !leasedEndpoints.contains(endpoint));
   }
 
+  /**
+   * Gets the full container report (FCR) for the given endpoint and drops any pending ICRs for that endpoint.
+   *
+   * @param endpoint endpoint that will receive the full container report
+   * @return full container report, or null if no report was ready
+   */
+  public ContainerReportsProto getFullContainerReportDiscardPendingICR(
+      HostAndPort endpoint) throws IOException {
+    Map<String, AtomicBoolean> reports = isFullReportReadyToBeSent.get(endpoint);
+    if (reports == null) {
+      return null;
+    }
+    AtomicBoolean ready = reports.get(CONTAINER_REPORTS_PROTO_NAME);
+    if (ready == null || !ready.compareAndSet(true, false)) {
+      return null;
+    }
+
+    try {
+      return getFullContainerReportDiscardPendingICR(endpoint::equals);
+    } catch (IOException | RuntimeException ex) {
+      ready.set(true);
+      throw ex;
+    }
+  }
+
   private ContainerReportsProto getFullContainerReportDiscardPendingICR(Predicate<HostAndPort> discardPendingICR)
       throws IOException {
-    ContainerSet containerSet =
-        parentDatanodeStateMachine.getContainer().getContainerSet();
+    ContainerSet containerSet = parentDatanodeStateMachine.getContainer().getContainerSet();
     // Block ICRs from being generated
     synchronized (containerSet) {
       ContainerReportsProto report = containerSet.getContainerReport();
@@ -445,33 +485,6 @@ public class StateContext {
         }
       }
       return report;
-    }
-  }
-
-  /**
-   * Gets a point in time snapshot of all containers for the given endpoint
-   * and drops any pending ICRs for that endpoint.
-   *
-   * @param endpoint endpoint that will receive the full container report
-   * @return full container report, or null if no report was ready
-   */
-  public ContainerReportsProto getFullContainerReportDiscardPendingICR(
-      HostAndPort endpoint) throws IOException {
-    Map<String, AtomicBoolean> reports =
-        isFullReportReadyToBeSent.get(endpoint);
-    if (reports == null) {
-      return null;
-    }
-    AtomicBoolean ready = reports.get(CONTAINER_REPORTS_PROTO_NAME);
-    if (ready == null || !ready.compareAndSet(true, false)) {
-      return null;
-    }
-
-    try {
-      return getFullContainerReportDiscardPendingICR(endpoint::equals);
-    } catch (IOException | RuntimeException ex) {
-      ready.set(true);
-      throw ex;
     }
   }
 
@@ -502,11 +515,6 @@ public class StateContext {
       }
     }
     return reportsToReturn;
-  }
-
-  List<Message> getFullReports(
-      HostAndPort endpoint, int maxLimit) {
-    return getFullReports(endpoint, maxLimit, null);
   }
 
   List<Message> getFullReports(

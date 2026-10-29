@@ -164,7 +164,7 @@ public class DatanodeStateMachine implements Closeable {
 
     String threadNamePrefix = datanodeDetails.threadNamePrefix();
     executorService = Executors.newFixedThreadPool(
-        getEndPointTaskThreadPoolSize(),
+        getEndpointTaskThreadPoolSize(),
         new ThreadFactoryBuilder()
             .setNameFormat(threadNamePrefix +
                 "DatanodeStateMachineTaskThread-%d")
@@ -302,7 +302,7 @@ public class DatanodeStateMachine implements Closeable {
         new ReconfigurationHandler("DN", (OzoneConfiguration) conf, op -> { }));
   }
 
-  private int getEndPointTaskThreadPoolSize() {
+  private int getEndpointTaskThreadPoolSize() {
     // TODO(runzhiwang): The default totalServerCount here is set to 1,
     //  which requires additional processing if want to increase
     //  the number of recons.

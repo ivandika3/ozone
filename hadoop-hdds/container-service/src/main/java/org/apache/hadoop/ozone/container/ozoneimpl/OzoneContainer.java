@@ -52,6 +52,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import net.jcip.annotations.GuardedBy;
 import org.apache.hadoop.hdds.HddsConfigKeys;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
@@ -410,7 +411,9 @@ public class OzoneContainer {
   }
 
   private IncrementalReportSender<Container> createIncrementalReportSender() {
-    return new IncrementalReportSender<Container>() {
+    return new IncrementalReportSender<>() {
+
+      @GuardedBy("containerSet")
       private void sendICR(Container container, boolean immediate) throws StorageContainerException {
         ContainerReplicaProto containerReport = container.getContainerReport();
         IncrementalContainerReportProto icr = IncrementalContainerReportProto

@@ -64,7 +64,7 @@ public class VersionEndpointTask implements
       if (rpcEndPoint.getState().equals(
           EndpointStateMachine.EndPointStates.GETVERSION)) {
         SCMVersionResponseProto versionResponse =
-            rpcEndPoint.getEndPoint().getVersion(null);
+            rpcEndPoint.getEndpoint().getVersion(null);
         VersionResponse response = VersionResponse.getFromProtobuf(
             versionResponse);
         rpcEndPoint.setVersion(response);

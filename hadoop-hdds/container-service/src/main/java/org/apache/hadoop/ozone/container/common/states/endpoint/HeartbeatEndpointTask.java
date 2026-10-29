@@ -170,7 +170,7 @@ public class HeartbeatEndpointTask
       addQueuedCommandCounts(requestBuilder);
       SCMHeartbeatRequestProto request = requestBuilder.build();
       LOG.debug("Sending heartbeat message : {}", request);
-      SCMHeartbeatResponseProto response = rpcEndpoint.getEndPoint()
+      SCMHeartbeatResponseProto response = rpcEndpoint.getEndpoint()
           .sendHeartbeat(request);
       if (isFullContainerReportLeaseRejected(request, response)) {
         context.putBackFullContainerReport(rpcEndpoint.getAddress());
@@ -384,10 +384,8 @@ public class HeartbeatEndpointTask
       rpcEndpoint.clearFullContainerReportLeaseIfStale(response.getTerm());
       context.updateTermOfLeaderSCM(response.getTerm());
     }
-    if (response.hasFullContainerReportLease()
-        && response.getFullContainerReportLease().getId() != 0) {
-      rpcEndpoint.setFullContainerReportLease(
-          response.getFullContainerReportLease());
+    if (response.hasFullContainerReportLease() && response.getFullContainerReportLease().getId() != 0) {
+      rpcEndpoint.setFullContainerReportLease(response.getFullContainerReportLease());
     }
     // Verify the response is indeed for this datanode.
     for (SCMCommandProto commandResponseProto : response.getCommandsList()) {

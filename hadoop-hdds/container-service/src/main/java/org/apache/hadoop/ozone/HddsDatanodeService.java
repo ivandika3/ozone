@@ -841,7 +841,7 @@ public class HddsDatanodeService extends GenericCli implements Callable<Void>, S
     }
 
     // Resize the executor pool size to (number of SCMs + 1 Recon)
-    // Refer to DatanodeStateMachine#getEndPointTaskThreadPoolSize
+    // Refer to DatanodeStateMachine#getEndpointTaskThreadPoolSize
     datanodeStateMachine.resizeExecutor(connectionManager.getNumOfConnections());
 
     // TODO: In the future, we might also do some assertions on the SCM

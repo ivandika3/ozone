@@ -98,7 +98,7 @@ public class TestHeartbeatEndpointTaskDnsRefresh {
     when(proxy.sendHeartbeat(any())).thenThrow(failure);
 
     EndpointStateMachine endpoint = mock(EndpointStateMachine.class);
-    when(endpoint.getEndPoint()).thenReturn(proxy);
+    when(endpoint.getEndpoint()).thenReturn(proxy);
     when(endpoint.getAddress()).thenReturn(SCM);
     when(endpoint.getMissedCount()).thenReturn(missedCount);
     when(endpoint.isPassive()).thenReturn(false);

@@ -60,6 +60,14 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Class that manages Containers created on the datanode.
+ *
+ * <p>This object's monitor serializes full container report (FCR) generation with incremental container report (ICR)
+ * generation and enqueueing. When an FCR supersedes pending ICRs, callers must hold this monitor across both
+ * {@link #getContainerReport()} and discarding the covered ICRs. If the incremental report queue monitor in
+ * {@link StateContext} is also needed, acquire this monitor first.
+ *
+ * <p>The monitor protects report ordering, not access to the concurrent container maps or individual container fields.
+ * It does not prevent container changes or provide an atomic snapshot of all container state.
  */
 public class ContainerSet implements Iterable<Container<?>> {
 
@@ -607,6 +615,10 @@ public class ContainerSet implements Iterable<Container<?>> {
 
   /**
    * Get container report.
+   *
+   * <p>Callers should hold this object's monitor while capturing replica reports to serialize with ICR generation and
+   * enqueueing.
+   * Callers that also discard pending ICRs must hold the same monitor across both operations.
    *
    * @return The container report.
    */

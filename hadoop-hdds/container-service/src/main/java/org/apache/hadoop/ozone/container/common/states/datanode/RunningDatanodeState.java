@@ -91,8 +91,11 @@ public class RunningDatanodeState implements DatanodeState {
       ecs = new ExecutorCompletionService<>(executor);
     }
     for (EndpointStateMachine endpoint : connectionManager.getValues()) {
-      Callable<EndPointStates> endpointTask = buildEndPointTask(endpoint);
-      if (endpointTask != null) {
+      if (endpoint.getState() != EndPointStates.SHUTDOWN) {
+        Future<EndPointStates> endpointTask = endpoint.submitTask(() -> buildEndPointTask(endpoint));
+        if (endpointTask == null) {
+          continue;
+        }
         // Just do a timely wait. A slow EndpointStateMachine won't occupy
         // the thread in executor from DatanodeStateMachine for a long time,
         // so that it won't affect the communication between datanode and
@@ -105,9 +108,7 @@ public class RunningDatanodeState implements DatanodeState {
         }
         ecs.submit(() -> {
           try {
-            return endpoint.getExecutorService()
-                .submit(endpointTask)
-                .get(context.getHeartbeatFrequency(), TimeUnit.MILLISECONDS);
+            return endpointTask.get(heartbeatFrequency, TimeUnit.MILLISECONDS);
           } catch (TimeoutException e) {
             TimeoutException timeoutEx = new TimeoutException("Timeout occurred on endpoint: " + endpoint.getAddress());
             timeoutEx.initCause(e);
