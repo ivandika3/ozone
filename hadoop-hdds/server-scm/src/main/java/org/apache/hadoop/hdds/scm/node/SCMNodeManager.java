@@ -408,7 +408,7 @@ public class SCMNodeManager implements NodeManager, ContainerReplicaPendingOpsSu
   }
 
   @Override
-  public Optional<RegisteredCommand> getRegistrationError(DatanodeDetails datanodeDetails,
+  public Optional<RegisteredCommand> getRegistrationVersionError(DatanodeDetails datanodeDetails,
       DatanodeVersionProto versionReport) {
     if (!shouldFenceDatanode(datanodeDetails, versionReport)) {
       return Optional.empty();
@@ -437,7 +437,7 @@ public class SCMNodeManager implements NodeManager, ContainerReplicaPendingOpsSu
       DatanodeDetails datanodeDetails, NodeReportProto nodeReport,
       PipelineReportsProto pipelineReportsProto,
       DatanodeVersionProto dnVersionInfo) {
-    Optional<RegisteredCommand> error = getRegistrationError(datanodeDetails, dnVersionInfo);
+    Optional<RegisteredCommand> error = getRegistrationVersionError(datanodeDetails, dnVersionInfo);
     if (error.isPresent()) {
       return error.get();
     }
@@ -2131,6 +2131,11 @@ public class SCMNodeManager implements NodeManager, ContainerReplicaPendingOpsSu
     }
   }
 
+  @Override
+  public void setDatanodeRemovedHandler(Consumer<DatanodeDetails> handler) {
+    datanodeRemovedHandler = Objects.requireNonNull(handler);
+  }
+
   protected boolean shouldFenceDatanode(DatanodeDetails dnDetails, DatanodeVersionProto versionReport) {
     if (versionReport == null || !versionReport.hasSoftwareVersion() || !versionReport.hasApparentVersion()) {
       LOG.error("Datanode {} did not report its version. Not allowing it to join the cluster.", dnDetails);
@@ -2179,9 +2184,4 @@ public class SCMNodeManager implements NodeManager, ContainerReplicaPendingOpsSu
     return false;
   }
 
-  @Override
-  public void setDatanodeRemovedHandler(
-      Consumer<DatanodeDetails> handler) {
-    datanodeRemovedHandler = Objects.requireNonNull(handler);
-  }
 }
