@@ -155,15 +155,15 @@ public class TestReplicationSupervisor {
     clock = new MockClock(Instant.now(), ZoneId.systemDefault());
     set = newContainerSet();
     DatanodeStateMachine stateMachine = mock(DatanodeStateMachine.class);
+    datanode = MockDatanodeDetails.randomDatanodeDetails();
+    when(stateMachine.getDatanodeDetails()).thenReturn(datanode);
     context = new StateContext(
         new OzoneConfiguration(),
         DatanodeStateMachine.DatanodeStates.getInitState(),
         stateMachine, "");
     context.setTermOfLeaderSCM(CURRENT_TERM);
-    datanode = MockDatanodeDetails.randomDatanodeDetails();
     mockClient = mock(DNContainerOperationClient.class);
     mockController = mock(ContainerController.class);
-    when(stateMachine.getDatanodeDetails()).thenReturn(datanode);
   }
 
   @AfterEach

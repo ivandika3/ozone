@@ -21,14 +21,18 @@ import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_HEARTBEAT_RPC_T
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.google.common.collect.Maps;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
@@ -47,6 +51,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.conf.ReconfigurationHandler;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
@@ -58,18 +63,22 @@ import org.apache.hadoop.ozone.HddsDatanodeStopService;
 import org.apache.hadoop.ozone.OzoneConfigKeys;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.container.common.helpers.ContainerUtils;
+import org.apache.hadoop.ozone.container.common.impl.ContainerSet;
 import org.apache.hadoop.ozone.container.common.interfaces.VolumeChoosingPolicy;
 import org.apache.hadoop.ozone.container.common.statemachine.DatanodeConfiguration;
 import org.apache.hadoop.ozone.container.common.statemachine.DatanodeStateMachine;
 import org.apache.hadoop.ozone.container.common.statemachine.DatanodeStateMachine.DatanodeStates;
 import org.apache.hadoop.ozone.container.common.statemachine.EndpointStateMachine;
 import org.apache.hadoop.ozone.container.common.statemachine.SCMConnectionManager;
+import org.apache.hadoop.ozone.container.common.statemachine.StateContext;
 import org.apache.hadoop.ozone.container.common.states.DatanodeState;
 import org.apache.hadoop.ozone.container.common.states.datanode.InitDatanodeState;
 import org.apache.hadoop.ozone.container.common.states.datanode.RunningDatanodeState;
 import org.apache.hadoop.ozone.container.common.states.endpoint.VersionEndpointTask;
 import org.apache.hadoop.ozone.container.common.transport.server.XceiverServerSpi;
 import org.apache.hadoop.ozone.container.common.volume.CapacityVolumeChoosingPolicy;
+import org.apache.hadoop.ozone.container.common.volume.MutableVolumeSet;
+import org.apache.hadoop.ozone.container.ozoneimpl.ContainerController;
 import org.apache.hadoop.ozone.container.ozoneimpl.OzoneContainer;
 import org.apache.hadoop.ozone.container.replication.ReplicationServer.ReplicationConfig;
 import org.apache.hadoop.util.concurrent.HadoopExecutors;
@@ -81,6 +90,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.MockedConstruction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -150,6 +160,28 @@ public class TestDatanodeStateMachine {
     }
   }
 
+  @Test
+  void testStateMachineNotPublishedDuringContainerConstruction() throws Exception {
+    AtomicReference<StateContext> context = new AtomicReference<>();
+    try (MockedConstruction<OzoneContainer> containers = mockConstruction(OzoneContainer.class,
+        (container, construction) -> {
+          StateContext constructingContext = (StateContext) construction.arguments().get(3);
+          assertNull(constructingContext.getParent());
+          context.set(constructingContext);
+          when(container.getController()).thenReturn(mock(ContainerController.class));
+          when(container.getContainerSet()).thenReturn(mock(ContainerSet.class));
+          when(container.getVolumeSet()).thenReturn(mock(MutableVolumeSet.class));
+        });
+         DatanodeStateMachine stateMachine = DatanodeStateMachine.create(getNewDatanodeDetails(), conf)) {
+      assertEquals(1, containers.constructed().size());
+      assertSame(stateMachine.getContext(), context.get());
+      assertSame(stateMachine, context.get().getParent());
+      assertNotNull(stateMachine.getCommandDispatcher());
+      assertNotNull(stateMachine.getQueueMetrics());
+      assertNull(stateMachine.getStateMachineThread());
+    }
+  }
+
   /**
    * Assert that starting statemachine executes the Init State.
    */
@@ -157,7 +189,7 @@ public class TestDatanodeStateMachine {
   public void testStartStopDatanodeStateMachine() throws IOException,
       InterruptedException, TimeoutException {
     try (DatanodeStateMachine stateMachine =
-        new DatanodeStateMachine(getNewDatanodeDetails(), conf)) {
+        DatanodeStateMachine.create(getNewDatanodeDetails(), conf)) {
       stateMachine.startDaemon();
       SCMConnectionManager connectionManager =
           stateMachine.getConnectionManager();
@@ -187,7 +219,7 @@ public class TestDatanodeStateMachine {
       shutdown.countDown();
       return null;
     }).when(stopService).stopService();
-    DatanodeStateMachine stateMachine = new DatanodeStateMachine(null, datanodeDetails, conf, null, null,
+    DatanodeStateMachine stateMachine = DatanodeStateMachine.create(null, datanodeDetails, conf, null, null,
         stopService, new ReconfigurationHandler("DN", conf, op -> { }));
     try (LogCapturer startupLogs = LogCapturer.captureLogs(VersionEndpointTask.class);
          LogCapturer stateLogs = LogCapturer.captureLogs(RunningDatanodeState.class)) {
@@ -255,7 +287,7 @@ public class TestDatanodeStateMachine {
     ContainerTestUtils.initializeDatanodeLayout(conf, datanodeDetails);
     CountDownLatch initializing = new CountDownLatch(1);
     CountDownLatch release = new CountDownLatch(1);
-    DatanodeStateMachine stateMachine = new DatanodeStateMachine(null, datanodeDetails, conf, null, null,
+    DatanodeStateMachine stateMachine = DatanodeStateMachine.create(null, datanodeDetails, conf, null, null,
         mock(HddsDatanodeStopService.class), new ReconfigurationHandler("DN", conf, op -> { }));
     try {
       OzoneContainer container = stateMachine.getContainer();
@@ -333,7 +365,7 @@ public class TestDatanodeStateMachine {
     datanodeDetails.setPort(port);
     ContainerUtils.writeDatanodeDetailsTo(datanodeDetails, idPath, conf);
     try (DatanodeStateMachine stateMachine =
-             new DatanodeStateMachine(datanodeDetails, conf)) {
+             DatanodeStateMachine.create(datanodeDetails, conf)) {
       VolumeChoosingPolicy volumeChoosingPolicy = stateMachine.getVolumeChoosingPolicy();
       assertEquals(CapacityVolumeChoosingPolicy.class, volumeChoosingPolicy.getClass());
       DatanodeStateMachine.DatanodeStates currentState =
@@ -461,7 +493,7 @@ public class TestDatanodeStateMachine {
     datanodeDetails.setPort(port);
 
     try (DatanodeStateMachine stateMachine =
-             new DatanodeStateMachine(datanodeDetails, conf)) {
+             DatanodeStateMachine.create(datanodeDetails, conf)) {
       DatanodeStateMachine.DatanodeStates currentState =
           stateMachine.getContext().getState();
       assertEquals(DatanodeStateMachine.DatanodeStates.INIT,
@@ -528,7 +560,7 @@ public class TestDatanodeStateMachine {
       OzoneConfiguration perTestConf = new OzoneConfiguration(conf);
       perTestConf.setStrings(entry.getKey(), entry.getValue());
       LOG.info("Test with {} = {}", entry.getKey(), entry.getValue());
-      try (DatanodeStateMachine stateMachine = new DatanodeStateMachine(
+      try (DatanodeStateMachine stateMachine = DatanodeStateMachine.create(
           getNewDatanodeDetails(), perTestConf)) {
         DatanodeStateMachine.DatanodeStates currentState =
             stateMachine.getContext().getState();
@@ -554,7 +586,7 @@ public class TestDatanodeStateMachine {
         OzoneConfigKeys.HDDS_CONTAINER_IPC_PORT_DEFAULT);
     datanodeDetails.setPort(port);
     try (DatanodeStateMachine stateMachine =
-             new DatanodeStateMachine(datanodeDetails, conf)) {
+             DatanodeStateMachine.create(datanodeDetails, conf)) {
       stateMachine.startDaemon();
 
       // Wait for CmdProcessThread to initialize

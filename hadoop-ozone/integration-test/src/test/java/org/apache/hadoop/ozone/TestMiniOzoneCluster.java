@@ -318,7 +318,7 @@ public class TestMiniOzoneCluster {
     try {
 
       for (int i = 0; i < 3; i++) {
-        stateMachines.add(new DatanodeStateMachine(
+        stateMachines.add(DatanodeStateMachine.create(
             randomDatanodeDetails(), ozoneConf));
       }
 
@@ -363,11 +363,11 @@ public class TestMiniOzoneCluster {
     // Turn off the random port flag and test again
     ozoneConf.setBoolean(OzoneConfigKeys.HDDS_CONTAINER_IPC_RANDOM_PORT, false);
     try (
-        DatanodeStateMachine sm1 = new DatanodeStateMachine(
+        DatanodeStateMachine sm1 = DatanodeStateMachine.create(
             randomDatanodeDetails(), ozoneConf);
-        DatanodeStateMachine sm2 = new DatanodeStateMachine(
+        DatanodeStateMachine sm2 = DatanodeStateMachine.create(
             randomDatanodeDetails(), ozoneConf);
-        DatanodeStateMachine sm3 = new DatanodeStateMachine(
+        DatanodeStateMachine sm3 = DatanodeStateMachine.create(
             randomDatanodeDetails(), ozoneConf);
     ) {
       HashSet<Integer> ports = new HashSet<Integer>();

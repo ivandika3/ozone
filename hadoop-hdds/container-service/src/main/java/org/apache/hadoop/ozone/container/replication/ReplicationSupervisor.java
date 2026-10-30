@@ -256,7 +256,7 @@ public final class ReplicationSupervisor {
 
     // set initial state
     if (context != null) {
-      DatanodeDetails dn = context.getParent().getDatanodeDetails();
+      DatanodeDetails dn = context.getDatanodeDetails();
       if (dn != null) {
         nodeStateUpdated(dn.getPersistedOpState());
       }

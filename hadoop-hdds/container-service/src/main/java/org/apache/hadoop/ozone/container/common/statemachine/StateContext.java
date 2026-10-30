@@ -58,6 +58,7 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
+import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.CommandStatus.Status;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.CommandStatusReportsProto;
@@ -109,7 +110,9 @@ public class StateContext {
   private final Queue<SCMCommand<?>> commandQueue;
   private final Map<Long, CommandStatus> cmdStatusMap;
   private final Lock lock;
-  private final DatanodeStateMachine parentDatanodeStateMachine;
+  private volatile DatanodeStateMachine parentDatanodeStateMachine;
+  private final DatanodeDetails datanodeDetails;
+  private final AtomicBoolean pendingFatalVolumeFailures = new AtomicBoolean();
   private final AtomicLong stateExecutionCount;
   private final ConfigurationSource conf;
   private final Set<HostAndPort> endpoints;
@@ -172,7 +175,13 @@ public class StateContext {
   public StateContext(ConfigurationSource conf,
       DatanodeStateMachine.DatanodeStates
           state, DatanodeStateMachine parent, String threadNamePrefix) {
+    this(conf, state, parent, threadNamePrefix, parent == null ? null : parent.getDatanodeDetails());
+  }
+
+  StateContext(ConfigurationSource conf, DatanodeStateMachine.DatanodeStates state, DatanodeStateMachine parent,
+      String threadNamePrefix, DatanodeDetails datanodeDetails) {
     this.conf = conf;
+    this.datanodeDetails = datanodeDetails;
     DatanodeConfiguration dnConf =
         conf.getObject(DatanodeConfiguration.class);
     maxCommandQueueLimit = dnConf.getCommandQueueLimit();
@@ -219,6 +228,34 @@ public class StateContext {
    */
   public DatanodeStateMachine getParent() {
     return parentDatanodeStateMachine;
+  }
+
+  /**
+   * Publishes the parent only after its construction has completed.
+   */
+  void setParent(DatanodeStateMachine parent) {
+    if (parentDatanodeStateMachine != null) {
+      throw new IllegalStateException("Datanode state machine is already initialized");
+    }
+    parentDatanodeStateMachine = Objects.requireNonNull(parent);
+    if (pendingFatalVolumeFailures.getAndSet(false)) {
+      parent.handleFatalVolumeFailures();
+    }
+  }
+
+  public DatanodeDetails getDatanodeDetails() {
+    return datanodeDetails;
+  }
+
+  /**
+   * Disk checks can finish before the parent is bound. Preserve a fatal failure until construction completes.
+   */
+  public void handleFatalVolumeFailures() {
+    pendingFatalVolumeFailures.set(true);
+    DatanodeStateMachine parent = parentDatanodeStateMachine;
+    if (parent != null && pendingFatalVolumeFailures.getAndSet(false)) {
+      parent.handleFatalVolumeFailures();
+    }
   }
 
   /**

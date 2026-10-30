@@ -364,7 +364,8 @@ public class TestOzoneContainerWithTLS {
       StateContext stateContext = ContainerTestUtils.getMockContext(dn, conf);
       VolumeChoosingPolicy volumeChoosingPolicy = VolumeChoosingPolicyFactory.getPolicy(conf);
       container = new OzoneContainer(
-          null, dn, conf, stateContext, caClient, keyClient, volumeChoosingPolicy);
+          null, dn, conf, stateContext, caClient, keyClient, volumeChoosingPolicy,
+          stateContext.getParent().getReconfigurationHandler());
       MutableVolumeSet volumeSet = container.getVolumeSet();
       StorageVolumeUtil.getHddsVolumesList(volumeSet.getVolumesList())
           .forEach(hddsVolume -> hddsVolume.setDbParentDir(tempFolder.toFile()));

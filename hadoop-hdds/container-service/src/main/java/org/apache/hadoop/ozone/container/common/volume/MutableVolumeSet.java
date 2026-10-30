@@ -248,7 +248,7 @@ public class MutableVolumeSet implements VolumeSet {
 
       // check failed volume tolerated
       if (!hasEnoughVolumes()) {
-        context.getParent().handleFatalVolumeFailures();
+        context.handleFatalVolumeFailures();
       }
     } finally {
       this.writeUnlock();

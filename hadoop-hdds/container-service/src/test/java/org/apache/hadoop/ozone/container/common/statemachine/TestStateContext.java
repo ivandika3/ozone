@@ -20,19 +20,33 @@ package org.apache.hadoop.ozone.container.common.statemachine;
 import static com.google.common.util.concurrent.MoreExecutors.newDirectExecutorService;
 import static org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.ClosePipelineInfo;
 import static org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.ContainerAction.Action.CLOSE;
+import static org.apache.hadoop.ozone.container.common.statemachine.DatanodeQueueMetrics.COMMAND_DISPATCHER_QUEUE_PREFIX;
+import static org.apache.hadoop.ozone.container.common.statemachine.DatanodeQueueMetrics.CONTAINER_ACTION_QUEUE_PREFIX;
+import static org.apache.hadoop.ozone.container.common.statemachine.DatanodeQueueMetrics.INCREMENTAL_REPORT_QUEUE_PREFIX;
+import static org.apache.hadoop.ozone.container.common.statemachine.DatanodeQueueMetrics.PIPELINE_ACTION_QUEUE_PREFIX;
+import static org.apache.hadoop.ozone.container.common.statemachine.DatanodeQueueMetrics.STATE_CONTEXT_COMMAND_QUEUE_PREFIX;
 import static org.apache.ozone.test.GenericTestUtils.waitFor;
+import static org.apache.ozone.test.MetricsAsserts.getIntGauge;
+import static org.apache.ozone.test.MetricsAsserts.getLongGauge;
+import static org.apache.ozone.test.MetricsAsserts.getMetrics;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Message;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -48,6 +62,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.commons.text.WordUtils;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.MockDatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
@@ -58,13 +73,19 @@ import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolPro
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.PipelineReport;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.PipelineReportsProto;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.SCMCommandProto;
+import org.apache.hadoop.hdds.scm.ScmConfigKeys;
 import org.apache.hadoop.hdds.scm.net.HostAndPort;
 import org.apache.hadoop.hdds.scm.pipeline.PipelineID;
 import org.apache.hadoop.hdfs.util.EnumCounters;
+import org.apache.hadoop.metrics2.MetricsRecordBuilder;
 import org.apache.hadoop.ozone.container.common.ContainerTestUtils;
 import org.apache.hadoop.ozone.container.common.impl.ContainerSet;
 import org.apache.hadoop.ozone.container.common.statemachine.DatanodeStateMachine.DatanodeStates;
+import org.apache.hadoop.ozone.container.common.statemachine.commandhandler.CommandDispatcher;
 import org.apache.hadoop.ozone.container.common.states.DatanodeState;
+import org.apache.hadoop.ozone.container.common.volume.MutableVolumeSet;
+import org.apache.hadoop.ozone.container.common.volume.StorageVolume;
+import org.apache.hadoop.ozone.container.common.volume.StorageVolumeChecker;
 import org.apache.hadoop.ozone.container.ozoneimpl.OzoneContainer;
 import org.apache.hadoop.ozone.protocol.commands.CloseContainerCommand;
 import org.apache.hadoop.ozone.protocol.commands.ClosePipelineCommand;
@@ -72,11 +93,79 @@ import org.apache.hadoop.ozone.protocol.commands.ReconcileContainerCommand;
 import org.apache.hadoop.ozone.protocol.commands.SCMCommand;
 import org.apache.ozone.test.LambdaTestUtils;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Test class for Datanode StateContext.
  */
 public class TestStateContext {
+
+  @Test
+  void testFatalVolumeFailureBeforeStateMachineBinding(@TempDir Path dir) throws Exception {
+    OzoneConfiguration conf = new OzoneConfiguration();
+    conf.set(ScmConfigKeys.HDDS_DATANODE_DIR_KEY, dir.resolve("data1") + "," + dir.resolve("data2"));
+    DatanodeConfiguration dnConf = conf.getObject(DatanodeConfiguration.class);
+    dnConf.setFailedDataVolumesTolerated(0);
+    conf.setFromObject(dnConf);
+    StateContext context = new StateContext(conf, DatanodeStates.INIT, null, "");
+    DatanodeStateMachine stateMachine = mock(DatanodeStateMachine.class);
+    StorageVolumeChecker checker = mock(StorageVolumeChecker.class);
+    doAnswer(invocation -> {
+      StorageVolume failedVolume = invocation.getArgument(0);
+      StorageVolumeChecker.Callback callback = invocation.getArgument(1);
+      callback.call(Collections.emptySet(), Collections.singleton(failedVolume));
+      return true;
+    }).when(checker).checkVolume(any(), any());
+    MutableVolumeSet volumeSet = new MutableVolumeSet(MockDatanodeDetails.randomDatanodeDetails().getUuidString(),
+        conf, context, StorageVolume.VolumeType.DATA_VOLUME, checker);
+    try {
+      volumeSet.checkVolumeAsync(volumeSet.getVolumesList().get(0));
+      assertEquals(1, volumeSet.getFailedVolumesList().size());
+      assertEquals(1, volumeSet.getVolumesList().size());
+      verify(stateMachine, never()).handleFatalVolumeFailures();
+
+      context.setParent(stateMachine);
+      verify(stateMachine).handleFatalVolumeFailures();
+
+      volumeSet.checkVolumeAsync(volumeSet.getVolumesList().get(0));
+      verify(stateMachine, times(2)).handleFatalVolumeFailures();
+    } finally {
+      volumeSet.shutdown();
+    }
+  }
+
+  @Test
+  void testQueueMetricsWithoutStateMachine() {
+    StateContext context = mock(StateContext.class);
+    CommandDispatcher dispatcher = mock(CommandDispatcher.class);
+    EnumCounters<SCMCommandProto.Type> commandQueue = new EnumCounters<>(SCMCommandProto.Type.class);
+    EnumCounters<SCMCommandProto.Type> dispatcherQueue = new EnumCounters<>(SCMCommandProto.Type.class);
+    when(context.getCommandQueueSummary()).thenReturn(commandQueue);
+    when(dispatcher.getQueuedCommandCount()).thenReturn(dispatcherQueue);
+    HostAndPort endpoint = new HostAndPort("localhost", 9860);
+    when(context.getIncrementalReportQueueSize())
+        .thenReturn(Collections.singletonMap(endpoint, 3), Collections.emptyMap());
+    when(context.getContainerActionQueueSize())
+        .thenReturn(Collections.singletonMap(endpoint, 4), Collections.emptyMap());
+    when(context.getPipelineActionQueueSize())
+        .thenReturn(Collections.singletonMap(endpoint, 5), Collections.emptyMap());
+    DatanodeQueueMetrics metrics = new DatanodeQueueMetrics(context, dispatcher);
+    metrics.addEndpoint(endpoint);
+
+    for (int queueSize : new int[]{1, 0}) {
+      commandQueue.set(SCMCommandProto.Type.closeContainerCommand, queueSize);
+      dispatcherQueue.set(SCMCommandProto.Type.replicateContainerCommand, 2L * queueSize);
+      MetricsRecordBuilder record = getMetrics(metrics);
+      for (SCMCommandProto.Type type : SCMCommandProto.Type.values()) {
+        String typeSize = WordUtils.capitalize(String.valueOf(type)) + "Size";
+        assertEquals(commandQueue.get(type), getLongGauge(STATE_CONTEXT_COMMAND_QUEUE_PREFIX + typeSize, record));
+        assertEquals(dispatcherQueue.get(type), getLongGauge(COMMAND_DISPATCHER_QUEUE_PREFIX + typeSize, record));
+      }
+      assertEquals(3 * queueSize, getIntGauge(INCREMENTAL_REPORT_QUEUE_PREFIX + "LocalhostSize", record));
+      assertEquals(4 * queueSize, getIntGauge(CONTAINER_ACTION_QUEUE_PREFIX + "LocalhostSize", record));
+      assertEquals(5 * queueSize, getIntGauge(PIPELINE_ACTION_QUEUE_PREFIX + "LocalhostSize", record));
+    }
+  }
 
   /**
    * Only accepted types of reports can be put back to the report queue.

@@ -85,7 +85,7 @@ public final class UpgradeTestHelper {
 
     // Build and start the datanode.
     DatanodeDetails dd = ContainerTestUtils.createDatanodeDetails();
-    dsm = new DatanodeStateMachine(dd, conf);
+    dsm = DatanodeStateMachine.create(dd, conf);
     int actualApparentVersion = dsm.getVersionManager().getApparentVersion().serialize();
     assertEquals(
         apparentVersion,
@@ -105,7 +105,7 @@ public final class UpgradeTestHelper {
     dsm.close();
 
     // Start new datanode with the same configuration.
-    dsm = new DatanodeStateMachine(dd, conf);
+    dsm = DatanodeStateMachine.create(dd, conf);
     if (shouldSetDbParentDir) {
       StorageVolumeUtil.getHddsVolumesList(dsm.getContainer().getVolumeSet().getVolumesList())
           .forEach(hddsVolume -> hddsVolume.setDbParentDir(tempFolder.toFile()));

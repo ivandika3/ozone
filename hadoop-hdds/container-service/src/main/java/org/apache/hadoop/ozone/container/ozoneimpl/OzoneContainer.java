@@ -54,6 +54,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.hadoop.hdds.HddsConfigKeys;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
+import org.apache.hadoop.hdds.conf.ReconfigurationHandler;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails.Port.Name;
 import org.apache.hadoop.hdds.protocol.datanode.proto.ContainerProtos.ContainerType;
@@ -179,12 +180,12 @@ public class OzoneContainer {
    * @throws DiskOutOfSpaceException
    * @throws IOException
    */
-  @SuppressWarnings("checkstyle:methodlength")
+  @SuppressWarnings({"checkstyle:methodlength", "checkstyle:ParameterNumber"})
   public OzoneContainer(HddsDatanodeService hddsDatanodeService,
       DatanodeDetails datanodeDetails, ConfigurationSource conf,
       StateContext context, CertificateClient certClient,
       SecretKeyVerifierClient secretKeyClient,
-      VolumeChoosingPolicy volumeChoosingPolicy) throws IOException {
+      VolumeChoosingPolicy volumeChoosingPolicy, ReconfigurationHandler reconfigurationHandler) throws IOException {
     config = conf;
     this.datanodeDetails = datanodeDetails;
     this.context = context;
@@ -236,7 +237,7 @@ public class OzoneContainer {
       handlers.put(containerType,
           Handler.getHandlerForContainerType(
               containerType, conf,
-              context.getParent().getDatanodeDetails().getUuidString(),
+              datanodeDetails.getUuidString(),
               containerSet, volumeSet, volumeChoosingPolicy, metrics, icrSender, checksumTreeManager, this));
     }
 
@@ -297,7 +298,7 @@ public class OzoneContainer {
             blockDeletingServiceWorkerSize, config,
             datanodeDetails.threadNamePrefix(),
             checksumTreeManager,
-            context.getParent().getReconfigurationHandler());
+            reconfigurationHandler);
 
     if (conf.getBoolean(HDDS_DATANODE_DISK_BALANCER_ENABLED_KEY,
         HDDS_DATANODE_DISK_BALANCER_ENABLED_DEFAULT)) {
@@ -354,7 +355,8 @@ public class OzoneContainer {
       DatanodeDetails datanodeDetails, ConfigurationSource conf,
       StateContext context, VolumeChoosingPolicy volumeChoosingPolicy)
       throws IOException {
-    this(null, datanodeDetails, conf, context, null, null, volumeChoosingPolicy);
+    this(null, datanodeDetails, conf, context, null, null, volumeChoosingPolicy,
+        context.getParent().getReconfigurationHandler());
   }
 
   public StartupProgress<DatanodeStartupPhase> getStartupProgress() {

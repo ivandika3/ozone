@@ -204,7 +204,7 @@ public class TestDatanodeUpgradeToSchemaV3 {
         UUID.randomUUID().toString(),
         HDDSLayoutFeature.ERASURE_CODED_STORAGE_SUPPORT.serialize());
     layoutStorage.initialize();
-    dsm = new DatanodeStateMachine(
+    dsm = DatanodeStateMachine.create(
         ContainerTestUtils.createDatanodeDetails(), conf);
     HddsVolume dataVolume = (
         HddsVolume) dsm.getContainer().getVolumeSet().getVolumesList().get(0);
@@ -518,7 +518,7 @@ public class TestDatanodeUpgradeToSchemaV3 {
         UUID.randomUUID().toString(),
         HDDSLayoutFeature.ERASURE_CODED_STORAGE_SUPPORT.serialize());
     layoutStorage.initialize();
-    dsm = new DatanodeStateMachine(
+    dsm = DatanodeStateMachine.create(
         ContainerTestUtils.createDatanodeDetails(), conf);
     HddsVolume dataVolume = (
         HddsVolume) dsm.getContainer().getVolumeSet().getVolumesList().get(0);

@@ -25,6 +25,7 @@ import static org.apache.hadoop.hdds.upgrade.HDDSLayoutFeature.WITNESSED_CONTAIN
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -47,6 +48,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import org.apache.hadoop.hdds.ComponentVersion;
 import org.apache.hadoop.hdds.HDDSVersion;
@@ -200,6 +202,26 @@ class TestDatanodeVersionManager extends AbstractComponentVersionManagerTest {
     }
   }
 
+  @Test
+  void testUpgradeActionResolvesStateMachineDuringFinalization() throws Exception {
+    AtomicReference<DatanodeStateMachine> stateMachine = new AtomicReference<>();
+    AtomicReference<DatanodeStateMachine> actionArg = new AtomicReference<>();
+    AtomicInteger resolutions = new AtomicInteger();
+    ComponentUpgradeActionProvider<DatanodeUpgradeAction> provider =
+        () -> Map.of(HDDSVersion.ZDU, actionArg::set);
+    try (DatanodeVersionManager versionManager = new DatanodeVersionManager(
+        newDatanodeStorage(DATANODE_SCHEMA_V3.serialize()), () -> {
+          resolutions.incrementAndGet();
+          return stateMachine.get();
+        }, provider)) {
+      assertEquals(0, resolutions.get());
+      stateMachine.set(mock(DatanodeStateMachine.class));
+      versionManager.finalizeUpgrade();
+      assertEquals(1, resolutions.get());
+      assertSame(stateMachine.get(), actionArg.get());
+    }
+  }
+
   @Override
   @Test
   public void testPersistFailureRollsBack() throws Exception {
@@ -214,7 +236,7 @@ class TestDatanodeVersionManager extends AbstractComponentVersionManagerTest {
     doThrow(new IOException("persist failed")).when(storage).persistCurrentState();
 
     DatanodeStateMachine mockDN = Mockito.mock(DatanodeStateMachine.class);
-    try (DatanodeVersionManager versionManager = new DatanodeVersionManager(storage, mockDN, HashMap::new)) {
+    try (DatanodeVersionManager versionManager = new DatanodeVersionManager(storage, () -> mockDN, HashMap::new)) {
       assertEquals(INITIAL_VERSION, versionManager.getApparentVersion());
       UpgradeException thrown = assertThrows(UpgradeException.class, versionManager::finalizeUpgrade);
       assertEquals(UpgradeException.ResultCodes.APPARENT_VERSION_UPDATE_FAILED, thrown.getResult());

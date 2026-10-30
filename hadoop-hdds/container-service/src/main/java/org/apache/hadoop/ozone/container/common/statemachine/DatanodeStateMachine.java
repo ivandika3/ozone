@@ -30,8 +30,6 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.conf.ReconfigurationHandler;
@@ -88,7 +86,7 @@ import org.slf4j.LoggerFactory;
 /**
  * State Machine Class.
  */
-public class DatanodeStateMachine implements Closeable {
+public final class DatanodeStateMachine implements Closeable {
   private static final Logger LOG =
       LoggerFactory.getLogger(DatanodeStateMachine.class);
   private final ExecutorService executorService;
@@ -113,11 +111,6 @@ public class DatanodeStateMachine implements Closeable {
   private final DatanodeVersionManager versionManager;
   private final DatanodeStorage storage;
 
-  /**
-   * Used to synchronize to the OzoneContainer object created in the
-   * constructor in a non-thread-safe way - see HDDS-3116.
-   */
-  private final ReadWriteLock constructionLock = new ReentrantReadWriteLock();
   private final MeasuredReplicator pushReplicatorWithMetrics;
   private final ReplicationSupervisorMetrics replicationSupervisorMetrics;
   private final NettyMetrics nettyMetrics;
@@ -131,6 +124,24 @@ public class DatanodeStateMachine implements Closeable {
   private final ReconfigurationHandler reconfigurationHandler;
 
   /**
+   * Constructs the state machine before making it available to its dependencies.
+   */
+  @SuppressWarnings("checkstyle:ParameterNumber")
+  public static DatanodeStateMachine create(HddsDatanodeService hddsDatanodeService, DatanodeDetails datanodeDetails,
+      ConfigurationSource conf, CertificateClient certClient, SecretKeyClient secretKeyClient,
+      HddsDatanodeStopService hddsDatanodeStopService, ReconfigurationHandler reconfigurationHandler)
+      throws IOException {
+    DatanodeStateMachine stateMachine = new DatanodeStateMachine(hddsDatanodeService, datanodeDetails, conf, certClient,
+        secretKeyClient, hddsDatanodeStopService, reconfigurationHandler);
+    stateMachine.container.getVolumeSet().setFailedVolumeListener(() -> {
+      stateMachine.container.handleVolumeFailures();
+      stateMachine.supervisor.shutdownFailedVolumePools(stateMachine.container.getVolumeSet());
+    });
+    stateMachine.context.setParent(stateMachine);
+    return stateMachine;
+  }
+
+  /**
    * Constructs a datanode state machine.
    * @param datanodeDetails - DatanodeDetails used to identify a datanode
    * @param conf - Configuration.
@@ -138,7 +149,7 @@ public class DatanodeStateMachine implements Closeable {
    *                     enabled
    */
   @SuppressWarnings({"checkstyle:ParameterNumber", "checkstyle:methodlength"})
-  public DatanodeStateMachine(HddsDatanodeService hddsDatanodeService,
+  private DatanodeStateMachine(HddsDatanodeService hddsDatanodeService,
                               DatanodeDetails datanodeDetails,
                               ConfigurationSource conf,
                               CertificateClient certClient,
@@ -159,10 +170,11 @@ public class DatanodeStateMachine implements Closeable {
     storage = new DatanodeStorage(conf,
         datanodeDetails.getUuidString());
 
-    versionManager = new DatanodeVersionManager(storage, this);
+    String threadNamePrefix = datanodeDetails.threadNamePrefix();
+    context = new StateContext(conf, DatanodeStates.getInitState(), null, threadNamePrefix, datanodeDetails);
+    versionManager = new DatanodeVersionManager(storage, context::getParent);
     VersionedDatanodeFeatures.initialize(versionManager);
 
-    String threadNamePrefix = datanodeDetails.threadNamePrefix();
     executorService = Executors.newFixedThreadPool(
         getEndPointTaskThreadPoolSize(),
         new ThreadFactoryBuilder()
@@ -170,19 +182,9 @@ public class DatanodeStateMachine implements Closeable {
                 "DatanodeStateMachineTaskThread-%d")
             .build());
     connectionManager = new SCMConnectionManager(conf);
-    context = new StateContext(this.conf, DatanodeStates.getInitState(), this,
-        threadNamePrefix);
     volumeChoosingPolicy = VolumeChoosingPolicyFactory.getPolicy(conf);
-    // OzoneContainer instance is used in a non-thread safe way by the context
-    // past to its constructor, so we much synchronize its access. See
-    // HDDS-3116 for more details.
-    constructionLock.writeLock().lock();
-    try {
-      container = new OzoneContainer(hddsDatanodeService, this.datanodeDetails,
-          conf, context, certClient, secretKeyClient, volumeChoosingPolicy);
-    } finally {
-      constructionLock.writeLock().unlock();
-    }
+    container = new OzoneContainer(hddsDatanodeService, this.datanodeDetails,
+        conf, context, certClient, secretKeyClient, volumeChoosingPolicy, reconfigurationHandler);
     nextHB = new AtomicLong(Time.monotonicNow());
 
     ContainerReplicator pushReplicator = new PushReplicator(conf,
@@ -202,11 +204,6 @@ public class DatanodeStateMachine implements Closeable {
         .volumeSet(container.getVolumeSet())
         .clock(clock)
         .build();
-
-    container.getVolumeSet().setFailedVolumeListener(() -> {
-      container.handleVolumeFailures();
-      supervisor.shutdownFailedVolumePools(container.getVolumeSet());
-    });
 
     replicationSupervisorMetrics =
         ReplicationSupervisorMetrics.create(supervisor);
@@ -291,14 +288,14 @@ public class DatanodeStateMachine implements Closeable {
         .addThreadNamePrefix(threadNamePrefix)
         .build();
 
-    queueMetrics = DatanodeQueueMetrics.create(this);
+    queueMetrics = DatanodeQueueMetrics.create(context, commandDispatcher);
     nettyMetrics = NettyMetrics.create();
   }
 
   @VisibleForTesting
-  public DatanodeStateMachine(DatanodeDetails datanodeDetails,
-                              ConfigurationSource conf) throws IOException {
-    this(null, datanodeDetails, conf, null, null, null,
+  public static DatanodeStateMachine create(DatanodeDetails datanodeDetails, ConfigurationSource conf)
+      throws IOException {
+    return create(null, datanodeDetails, conf, null, null, null,
         new ReconfigurationHandler("DN", (OzoneConfiguration) conf, op -> { }));
   }
 
@@ -339,13 +336,7 @@ public class DatanodeStateMachine implements Closeable {
   }
 
   public OzoneContainer getContainer() {
-    // See HDDS-3116 to explain the need for this lock
-    constructionLock.readLock().lock();
-    try {
-      return this.container;
-    } finally {
-      constructionLock.readLock().unlock();
-    }
+    return container;
   }
 
   /**

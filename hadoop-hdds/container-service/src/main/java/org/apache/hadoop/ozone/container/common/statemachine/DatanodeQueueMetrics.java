@@ -35,6 +35,7 @@ import org.apache.hadoop.metrics2.annotation.Metrics;
 import org.apache.hadoop.metrics2.lib.DefaultMetricsSystem;
 import org.apache.hadoop.metrics2.lib.MetricsRegistry;
 import org.apache.hadoop.ozone.OzoneConsts;
+import org.apache.hadoop.ozone.container.common.statemachine.commandhandler.CommandDispatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,7 +64,8 @@ public final class DatanodeQueueMetrics implements MetricsSource {
 
   private MetricsRegistry registry;
 
-  private DatanodeStateMachine datanodeStateMachine;
+  private final StateContext context;
+  private final CommandDispatcher commandDispatcher;
   private static DatanodeQueueMetrics instance;
 
   private Map<SCMCommandProto.Type, MetricsInfo> stateContextCommandQueueMap;
@@ -72,21 +74,21 @@ public final class DatanodeQueueMetrics implements MetricsSource {
   private Map<HostAndPort, MetricsInfo> containerActionQueueMap;
   private Map<HostAndPort, MetricsInfo> pipelineActionQueueMap;
 
-  public DatanodeQueueMetrics(DatanodeStateMachine datanodeStateMachine) {
+  public DatanodeQueueMetrics(StateContext context, CommandDispatcher commandDispatcher) {
     this.registry = new MetricsRegistry(METRICS_SOURCE_NAME);
-    this.datanodeStateMachine = datanodeStateMachine;
+    this.context = context;
+    this.commandDispatcher = commandDispatcher;
 
     initializeQueues();
   }
 
-  public static synchronized DatanodeQueueMetrics create(DatanodeStateMachine
-      datanodeStateMachine) {
+  public static synchronized DatanodeQueueMetrics create(StateContext context, CommandDispatcher commandDispatcher) {
     if (instance != null) {
       return instance;
     }
     instance = DefaultMetricsSystem.instance().register(METRICS_SOURCE_NAME,
         "Queue metrics in Datanode",
-        new DatanodeQueueMetrics(datanodeStateMachine));
+        new DatanodeQueueMetrics(context, commandDispatcher));
     return instance;
   }
 
@@ -98,7 +100,7 @@ public final class DatanodeQueueMetrics implements MetricsSource {
           STATE_CONTEXT_COMMAND_QUEUE_PREFIX, String.valueOf(type)));
     }
 
-    // Add queue from DatanodeStateMachine.commandDispatcher
+    // Add queue from CommandDispatcher
     commandDispatcherQueueMap = new HashMap<>();
     for (SCMCommandProto.Type type: SCMCommandProto.Type.values()) {
       commandDispatcherQueueMap.put(type, getMetricsInfo(
@@ -116,16 +118,14 @@ public final class DatanodeQueueMetrics implements MetricsSource {
   public void getMetrics(MetricsCollector collector, boolean b) {
     MetricsRecordBuilder builder = collector.addRecord(METRICS_SOURCE_NAME);
 
-    EnumCounters<SCMCommandProto.Type> tmpEnum =
-        datanodeStateMachine.getContext().getCommandQueueSummary();
+    EnumCounters<SCMCommandProto.Type> tmpEnum = context.getCommandQueueSummary();
     for (Map.Entry<SCMCommandProto.Type, MetricsInfo> entry:
         stateContextCommandQueueMap.entrySet()) {
       builder.addGauge(entry.getValue(),
           tmpEnum.get(entry.getKey()));
     }
 
-    tmpEnum = datanodeStateMachine.getCommandDispatcher()
-        .getQueuedCommandCount();
+    tmpEnum = commandDispatcher.getQueuedCommandCount();
     for (Map.Entry<SCMCommandProto.Type, MetricsInfo> entry:
         commandDispatcherQueueMap.entrySet()) {
       builder.addGauge(entry.getValue(),
@@ -134,21 +134,15 @@ public final class DatanodeQueueMetrics implements MetricsSource {
 
     for (Map.Entry<HostAndPort, MetricsInfo> entry:
         incrementalReportsQueueMap.entrySet()) {
-      builder.addGauge(entry.getValue(),
-          datanodeStateMachine.getContext()
-              .getIncrementalReportQueueSize().getOrDefault(entry.getKey(), 0));
+      builder.addGauge(entry.getValue(), context.getIncrementalReportQueueSize().getOrDefault(entry.getKey(), 0));
     }
     for (Map.Entry<HostAndPort, MetricsInfo> entry:
         containerActionQueueMap.entrySet()) {
-      builder.addGauge(entry.getValue(),
-          datanodeStateMachine.getContext()
-              .getContainerActionQueueSize().getOrDefault(entry.getKey(), 0));
+      builder.addGauge(entry.getValue(), context.getContainerActionQueueSize().getOrDefault(entry.getKey(), 0));
     }
     for (Map.Entry<HostAndPort, MetricsInfo> entry:
         pipelineActionQueueMap.entrySet()) {
-      builder.addGauge(entry.getValue(),
-          datanodeStateMachine.getContext().getPipelineActionQueueSize()
-              .getOrDefault(entry.getKey(), 0));
+      builder.addGauge(entry.getValue(), context.getPipelineActionQueueSize().getOrDefault(entry.getKey(), 0));
     }
   }
 

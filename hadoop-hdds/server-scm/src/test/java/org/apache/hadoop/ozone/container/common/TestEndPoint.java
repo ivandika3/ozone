@@ -633,7 +633,7 @@ public class TestEndPoint {
     conf.setBoolean(OzoneConfigKeys.HDDS_CONTAINER_RATIS_IPC_RANDOM_PORT, true);
 
     // Create a datanode state machine for stateConext used by endpoint task
-    try (DatanodeStateMachine stateMachine = new DatanodeStateMachine(
+    try (DatanodeStateMachine stateMachine = DatanodeStateMachine.create(
         randomDatanodeDetails(), conf);
         EndpointStateMachine rpcEndPoint =
             createEndpoint(conf, scmAddress, rpcTimeout)) {

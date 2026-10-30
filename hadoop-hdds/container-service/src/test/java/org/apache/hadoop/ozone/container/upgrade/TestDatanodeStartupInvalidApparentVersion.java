@@ -74,7 +74,7 @@ public class TestDatanodeStartupInvalidApparentVersion {
             + " finalization";
 
     IOException ioException = assertThrows(IOException.class,
-        () -> new DatanodeStateMachine(randomDatanodeDetails(), conf));
+        () -> DatanodeStateMachine.create(randomDatanodeDetails(), conf));
     assertEquals(expectedMessage, ioException.getMessage());
   }
 }

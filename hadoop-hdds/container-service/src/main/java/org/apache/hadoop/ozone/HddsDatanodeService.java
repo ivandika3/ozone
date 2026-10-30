@@ -337,7 +337,7 @@ public class HddsDatanodeService extends GenericCli implements Callable<Void>, S
       reconfigurationHandler.setReconfigurationCompleteCallback(reconfigurationHandler.defaultLoggingCallback());
       reconfigurationHandler.registerCompleteCallback(tracingReconfigurationCallback);
 
-      datanodeStateMachine = new DatanodeStateMachine(this, datanodeDetails, conf,
+      datanodeStateMachine = DatanodeStateMachine.create(this, datanodeDetails, conf,
           dnCertClient, secretKeyClient, this::terminateDatanode,
           reconfigurationHandler);
       try {

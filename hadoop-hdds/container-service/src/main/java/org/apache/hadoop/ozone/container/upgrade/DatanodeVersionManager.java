@@ -20,6 +20,7 @@ package org.apache.hadoop.ozone.container.upgrade;
 import com.google.common.annotations.VisibleForTesting;
 import java.io.IOException;
 import java.util.Map;
+import java.util.function.Supplier;
 import org.apache.hadoop.hdds.ComponentVersion;
 import org.apache.hadoop.hdds.HDDSVersion;
 import org.apache.hadoop.hdds.upgrade.DatanodeUpgradeAction;
@@ -38,14 +39,16 @@ public class DatanodeVersionManager extends ComponentVersionManager {
 
   private final DatanodeStorage storage;
   private final Map<ComponentVersion, DatanodeUpgradeAction> upgradeActions;
-  private final DatanodeStateMachine upgradeActionArg;
+  // Resolve the state machine only when finalizing, after its construction has completed.
+  private final Supplier<DatanodeStateMachine> upgradeActionArg;
 
-  public DatanodeVersionManager(DatanodeStorage storage, DatanodeStateMachine upgradeActionArg) throws IOException {
+  public DatanodeVersionManager(DatanodeStorage storage, Supplier<DatanodeStateMachine> upgradeActionArg)
+      throws IOException {
     this(storage, upgradeActionArg, new DatanodeUpgradeActionProvider());
   }
 
   @VisibleForTesting
-  public DatanodeVersionManager(DatanodeStorage storage, DatanodeStateMachine upgradeActionArg,
+  public DatanodeVersionManager(DatanodeStorage storage, Supplier<DatanodeStateMachine> upgradeActionArg,
       ComponentUpgradeActionProvider<DatanodeUpgradeAction> upgradeActionProvider) throws IOException {
     super(HDDSVersionUtils.deserializedPersistedApparentVersion(storage.getApparentVersion()),
         HDDSVersion.SOFTWARE_VERSION);
@@ -87,7 +90,7 @@ public class DatanodeVersionManager extends ComponentVersionManager {
       return;
     }
     try {
-      action.execute(upgradeActionArg);
+      action.execute(upgradeActionArg == null ? null : upgradeActionArg.get());
     } catch (Exception e) {
       logAndThrow(e, "Datanode upgrade action for version " + version + " failed.",
           UpgradeException.ResultCodes.FINALIZE_UPGRADE_ACTION_FAILED);
