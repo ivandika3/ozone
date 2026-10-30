@@ -219,7 +219,7 @@ public class TestSCMDatanodeHeartbeatDispatcher {
       public <PAYLOAD, EVENT extends Event<PAYLOAD>> void fireEvent(
           EVENT event, PAYLOAD payload) {
         if (event.equals(CONTAINER_REPORT)) {
-          providedReportDispatched.set(((ContainerReportFromDatanode) payload).isRegister());
+          providedReportDispatched.set(((ContainerReportFromDatanode) payload).isRegistrationReport());
           assertEquals(1, ((ContainerReportFromDatanode) payload).getReport().getReportsCount());
         } else if (event.equals(NODE_REGISTRATION_CONT_REPORT)) {
           registrationReportDispatched.set(true);
@@ -256,7 +256,7 @@ public class TestSCMDatanodeHeartbeatDispatcher {
     LeaseClaim claim = spy(claimLease(datanode));
     ContainerReportsProto report = ContainerReportsProto.getDefaultInstance();
     ContainerReportFromDatanode providedReport =
-        new ContainerReportFromDatanode(datanode, report, false, claim);
+        new ContainerReportFromDatanode(datanode, report, claim);
     SCMHeartbeatRequestProto heartbeat = SCMHeartbeatRequestProto.newBuilder()
         .setDatanodeDetails(datanode.getProtoBufMessage())
         .setContainerReport(report)
@@ -269,6 +269,32 @@ public class TestSCMDatanodeHeartbeatDispatcher {
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
+  public void testLeasedReportDerivesRegistrationStatusFromClaim(boolean registrationDeferred) {
+    DatanodeDetails datanode = randomDatanodeDetails();
+    SCMFullContainerReportLeaseManager leases = new SCMFullContainerReportLeaseManager(1, 5_000L, () -> 0L, null);
+    if (registrationDeferred) {
+      leases.markFullContainerReportDeferred(datanode);
+    }
+    long leaseId = leases.requestLease(datanode, 7L).getAsLong();
+    LeaseClaim claim = leases.claimLease(datanode, OptionalLong.of(7L), 7L, leaseId).orElseThrow(AssertionError::new);
+
+    ContainerReportFromDatanode report =
+        new ContainerReportFromDatanode(datanode, ContainerReportsProto.getDefaultInstance(), claim);
+
+    assertEquals(registrationDeferred, report.isRegistrationReport());
+    assertTrue(report.startProcessing());
+    report.complete(true);
+    assertTrue(leases.requestLease(datanode, 7L).isPresent());
+  }
+
+  @Test
+  public void testLeasedReportRequiresClaim() {
+    assertThrows(NullPointerException.class, () -> new ContainerReportFromDatanode(
+        randomDatanodeDetails(), ContainerReportsProto.getDefaultInstance(), (LeaseClaim) null));
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
   public void testUndispatchedContainerReportReleasesLeaseOnPublicationFailure(boolean failOnContainerReport) {
     DatanodeDetails datanode = randomDatanodeDetails();
     SCMFullContainerReportLeaseManager leases = new SCMFullContainerReportLeaseManager(1, 5_000L, () -> 0L, null);
@@ -276,7 +302,7 @@ public class TestSCMDatanodeHeartbeatDispatcher {
     SCMFullContainerReportLeaseManager.LeaseClaim claim =
         leases.claimLease(datanode, OptionalLong.of(7L), 7L, leaseId).orElseThrow(AssertionError::new);
     ContainerReportFromDatanode report =
-        new ContainerReportFromDatanode(datanode, ContainerReportsProto.getDefaultInstance(), false, claim);
+        new ContainerReportFromDatanode(datanode, ContainerReportsProto.getDefaultInstance(), claim);
     NodeManager nodeManager = mock(NodeManager.class);
     when(nodeManager.isNodeRegistered(any())).thenReturn(true);
     EventPublisher publisher = new EventPublisher() {
@@ -304,7 +330,7 @@ public class TestSCMDatanodeHeartbeatDispatcher {
     DatanodeDetails datanode = randomDatanodeDetails();
     LeaseClaim claim = spy(claimLease(datanode));
     ContainerReportFromDatanode report = new ContainerReportFromDatanode(
-        datanode, ContainerReportsProto.getDefaultInstance(), false, claim);
+        datanode, ContainerReportsProto.getDefaultInstance(), claim);
     NodeManager nodeManager = mock(NodeManager.class);
     when(nodeManager.isNodeRegistered(any())).thenThrow(new IllegalStateException("Registration check failed"));
     SCMDatanodeHeartbeatDispatcher dispatcher =
@@ -344,7 +370,7 @@ public class TestSCMDatanodeHeartbeatDispatcher {
         new SCMDatanodeHeartbeatDispatcher(nodeManager, publisher);
     ContainerReportsProto report = ContainerReportsProto.getDefaultInstance();
     ContainerReportFromDatanode providedReport =
-        new ContainerReportFromDatanode(datanode, report, false, claim);
+        new ContainerReportFromDatanode(datanode, report, claim);
     SCMHeartbeatRequestProto heartbeat = SCMHeartbeatRequestProto.newBuilder()
         .setDatanodeDetails(datanode.getProtoBufMessage())
         .setContainerReport(report)
