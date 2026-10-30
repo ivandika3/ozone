@@ -33,6 +33,7 @@ import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -42,8 +43,6 @@ import java.lang.reflect.Field;
 import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.BooleanSupplier;
-import java.util.function.Consumer;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.DatanodeID;
 import org.apache.hadoop.hdds.protocol.proto.StorageContainerDatanodeProtocolProtos.CommandStatusReportsProto;
@@ -58,6 +57,7 @@ import org.apache.hadoop.hdds.scm.server.SCMDatanodeHeartbeatDispatcher.CommandS
 import org.apache.hadoop.hdds.scm.server.SCMDatanodeHeartbeatDispatcher.ContainerReportFromDatanode;
 import org.apache.hadoop.hdds.scm.server.SCMDatanodeHeartbeatDispatcher.NodeReportFromDatanode;
 import org.apache.hadoop.hdds.scm.server.SCMDatanodeProtocolServer.NodeRegistrationContainerReport;
+import org.apache.hadoop.hdds.scm.server.SCMFullContainerReportLeaseManager.LeaseClaim;
 import org.apache.hadoop.hdds.server.events.Event;
 import org.apache.hadoop.hdds.server.events.EventPublisher;
 import org.apache.hadoop.ozone.protocol.commands.ReregisterCommand;
@@ -247,18 +247,16 @@ public class TestSCMDatanodeHeartbeatDispatcher {
 
   @Test
   public void testContainerReportDispatcherCompletesUndispatchedReport() {
-    AtomicBoolean completed = new AtomicBoolean();
     NodeManager nodeManager = mock(NodeManager.class);
     when(nodeManager.isNodeRegistered(any())).thenReturn(false);
     SCMDatanodeHeartbeatDispatcher dispatcher =
         new SCMDatanodeHeartbeatDispatcher(nodeManager,
             mock(EventPublisher.class));
     DatanodeDetails datanode = randomDatanodeDetails();
+    LeaseClaim claim = spy(claimLease(datanode));
     ContainerReportsProto report = ContainerReportsProto.getDefaultInstance();
     ContainerReportFromDatanode providedReport =
-        new ContainerReportFromDatanode(datanode, report, false,
-            new TestContainerReportProcessingLifecycle(
-                () -> true, processed -> completed.set(!processed)));
+        new ContainerReportFromDatanode(datanode, report, false, claim);
     SCMHeartbeatRequestProto heartbeat = SCMHeartbeatRequestProto.newBuilder()
         .setDatanodeDetails(datanode.getProtoBufMessage())
         .setContainerReport(report)
@@ -266,7 +264,7 @@ public class TestSCMDatanodeHeartbeatDispatcher {
 
     dispatcher.dispatch(heartbeat, providedReport);
 
-    assertTrue(completed.get());
+    verify(claim).complete(false);
   }
 
   @ParameterizedTest
@@ -303,14 +301,10 @@ public class TestSCMDatanodeHeartbeatDispatcher {
 
   @Test
   public void testContainerReportCompletesWhenRegistrationCheckFails() {
-    AtomicInteger completions = new AtomicInteger();
     DatanodeDetails datanode = randomDatanodeDetails();
+    LeaseClaim claim = spy(claimLease(datanode));
     ContainerReportFromDatanode report = new ContainerReportFromDatanode(
-        datanode, ContainerReportsProto.getDefaultInstance(), false,
-        new TestContainerReportProcessingLifecycle(() -> true, processed -> {
-          assertFalse(processed);
-          completions.incrementAndGet();
-        }));
+        datanode, ContainerReportsProto.getDefaultInstance(), false, claim);
     NodeManager nodeManager = mock(NodeManager.class);
     when(nodeManager.isNodeRegistered(any())).thenThrow(new IllegalStateException("Registration check failed"));
     SCMDatanodeHeartbeatDispatcher dispatcher =
@@ -319,10 +313,10 @@ public class TestSCMDatanodeHeartbeatDispatcher {
         .setDatanodeDetails(datanode.getProtoBufMessage()).build();
 
     assertThrows(IllegalStateException.class, () -> dispatcher.dispatch(heartbeat, report));
-    assertEquals(1, completions.get());
+    verify(claim).complete(false);
     report.complete(false);
 
-    assertEquals(1, completions.get());
+    verify(claim).complete(false);
   }
 
   @Test
@@ -369,26 +363,10 @@ public class TestSCMDatanodeHeartbeatDispatcher {
     assertTrue(leases.requestLease(nextDatanode, 7L).isPresent());
   }
 
-  private static final class TestContainerReportProcessingLifecycle
-      implements ContainerReportProcessingLifecycle {
-    private final BooleanSupplier processingPermit;
-    private final Consumer<Boolean> completion;
-
-    private TestContainerReportProcessingLifecycle(
-        BooleanSupplier processingPermit, Consumer<Boolean> completion) {
-      this.processingPermit = processingPermit;
-      this.completion = completion;
-    }
-
-    @Override
-    public boolean startProcessing() {
-      return processingPermit.getAsBoolean();
-    }
-
-    @Override
-    public void complete(boolean processed) {
-      completion.accept(processed);
-    }
+  private static LeaseClaim claimLease(DatanodeDetails datanode) {
+    SCMFullContainerReportLeaseManager leases = new SCMFullContainerReportLeaseManager(1, 5_000L, () -> 0L, null);
+    long leaseId = leases.requestLease(datanode, 7L).getAsLong();
+    return leases.claimLease(datanode, OptionalLong.of(7L), 7L, leaseId).orElseThrow(AssertionError::new);
   }
 
   @Test
