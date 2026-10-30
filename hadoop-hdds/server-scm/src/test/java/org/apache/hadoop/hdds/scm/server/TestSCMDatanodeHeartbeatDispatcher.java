@@ -40,7 +40,6 @@ import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
-import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
@@ -271,12 +270,12 @@ public class TestSCMDatanodeHeartbeatDispatcher {
   @ValueSource(booleans = {false, true})
   public void testLeasedReportDerivesRegistrationStatusFromClaim(boolean registrationDeferred) {
     DatanodeDetails datanode = randomDatanodeDetails();
-    SCMFullContainerReportLeaseManager leases = new SCMFullContainerReportLeaseManager(1, 5_000L, () -> 0L, null);
+    SCMFullContainerReportLeaseManager leases = new SCMFullContainerReportLeaseManager(1, 5_000L, true, () -> 0L, null);
     if (registrationDeferred) {
       leases.markFullContainerReportDeferred(datanode);
     }
     long leaseId = leases.requestLease(datanode, 7L).getAsLong();
-    LeaseClaim claim = leases.claimLease(datanode, OptionalLong.of(7L), 7L, leaseId).orElseThrow(AssertionError::new);
+    LeaseClaim claim = leases.claimLease(datanode, 7L, 7L, leaseId).orElseThrow(AssertionError::new);
 
     ContainerReportFromDatanode report =
         new ContainerReportFromDatanode(datanode, ContainerReportsProto.getDefaultInstance(), claim);
@@ -297,10 +296,10 @@ public class TestSCMDatanodeHeartbeatDispatcher {
   @ValueSource(booleans = {false, true})
   public void testUndispatchedContainerReportReleasesLeaseOnPublicationFailure(boolean failOnContainerReport) {
     DatanodeDetails datanode = randomDatanodeDetails();
-    SCMFullContainerReportLeaseManager leases = new SCMFullContainerReportLeaseManager(1, 5_000L, () -> 0L, null);
+    SCMFullContainerReportLeaseManager leases = new SCMFullContainerReportLeaseManager(1, 5_000L, true, () -> 0L, null);
     long leaseId = leases.requestLease(datanode, 7L).getAsLong();
     SCMFullContainerReportLeaseManager.LeaseClaim claim =
-        leases.claimLease(datanode, OptionalLong.of(7L), 7L, leaseId).orElseThrow(AssertionError::new);
+        leases.claimLease(datanode, 7L, 7L, leaseId).orElseThrow(AssertionError::new);
     ContainerReportFromDatanode report =
         new ContainerReportFromDatanode(datanode, ContainerReportsProto.getDefaultInstance(), claim);
     NodeManager nodeManager = mock(NodeManager.class);
@@ -348,10 +347,10 @@ public class TestSCMDatanodeHeartbeatDispatcher {
   @Test
   public void testDispatchedContainerReportKeepsCompletionOwnership() {
     DatanodeDetails datanode = randomDatanodeDetails();
-    SCMFullContainerReportLeaseManager leases = new SCMFullContainerReportLeaseManager(1, 5_000L, () -> 0L, null);
+    SCMFullContainerReportLeaseManager leases = new SCMFullContainerReportLeaseManager(1, 5_000L, true, () -> 0L, null);
     long leaseId = leases.requestLease(datanode, 7L).getAsLong();
     SCMFullContainerReportLeaseManager.LeaseClaim claim =
-        leases.claimLease(datanode, OptionalLong.of(7L), 7L, leaseId).orElseThrow(AssertionError::new);
+        leases.claimLease(datanode, 7L, 7L, leaseId).orElseThrow(AssertionError::new);
     ContainerReportQueue queue = new ContainerReportQueue();
     NodeManager nodeManager = mock(NodeManager.class);
     when(nodeManager.isNodeRegistered(any())).thenReturn(true);
@@ -390,9 +389,9 @@ public class TestSCMDatanodeHeartbeatDispatcher {
   }
 
   private static LeaseClaim claimLease(DatanodeDetails datanode) {
-    SCMFullContainerReportLeaseManager leases = new SCMFullContainerReportLeaseManager(1, 5_000L, () -> 0L, null);
+    SCMFullContainerReportLeaseManager leases = new SCMFullContainerReportLeaseManager(1, 5_000L, true, () -> 0L, null);
     long leaseId = leases.requestLease(datanode, 7L).getAsLong();
-    return leases.claimLease(datanode, OptionalLong.of(7L), 7L, leaseId).orElseThrow(AssertionError::new);
+    return leases.claimLease(datanode, 7L, 7L, leaseId).orElseThrow(AssertionError::new);
   }
 
   @Test

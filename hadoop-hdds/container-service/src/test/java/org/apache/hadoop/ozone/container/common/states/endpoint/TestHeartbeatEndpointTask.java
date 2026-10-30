@@ -557,7 +557,7 @@ public class TestHeartbeatEndpointTask {
   @Test
   public void leasedFCRRequestsLeaseBeforeSendingReport() throws Exception {
     OzoneConfiguration conf = new OzoneConfiguration();
-    DatanodeStateMachine datanodeStateMachine = mock(DatanodeStateMachine.class);
+    DatanodeStateMachine datanodeStateMachine = mockDatanodeStateMachine();
     stubFullContainerReport(datanodeStateMachine,
         ContainerReportsProto.getDefaultInstance());
     StateContext context = new StateContext(conf, DatanodeStates.RUNNING,
@@ -582,11 +582,6 @@ public class TestHeartbeatEndpointTask {
           return response.build();
         });
 
-    DatanodeDetails datanodeDetails = DatanodeDetails.newBuilder()
-        .setUuid(UUID.randomUUID())
-        .setHostName("localhost")
-        .setIpAddress("127.0.0.1")
-        .build();
     EndpointStateMachine endpointStateMachine = new EndpointStateMachine(
         TEST_SCM_ENDPOINT, scm, conf, "");
     endpointStateMachine.setState(EndpointStateMachine.EndPointStates.HEARTBEAT);
@@ -594,18 +589,9 @@ public class TestHeartbeatEndpointTask {
         .setVersion(1)
         .addValue(OzoneConsts.SCM_FCR_LEASE_SUPPORTED, Boolean.TRUE.toString())
         .build());
-    HDDSLayoutVersionManager layoutVersionManager =
-        mock(HDDSLayoutVersionManager.class);
-    when(layoutVersionManager.getSoftwareLayoutVersion())
-        .thenReturn(maxLayoutVersion());
-    when(layoutVersionManager.getMetadataLayoutVersion())
-        .thenReturn(maxLayoutVersion());
-
     HeartbeatEndpointTask endpointTask = HeartbeatEndpointTask.newBuilder()
         .setConfig(conf)
-        .setDatanodeDetails(datanodeDetails)
         .setContext(context)
-        .setLayoutVersionManager(layoutVersionManager)
         .setEndpointStateMachine(endpointStateMachine)
         .build();
 
@@ -640,7 +626,7 @@ public class TestHeartbeatEndpointTask {
   public void leasedFCRDoesNotTriggerHeartbeatWithoutUsableGrant(boolean grantPresent, long leaseId,
       boolean reregister) throws Exception {
     OzoneConfiguration conf = new OzoneConfiguration();
-    DatanodeStateMachine datanode = mock(DatanodeStateMachine.class);
+    DatanodeStateMachine datanode = mockDatanodeStateMachine();
     stubFullContainerReport(datanode, ContainerReportsProto.getDefaultInstance());
     when(datanode.getQueuedCommandCount()).thenReturn(new EnumCounters<>(SCMCommandProto.Type.class));
     StateContext context = new StateContext(conf, DatanodeStates.RUNNING, datanode, "");
@@ -666,8 +652,7 @@ public class TestHeartbeatEndpointTask {
       endpoint.setVersion(VersionResponse.newBuilder().setVersion(1)
           .addValue(OzoneConsts.SCM_FCR_LEASE_SUPPORTED, Boolean.TRUE.toString()).build());
       HeartbeatEndpointTask task = HeartbeatEndpointTask.newBuilder().setConfig(conf).setContext(context)
-          .setDatanodeDetails(MockDatanodeDetails.randomDatanodeDetails())
-          .setLayoutVersionManager(mock(HDDSLayoutVersionManager.class)).setEndpointStateMachine(endpoint).build();
+          .setEndpointStateMachine(endpoint).build();
 
       task.call();
 
@@ -689,7 +674,7 @@ public class TestHeartbeatEndpointTask {
   @Test
   public void leasedFCRUsesFreshContainerSnapshot() throws Exception {
     OzoneConfiguration conf = new OzoneConfiguration();
-    DatanodeStateMachine datanodeStateMachine = mock(DatanodeStateMachine.class);
+    DatanodeStateMachine datanodeStateMachine = mockDatanodeStateMachine();
     OzoneContainer ozoneContainer = mock(OzoneContainer.class);
     ContainerSet containerSet = mock(ContainerSet.class);
     ContainerReportsProto staleReport = ContainerReportsProto.newBuilder()
@@ -733,11 +718,6 @@ public class TestHeartbeatEndpointTask {
                         .getDatanodeDetails().getUuid())
                 .build());
 
-    DatanodeDetails datanodeDetails = DatanodeDetails.newBuilder()
-        .setUuid(UUID.randomUUID())
-        .setHostName("localhost")
-        .setIpAddress("127.0.0.1")
-        .build();
     EndpointStateMachine endpointStateMachine = new EndpointStateMachine(
         TEST_SCM_ENDPOINT, scm, conf, "");
     endpointStateMachine.setVersion(VersionResponse.newBuilder()
@@ -749,17 +729,9 @@ public class TestHeartbeatEndpointTask {
             .setId(99L)
             .setTerm(7L)
             .build());
-    HDDSLayoutVersionManager layoutVersionManager =
-        mock(HDDSLayoutVersionManager.class);
-    when(layoutVersionManager.getSoftwareLayoutVersion())
-        .thenReturn(maxLayoutVersion());
-    when(layoutVersionManager.getMetadataLayoutVersion())
-        .thenReturn(maxLayoutVersion());
     HeartbeatEndpointTask endpointTask = HeartbeatEndpointTask.newBuilder()
         .setConfig(conf)
-        .setDatanodeDetails(datanodeDetails)
         .setContext(context)
-        .setLayoutVersionManager(layoutVersionManager)
         .setEndpointStateMachine(endpointStateMachine)
         .build();
     context.addEndpoint(TEST_SCM_ENDPOINT);
@@ -778,7 +750,7 @@ public class TestHeartbeatEndpointTask {
   @ValueSource(booleans = {false, true})
   public void leasedFCRSnapshotFailureDoesNotInterruptHeartbeat(boolean runtimeFailure) throws Exception {
     OzoneConfiguration conf = new OzoneConfiguration();
-    DatanodeStateMachine datanodeStateMachine = mock(DatanodeStateMachine.class);
+    DatanodeStateMachine datanodeStateMachine = mockDatanodeStateMachine();
     ContainerReportsProto report = ContainerReportsProto.newBuilder()
         .addReports(ContainerReplicaProto.newBuilder().setContainerID(1).setState(ContainerReplicaProto.State.CLOSED))
         .build();
@@ -795,9 +767,6 @@ public class TestHeartbeatEndpointTask {
     when(scm.sendHeartbeat(argument.capture())).thenAnswer(invocation -> SCMHeartbeatResponseProto.newBuilder()
         .setDatanodeUUID(((SCMHeartbeatRequestProto) invocation.getArgument(0)).getDatanodeDetails().getUuid())
         .build());
-    HDDSLayoutVersionManager layoutVersionManager = mock(HDDSLayoutVersionManager.class);
-    when(layoutVersionManager.getSoftwareLayoutVersion()).thenReturn(maxLayoutVersion());
-    when(layoutVersionManager.getMetadataLayoutVersion()).thenReturn(maxLayoutVersion());
     IncrementalContainerReportProto icr = IncrementalContainerReportProto.newBuilder()
         .addReport(ContainerReplicaProto.newBuilder().setContainerID(1).setState(ContainerReplicaProto.State.CLOSING))
         .build();
@@ -813,7 +782,6 @@ public class TestHeartbeatEndpointTask {
           .addValue(OzoneConsts.SCM_FCR_LEASE_SUPPORTED, Boolean.TRUE.toString()).build());
       endpoint.setFullContainerReportLease(FullContainerReportLeaseProto.newBuilder().setId(99).setTerm(7).build());
       HeartbeatEndpointTask task = HeartbeatEndpointTask.newBuilder().setConfig(conf).setContext(context)
-          .setDatanodeDetails(MockDatanodeDetails.randomDatanodeDetails()).setLayoutVersionManager(layoutVersionManager)
           .setEndpointStateMachine(endpoint).build();
 
       task.call();
@@ -846,7 +814,7 @@ public class TestHeartbeatEndpointTask {
   public void leasedFCRIsExcludedWhenItBecomesReadyWhileBuildingHeartbeat()
       throws Exception {
     OzoneConfiguration conf = new OzoneConfiguration();
-    DatanodeStateMachine datanodeStateMachine = mock(DatanodeStateMachine.class);
+    DatanodeStateMachine datanodeStateMachine = mockDatanodeStateMachine();
     StateContext context = new StateContext(conf, DatanodeStates.RUNNING,
         datanodeStateMachine, "") {
       @Override
@@ -870,11 +838,6 @@ public class TestHeartbeatEndpointTask {
                         .getDatanodeDetails().getUuid())
                 .build());
 
-    DatanodeDetails datanodeDetails = DatanodeDetails.newBuilder()
-        .setUuid(UUID.randomUUID())
-        .setHostName("localhost")
-        .setIpAddress("127.0.0.1")
-        .build();
     EndpointStateMachine endpointStateMachine = new EndpointStateMachine(
         TEST_SCM_ENDPOINT, scm, conf, "");
     endpointStateMachine.setVersion(VersionResponse.newBuilder()
@@ -886,17 +849,9 @@ public class TestHeartbeatEndpointTask {
             .setId(99L)
             .setTerm(7L)
             .build());
-    HDDSLayoutVersionManager layoutVersionManager =
-        mock(HDDSLayoutVersionManager.class);
-    when(layoutVersionManager.getSoftwareLayoutVersion())
-        .thenReturn(maxLayoutVersion());
-    when(layoutVersionManager.getMetadataLayoutVersion())
-        .thenReturn(maxLayoutVersion());
     HeartbeatEndpointTask endpointTask = HeartbeatEndpointTask.newBuilder()
         .setConfig(conf)
-        .setDatanodeDetails(datanodeDetails)
         .setContext(context)
-        .setLayoutVersionManager(layoutVersionManager)
         .setEndpointStateMachine(endpointStateMachine)
         .build();
     context.addEndpoint(TEST_SCM_ENDPOINT);
@@ -910,7 +865,7 @@ public class TestHeartbeatEndpointTask {
   @ValueSource(booleans = {false, true})
   public void leasedFCRIsRetriedAfterFailure(boolean communicationFailure) throws Exception {
     OzoneConfiguration conf = new OzoneConfiguration();
-    DatanodeStateMachine datanodeStateMachine = mock(DatanodeStateMachine.class);
+    DatanodeStateMachine datanodeStateMachine = mockDatanodeStateMachine();
     stubFullContainerReport(datanodeStateMachine,
         ContainerReportsProto.getDefaultInstance());
     StateContext context = new StateContext(conf, DatanodeStates.RUNNING,
@@ -942,11 +897,6 @@ public class TestHeartbeatEndpointTask {
           return response.build();
         });
 
-    DatanodeDetails datanodeDetails = DatanodeDetails.newBuilder()
-        .setUuid(UUID.randomUUID())
-        .setHostName("localhost")
-        .setIpAddress("127.0.0.1")
-        .build();
     EndpointStateMachine endpointStateMachine = new EndpointStateMachine(
         TEST_SCM_ENDPOINT, scm, conf, "");
     endpointStateMachine.setVersion(VersionResponse.newBuilder()
@@ -958,17 +908,9 @@ public class TestHeartbeatEndpointTask {
             .setId(99L)
             .setTerm(7L)
             .build());
-    HDDSLayoutVersionManager layoutVersionManager =
-        mock(HDDSLayoutVersionManager.class);
-    when(layoutVersionManager.getSoftwareLayoutVersion())
-        .thenReturn(maxLayoutVersion());
-    when(layoutVersionManager.getMetadataLayoutVersion())
-        .thenReturn(maxLayoutVersion());
     HeartbeatEndpointTask endpointTask = HeartbeatEndpointTask.newBuilder()
         .setConfig(conf)
-        .setDatanodeDetails(datanodeDetails)
         .setContext(context)
-        .setLayoutVersionManager(layoutVersionManager)
         .setEndpointStateMachine(endpointStateMachine)
         .build();
     context.addEndpoint(TEST_SCM_ENDPOINT);
